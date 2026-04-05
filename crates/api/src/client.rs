@@ -3,7 +3,7 @@ use crate::prompt_cache::{PromptCache, PromptCacheRecord, PromptCacheStats};
 use crate::providers::anthropic::{self, AnthropicClient, AuthSource};
 use crate::providers::openai_compat::{self, OpenAiCompatClient, OpenAiCompatConfig};
 use crate::providers::{self, ProviderKind};
-use crate::types::{MessageRequest, MessageResponse, StreamEvent};
+use crate::types::{MessageRequest, MessageResponse, StreamEvent, Usage};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]

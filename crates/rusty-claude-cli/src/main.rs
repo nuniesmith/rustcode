@@ -91,22 +91,6 @@ const CLI_OPTION_SUGGESTIONS: &[&str] = &[
 
 type AllowedToolSet = BTreeSet<String>;
 
-fn main() {
-    if let Err(error) = run() {
-        let message = error.to_string();
-        if message.contains("`claw --help`") {
-            eprintln!("error: {message}");
-        } else {
-            eprintln!(
-                "error: {message}
-
-Run `claw --help` for usage."
-            );
-        }
-        std::process::exit(1);
-    }
-}
-
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     match parse_args(&args)? {
@@ -5870,7 +5854,7 @@ mod tests {
     #[test]
     fn defaults_to_repl_when_no_args() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         assert_eq!(
             parse_args(&[]).expect("args should parse"),
             CliAction::Repl {
@@ -5897,18 +5881,18 @@ mod tests {
 
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        std::env::set_var("CLAW_CONFIG_HOME", &config_home);
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::set_var("CLAW_CONFIG_HOME", &config_home); }
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
         match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            Some(value) => unsafe { std::env::set_var("CLAW_CONFIG_HOME", value) },
+            None => unsafe { std::env::remove_var("CLAW_CONFIG_HOME") },
         }
         match original_permission_mode {
-            Some(value) => std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value),
-            None => std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"),
+            Some(value) => unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value) },
+            None => unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE") },
         }
         std::fs::remove_dir_all(root).expect("temp config root should clean up");
 
@@ -5931,18 +5915,18 @@ mod tests {
 
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        std::env::set_var("CLAW_CONFIG_HOME", &config_home);
-        std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", "read-only");
+        unsafe { std::env::set_var("CLAW_CONFIG_HOME", &config_home); }
+        unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", "read-only"); }
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
         match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            Some(value) => unsafe { std::env::set_var("CLAW_CONFIG_HOME", value) },
+            None => unsafe { std::env::remove_var("CLAW_CONFIG_HOME") },
         }
         match original_permission_mode {
-            Some(value) => std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value),
-            None => std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"),
+            Some(value) => unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value) },
+            None => unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE") },
         }
         std::fs::remove_dir_all(root).expect("temp config root should clean up");
 
@@ -5952,7 +5936,7 @@ mod tests {
     #[test]
     fn parses_prompt_subcommand() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         let args = vec![
             "prompt".to_string(),
             "hello".to_string(),
@@ -5973,7 +5957,7 @@ mod tests {
     #[test]
     fn parses_bare_prompt_and_json_output_flag() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         let args = vec![
             "--output-format=json".to_string(),
             "--model".to_string(),
@@ -5996,7 +5980,7 @@ mod tests {
     #[test]
     fn resolves_model_aliases_in_args() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         let args = vec![
             "--model".to_string(),
             "opus".to_string(),
@@ -6051,7 +6035,7 @@ mod tests {
     #[test]
     fn parses_allowed_tools_flags_with_aliases_and_lists() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         let args = vec![
             "--allowedTools".to_string(),
             "read,glob".to_string(),
@@ -6135,7 +6119,7 @@ mod tests {
     #[test]
     fn parses_single_word_command_aliases_without_falling_back_to_prompt_mode() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         assert_eq!(
             parse_args(&["help".to_string()]).expect("help should parse"),
             CliAction::Help
@@ -6167,7 +6151,7 @@ mod tests {
     #[test]
     fn multi_word_prompt_still_uses_shorthand_prompt_mode() {
         let _guard = env_lock();
-        std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
+        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
         assert_eq!(
             parse_args(&["help".to_string(), "me".to_string(), "debug".to_string()])
                 .expect("prompt shorthand should still work"),
@@ -6450,7 +6434,7 @@ mod tests {
     fn startup_banner_mentions_workflow_completions() {
         let _guard = env_lock();
         // Inject dummy credentials so LiveCli can construct without real Anthropic key
-        std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-banner-test");
+        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-banner-test"); }
         let root = temp_dir();
         fs::create_dir_all(&root).expect("root dir");
 
@@ -6469,7 +6453,7 @@ mod tests {
         assert!(banner.contains("workflow completions"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        unsafe { std::env::remove_var("ANTHROPIC_API_KEY"); }
     }
 
     #[test]
@@ -7626,7 +7610,7 @@ UU conflicted.rs",
         let config_home = temp_dir();
         // Inject a dummy API key so runtime construction succeeds without real credentials.
         // This test only exercises plugin lifecycle (init/shutdown), never calls the API.
-        std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-plugin-lifecycle");
+        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-plugin-lifecycle"); }
         let workspace = temp_dir();
         let source_root = temp_dir();
         fs::create_dir_all(&config_home).expect("config home");
@@ -7675,7 +7659,7 @@ UU conflicted.rs",
         let _ = fs::remove_dir_all(config_home);
         let _ = fs::remove_dir_all(workspace);
         let _ = fs::remove_dir_all(source_root);
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        unsafe { std::env::remove_var("ANTHROPIC_API_KEY"); }
     }
 }
 

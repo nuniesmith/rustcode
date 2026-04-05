@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use crate::args::{OutputFormat, PermissionMode};
 use crate::input::{LineEditor, ReadOutcome};
 use crate::render::{Spinner, TerminalRenderer};
-use runtime::{ConversationClient, ConversationMessage, RuntimeError, StreamEvent, UsageSummary};
+use runtime::{ConversationMessage, RuntimeError};
+use api::{ProviderClient, StreamEvent, Usage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionConfig {
@@ -19,7 +20,7 @@ pub struct SessionState {
     pub turns: usize,
     pub compacted_messages: usize,
     pub last_model: String,
-    pub last_usage: UsageSummary,
+    pub last_usage: Usage,
 }
 
 impl SessionState {
@@ -29,7 +30,7 @@ impl SessionState {
             turns: 0,
             compacted_messages: 0,
             last_model: model.into(),
-            last_usage: UsageSummary::default(),
+            last_usage: Usage::default(),
         }
     }
 }
@@ -128,14 +129,14 @@ pub struct CliApp {
     config: SessionConfig,
     renderer: TerminalRenderer,
     state: SessionState,
-    conversation_client: ConversationClient,
+    conversation_client: ProviderClient,
     conversation_history: Vec<ConversationMessage>,
 }
 
 impl CliApp {
     pub fn new(config: SessionConfig) -> Result<Self, RuntimeError> {
         let state = SessionState::new(config.model.clone());
-        let conversation_client = ConversationClient::from_env(config.model.clone())?;
+        let conversation_client = ProviderClient::from_model(config.model.clone())?;
         Ok(Self {
             config,
             renderer: TerminalRenderer::new(),
@@ -344,7 +345,7 @@ impl CliApp {
 
         self.state.turns = 0;
         self.state.compacted_messages = 0;
-        self.state.last_usage = UsageSummary::default();
+        self.state.last_usage = Usage::default();
         self.conversation_history.clear();
         writeln!(out, "Started a fresh local session.")?;
         Ok(CommandResult::Continue)
@@ -356,7 +357,7 @@ impl CliApp {
         stream_spinner: &mut Spinner,
         tool_spinner: &mut Spinner,
         saw_text: &mut bool,
-        turn_usage: &mut UsageSummary,
+        turn_usage: &mut Usage,
         out: &mut impl Write,
     ) {
         match event {
@@ -417,7 +418,7 @@ impl CliApp {
                     out,
                     "{}",
                     serde_json::json!({
-                        "message": summary.assistant_text,
+                        "message": summary.assistant_messages,
                         "usage": {
                             "input_tokens": self.state.last_usage.input_tokens,
                             "output_tokens": self.state.last_usage.output_tokens,
@@ -431,7 +432,7 @@ impl CliApp {
                     "{}",
                     serde_json::json!({
                         "type": "message",
-                        "text": summary.assistant_text,
+                        "text": summary.assistant_messages,
                         "usage": {
                             "input_tokens": self.state.last_usage.input_tokens,
                             "output_tokens": self.state.last_usage.output_tokens,
@@ -451,14 +452,14 @@ impl CliApp {
             out,
         )?;
 
-        let mut turn_usage = UsageSummary::default();
+        let mut turn_usage = Usage::default();
         let mut tool_spinner = Spinner::new();
         let mut saw_text = false;
         let renderer = &self.renderer;
 
         let result =
             self.conversation_client
-                .run_turn(&mut self.conversation_history, input, |event| {
+                .stream_message(&mut self.conversation_history, input, |event| {
                     Self::handle_stream_event(
                         renderer,
                         event,

@@ -103,7 +103,7 @@
   > `src/llm/simple_client.rs` is the template to follow for all of them.
 
 - [ ] **RC-CRATES-C: replace scanner with `runtime` crate**
-  > `runtime::execute_bash`, `runtime::ConversationClient`, `runtime::worker_boot` are the key
+  > `runtime::execute_bash`, `runtime::ProviderClient`, `runtime::worker_boot` are the key
   > integration points. Start by replacing `src/tests_runner.rs` subprocess logic with
   > `runtime::execute_bash` — it handles sandboxing, timeout, and output capture already.
 

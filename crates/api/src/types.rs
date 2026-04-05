@@ -1,4 +1,4 @@
-use runtime::{pricing_for_model, TokenUsage, UsageCostEstimate};
+use runtime::{TokenUsage, UsageCostEstimate, pricing_for_model};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -101,7 +101,7 @@ pub enum ToolChoice {
     Tool { name: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MessageResponse {
     pub id: String,
     #[serde(rename = "type")]
@@ -147,7 +147,7 @@ pub enum OutputContentBlock {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u32,
     #[serde(default)]
