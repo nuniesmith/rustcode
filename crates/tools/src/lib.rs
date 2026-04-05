@@ -67,13 +67,13 @@ fn global_worker_registry() -> &'static WorkerRegistry {
     REGISTRY.get_or_init(WorkerRegistry::new)
 }
 
-//! Tool execution helpers and lane completion detection for the `claw` CLI.
-//!
-//! ## Crate layout
-//!
-//! - [`AgentOutput`] — the structured result produced by a finished agent run.
-//! - [`lane_completion`] — logic for automatically marking lanes as complete
-//!   when an agent finishes with green tests and a pushed branch.
+/// Tool execution helpers and lane completion detection for the `claw` CLI.
+///
+/// ## Crate layout
+///
+/// - [`AgentOutput`] — the structured result produced by a finished agent run.
+/// - [`lane_completion`] — logic for automatically marking lanes as complete
+///   when an agent finishes with green tests and a pushed branch.
 
 mod lane_completion;
 
@@ -5483,32 +5483,34 @@ mod tests {
             )
         }));
 
-        std::env::set_var(
-            "CLAWD_WEB_SEARCH_BASE_URL",
-            format!("http://{}/search", server.addr()),
-        );
-        let result = execute_tool(
-            "WebSearch",
-            &json!({
-                "query": "rust web search",
-                "allowed_domains": ["https://DOCS.rs/"],
-                "blocked_domains": ["HTTPS://EXAMPLE.COM"]
-            }),
-        )
-        .expect("WebSearch should succeed");
-        std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
+        unsafe {
+            std::env::set_var(
+                "CLAWD_WEB_SEARCH_BASE_URL",
+                format!("http://{}/search", server.addr()),
+            );
+            let result = execute_tool(
+                "WebSearch",
+                &json!({
+                    "query": "rust web search",
+                    "allowed_domains": ["https://DOCS.rs/"],
+                    "blocked_domains": ["HTTPS://EXAMPLE.COM"]
+                }),
+            )
+            .expect("WebSearch should succeed");
+            std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
 
-        let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
-        assert_eq!(output["query"], "rust web search");
-        let results = output["results"].as_array().expect("results array");
-        let search_result = results
-            .iter()
-            .find(|item| item.get("content").is_some())
-            .expect("search result block present");
-        let content = search_result["content"].as_array().expect("content array");
-        assert_eq!(content.len(), 1);
-        assert_eq!(content[0]["title"], "Reqwest docs");
-        assert_eq!(content[0]["url"], "https://docs.rs/reqwest");
+            let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+            assert_eq!(output["query"], "rust web search");
+            let results = output["results"].as_array().expect("results array");
+            let search_result = results
+                .iter()
+                .find(|item| item.get("content").is_some())
+                .expect("search result block present");
+            let content = search_result["content"].as_array().expect("content array");
+            assert_eq!(content.len(), 1);
+            assert_eq!(content[0]["title"], "Reqwest docs");
+            assert_eq!(content[0]["url"], "https://docs.rs/reqwest");
+        }
     }
 
     #[test]
@@ -5531,35 +5533,39 @@ mod tests {
             )
         }));
 
-        std::env::set_var(
-            "CLAWD_WEB_SEARCH_BASE_URL",
-            format!("http://{}/fallback", server.addr()),
-        );
-        let result = execute_tool(
-            "WebSearch",
-            &json!({
-                "query": "generic links"
-            }),
-        )
-        .expect("WebSearch fallback parsing should succeed");
-        std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
+        unsafe {
+            std::env::set_var(
+                "CLAWD_WEB_SEARCH_BASE_URL",
+                format!("http://{}/fallback", server.addr()),
+            );
+            let result = execute_tool(
+                "WebSearch",
+                &json!({
+                    "query": "generic links"
+                }),
+            )
+            .expect("WebSearch fallback parsing should succeed");
+            std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
 
-        let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
-        let results = output["results"].as_array().expect("results array");
-        let search_result = results
-            .iter()
-            .find(|item| item.get("content").is_some())
-            .expect("search result block present");
-        let content = search_result["content"].as_array().expect("content array");
-        assert_eq!(content.len(), 2);
-        assert_eq!(content[0]["url"], "https://example.com/one");
-        assert_eq!(content[1]["url"], "https://docs.rs/tokio");
+            let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+            let results = output["results"].as_array().expect("results array");
+            let search_result = results
+                .iter()
+                .find(|item| item.get("content").is_some())
+                .expect("search result block present");
+            let content = search_result["content"].as_array().expect("content array");
+            assert_eq!(content.len(), 2);
+            assert_eq!(content[0]["url"], "https://example.com/one");
+            assert_eq!(content[1]["url"], "https://docs.rs/tokio");
+        }
 
-        std::env::set_var("CLAWD_WEB_SEARCH_BASE_URL", "://bad-base-url");
-        let error = execute_tool("WebSearch", &json!({ "query": "generic links" }))
-            .expect_err("invalid base URL should fail");
-        std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
-        assert!(error.contains("relative URL without a base") || error.contains("empty host"));
+        unsafe {
+            std::env::set_var("CLAWD_WEB_SEARCH_BASE_URL", "://bad-base-url");
+            let error = execute_tool("WebSearch", &json!({ "query": "generic links" }))
+                .expect_err("invalid base URL should fail");
+            std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
+            assert!(error.contains("relative URL without a base") || error.contains("empty host"));
+        }
     }
 
     #[test]
@@ -5625,7 +5631,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let path = temp_path("todos.json");
-        std::env::set_var("CLAWD_TODO_STORE", &path);
+        unsafe { std::env::set_var("CLAWD_TODO_STORE", &path); }
 
         let first = execute_tool(
             "TodoWrite",
@@ -5651,7 +5657,7 @@ mod tests {
             }),
         )
         .expect("TodoWrite should succeed");
-        std::env::remove_var("CLAWD_TODO_STORE");
+        unsafe { std::env::remove_var("CLAWD_TODO_STORE"); }
         let _ = std::fs::remove_file(path);
 
         let second_output: serde_json::Value = serde_json::from_str(&second).expect("valid json");
@@ -5672,7 +5678,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let path = temp_path("todos-errors.json");
-        std::env::set_var("CLAWD_TODO_STORE", &path);
+        unsafe { std::env::set_var("CLAWD_TODO_STORE", &path); }
 
         let empty = execute_tool("TodoWrite", &json!({ "todos": [] }))
             .expect_err("empty todos should fail");
@@ -5712,7 +5718,7 @@ mod tests {
             }),
         )
         .expect("completed todos should succeed");
-        std::env::remove_var("CLAWD_TODO_STORE");
+        unsafe { std::env::remove_var("CLAWD_TODO_STORE"); }
         let _ = fs::remove_file(path);
 
         let output: serde_json::Value = serde_json::from_str(&nudge).expect("valid json");
@@ -5731,7 +5737,7 @@ mod tests {
         )
         .expect("skill file should exist");
         let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &home);
+        unsafe { std::env::set_var("HOME", &home); }
 
         let result = execute_tool(
             "Skill",
@@ -5775,9 +5781,9 @@ mod tests {
         );
 
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            unsafe { std::env::set_var("HOME", home); }
         } else {
-            std::env::remove_var("HOME");
+            unsafe { std::env::remove_var("HOME"); }
         }
         fs::remove_dir_all(home).expect("temp home should clean up");
     }
@@ -5821,7 +5827,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = temp_path("agent-store");
-        std::env::set_var("CLAWD_AGENT_STORE", &dir);
+        unsafe { std::env::set_var("CLAWD_AGENT_STORE", &dir); }
         let captured = Arc::new(Mutex::new(None::<AgentJob>));
         let captured_for_spawn = Arc::clone(&captured);
 
@@ -5841,7 +5847,7 @@ mod tests {
             },
         )
         .expect("Agent should succeed");
-        std::env::remove_var("CLAWD_AGENT_STORE");
+        unsafe { std::env::remove_var("CLAWD_AGENT_STORE"); }
 
         assert_eq!(manifest.name, "ship-audit");
         assert_eq!(manifest.subagent_type.as_deref(), Some("Explore"));
@@ -5903,7 +5909,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = temp_path("agent-runner");
-        std::env::set_var("CLAWD_AGENT_STORE", &dir);
+        unsafe { std::env::set_var("CLAWD_AGENT_STORE", &dir); }
 
         let completed = execute_agent_with_spawn(
             AgentInput {
@@ -6021,7 +6027,7 @@ mod tests {
             "infra"
         );
 
-        std::env::remove_var("CLAWD_AGENT_STORE");
+        unsafe { std::env::remove_var("CLAWD_AGENT_STORE"); }
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -6740,9 +6746,12 @@ mod tests {
         let original_home = std::env::var("HOME").ok();
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_dir = std::env::current_dir().expect("cwd");
-        std::env::set_var("HOME", &home);
-        std::env::remove_var("CLAW_CONFIG_HOME");
-        std::env::set_current_dir(&cwd).expect("set cwd");
+        
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::remove_var("CLAW_CONFIG_HOME");
+            std::env::set_current_dir(&cwd).expect("set cwd");
+        }
 
         let get = execute_tool("Config", &json!({"setting": "verbose"})).expect("get config");
         let get_output: serde_json::Value = serde_json::from_str(&get).expect("json");
@@ -6770,13 +6779,15 @@ mod tests {
         assert_eq!(unknown_output["success"], false);
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
-        match original_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-        match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+        unsafe {
+            match original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match original_config_home {
+                Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
+                None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            }
         }
         let _ = std::fs::remove_dir_all(root);
     }
@@ -6806,9 +6817,11 @@ mod tests {
         let original_home = std::env::var("HOME").ok();
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_dir = std::env::current_dir().expect("cwd");
-        std::env::set_var("HOME", &home);
-        std::env::remove_var("CLAW_CONFIG_HOME");
-        std::env::set_current_dir(&cwd).expect("set cwd");
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::remove_var("CLAW_CONFIG_HOME");
+            std::env::set_current_dir(&cwd).expect("set cwd");
+        }
 
         let enter = execute_tool("EnterPlanMode", &json!({})).expect("enter plan mode");
         let enter_output: serde_json::Value = serde_json::from_str(&enter).expect("json");
@@ -6844,13 +6857,15 @@ mod tests {
         );
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
-        match original_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-        match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+        unsafe {
+            match original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match original_config_home {
+                Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
+                None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            }
         }
         let _ = std::fs::remove_dir_all(root);
     }
@@ -6875,9 +6890,11 @@ mod tests {
         let original_home = std::env::var("HOME").ok();
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_dir = std::env::current_dir().expect("cwd");
-        std::env::set_var("HOME", &home);
-        std::env::remove_var("CLAW_CONFIG_HOME");
-        std::env::set_current_dir(&cwd).expect("set cwd");
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::remove_var("CLAW_CONFIG_HOME");
+            std::env::set_current_dir(&cwd).expect("set cwd");
+        }
 
         let enter = execute_tool("EnterPlanMode", &json!({})).expect("enter plan mode");
         let enter_output: serde_json::Value = serde_json::from_str(&enter).expect("json");
@@ -6906,13 +6923,15 @@ mod tests {
         );
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
-        match original_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-        match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+        unsafe {
+            match original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match original_config_home {
+                Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
+                None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            }
         }
         let _ = std::fs::remove_dir_all(root);
     }
@@ -7007,7 +7026,8 @@ printf 'pwsh:%s' "$1"
             .status()
             .expect("chmod");
         let original_path = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
+        unsafe {
+            std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
 
         let result = execute_tool(
             "PowerShell",
@@ -7048,12 +7068,12 @@ printf 'pwsh:%s' "$1"
                 .as_nanos()
         ));
         std::fs::create_dir_all(&empty_dir).expect("create empty dir");
-        std::env::set_var("PATH", empty_dir.display().to_string());
+        unsafe {std::env::set_var("PATH", empty_dir.display().to_string());}
 
         let err = execute_tool("PowerShell", &json!({"command": "Write-Output hello"}))
             .expect_err("PowerShell should fail when shell is missing");
 
-        std::env::set_var("PATH", original_path);
+        unsafe {std::env::set_var("PATH", original_path);}
         let _ = std::fs::remove_dir_all(empty_dir);
 
         assert!(err.contains("PowerShell executable not found"));
@@ -7284,4 +7304,5 @@ printf 'pwsh:%s' "$1"
             .into_bytes()
         }
     }
+}
 }

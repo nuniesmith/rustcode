@@ -79,7 +79,7 @@ fn get_default_db_url() -> String {
         std::env::var("POSTGRES_USER"),
         std::env::var("POSTGRES_PASSWORD"),
         std::env::var("POSTGRES_HOST"),
-        std::env::var("POSTGRES_DB"),
+        std::env::var("JANUS_DB"),
     ) {
         let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
         return format!(
@@ -248,7 +248,7 @@ DATABASE_URL
     Default: postgresql://rustcode:changeme@localhost:5432/rustcode
     Example: postgresql://user:password@host:5432/dbname
 
-POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_HOST / POSTGRES_PORT / POSTGRES_DB
+POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_HOST / POSTGRES_PORT / JANUS_DB
     Alternative: individual components used to build the URL when DATABASE_URL
     is not set. Useful with docker-compose environment blocks.
 

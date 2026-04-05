@@ -253,7 +253,7 @@ async fn stream_message_parses_sse_events_with_tool_use() {
             .expect("time")
             .as_nanos()
     ));
-    std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let sse = concat!(
         "event: message_start\n",
@@ -351,7 +351,7 @@ async fn stream_message_parses_sse_events_with_tool_use() {
     );
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    std::env::remove_var("CLAUDE_CONFIG_HOME");
+    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
 }
 
 #[tokio::test]
@@ -488,7 +488,7 @@ async fn send_message_reuses_recent_completion_cache_entries() {
             .expect("time")
             .as_nanos()
     ));
-    std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
 
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let server = spawn_server(
@@ -525,7 +525,7 @@ async fn send_message_reuses_recent_completion_cache_entries() {
     assert_eq!(cache_stats.completion_cache_writes, 1);
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    std::env::remove_var("CLAUDE_CONFIG_HOME");
+    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
 }
 
 #[tokio::test]
@@ -540,7 +540,7 @@ async fn send_message_tracks_unexpected_prompt_cache_breaks() {
             .expect("time")
             .as_nanos()
     ));
-    std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
 
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let server = spawn_server(
@@ -588,7 +588,7 @@ async fn send_message_tracks_unexpected_prompt_cache_breaks() {
     );
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    std::env::remove_var("CLAUDE_CONFIG_HOME");
+    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
 }
 
 #[tokio::test]
