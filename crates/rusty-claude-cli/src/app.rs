@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use crate::args::{OutputFormat, PermissionMode};
 use crate::input::{LineEditor, ReadOutcome};
 use crate::render::{Spinner, TerminalRenderer};
-use runtime::{ConversationMessage, RuntimeError};
-use api::{ProviderClient, StreamEvent, Usage};
+use api::{InputMessage, MessageRequest, OutputContentBlock, ProviderClient, StreamEvent, Usage};
+use runtime::{ContentBlock, ConversationMessage, MessageRole, RuntimeError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionConfig {
@@ -131,18 +131,28 @@ pub struct CliApp {
     state: SessionState,
     conversation_client: ProviderClient,
     conversation_history: Vec<ConversationMessage>,
+    runtime: tokio::runtime::Runtime,
 }
 
 impl CliApp {
     pub fn new(config: SessionConfig) -> Result<Self, RuntimeError> {
         let state = SessionState::new(config.model.clone());
-        let conversation_client = ProviderClient::from_model(config.model.clone())?;
+        let conversation_client = ProviderClient::from_model(&config.model)
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
+
+        // Build a current-thread runtime and store it on the CLI app for reuse across turns.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
+
         Ok(Self {
             config,
             renderer: TerminalRenderer::new(),
             state,
             conversation_client,
             conversation_history: Vec::new(),
+            runtime,
         })
     }
 
@@ -339,7 +349,10 @@ impl CliApp {
 
     fn handle_clear(&mut self, confirm: bool, out: &mut impl Write) -> io::Result<CommandResult> {
         if !confirm {
-            writeln!(out, "Refusing to clear without confirmation. Re-run as /clear --confirm")?;
+            writeln!(
+                out,
+                "Refusing to clear without confirmation. Re-run as /clear --confirm"
+            )?;
             return Ok(CommandResult::Continue);
         }
 
@@ -360,42 +373,102 @@ impl CliApp {
         turn_usage: &mut Usage,
         out: &mut impl Write,
     ) {
+        use api::{ContentBlockDelta, OutputContentBlock};
+
         match event {
-            StreamEvent::TextDelta(delta) => {
-                if !*saw_text {
-                    let _ =
-                        stream_spinner.finish("Streaming response", renderer.color_theme(), out);
-                    *saw_text = true;
+            StreamEvent::MessageStart(start) => {
+                // Print any immediate content blocks from the start event.
+                for block in start.message.content {
+                    match block {
+                        OutputContentBlock::Text { text } => {
+                            if !*saw_text {
+                                let _ = stream_spinner.finish(
+                                    "Streaming response",
+                                    renderer.color_theme(),
+                                    out,
+                                );
+                                *saw_text = true;
+                            }
+                            let _ = write!(out, "{}", text);
+                            let _ = out.flush();
+                        }
+                        OutputContentBlock::ToolUse { name, input, .. } => {
+                            if *saw_text {
+                                let _ = writeln!(out);
+                            }
+                            let _ = tool_spinner.tick(
+                                &format!("Running tool `{}` with {}", name, input),
+                                renderer.color_theme(),
+                                out,
+                            );
+                        }
+                        _ => {}
+                    }
                 }
-                let _ = write!(out, "{delta}");
-                let _ = out.flush();
             }
-            StreamEvent::ToolCallStart { name, input } => {
-                if *saw_text {
-                    let _ = writeln!(out);
+            StreamEvent::ContentBlockStart(start) => match start.content_block {
+                OutputContentBlock::Text { text } => {
+                    if !text.is_empty() {
+                        if !*saw_text {
+                            let _ = stream_spinner.finish(
+                                "Streaming response",
+                                renderer.color_theme(),
+                                out,
+                            );
+                            *saw_text = true;
+                        }
+                        let _ = write!(out, "{}", text);
+                        let _ = out.flush();
+                    }
                 }
-                let _ = tool_spinner.tick(
-                    &format!("Running tool `{name}` with {input}"),
-                    renderer.color_theme(),
-                    out,
-                );
+                OutputContentBlock::ToolUse { name, input, .. } => {
+                    if *saw_text {
+                        let _ = writeln!(out);
+                    }
+                    let _ = tool_spinner.tick(
+                        &format!("Running tool `{}` with {}", name, input),
+                        renderer.color_theme(),
+                        out,
+                    );
+                }
+                _ => {}
+            },
+            StreamEvent::ContentBlockDelta(delta_event) => match delta_event.delta {
+                ContentBlockDelta::TextDelta { text } => {
+                    if !text.is_empty() {
+                        if !*saw_text {
+                            let _ = stream_spinner.finish(
+                                "Streaming response",
+                                renderer.color_theme(),
+                                out,
+                            );
+                            *saw_text = true;
+                        }
+                        let _ = write!(out, "{}", text);
+                        let _ = out.flush();
+                    }
+                }
+                ContentBlockDelta::InputJsonDelta { partial_json } => {
+                    // Tool input fragments — show minimally in spinner text.
+                    let _ = tool_spinner.tick(
+                        &format!("Collecting tool input: {}", partial_json),
+                        renderer.color_theme(),
+                        out,
+                    );
+                }
+                ContentBlockDelta::ThinkingDelta { .. }
+                | ContentBlockDelta::SignatureDelta { .. } => {}
+            },
+            StreamEvent::ContentBlockStop(_) => {
+                // Close off any running markdown/tool output; ensure newline for clarity.
+                let _ = tool_spinner.finish("Tool completed", renderer.color_theme(), out);
             }
-            StreamEvent::ToolCallResult {
-                name,
-                output,
-                is_error,
-            } => {
-                let label = if is_error {
-                    format!("Tool `{name}` failed")
-                } else {
-                    format!("Tool `{name}` completed")
-                };
-                let _ = tool_spinner.finish(&label, renderer.color_theme(), out);
-                let rendered_output = format!("### Tool `{name}`\n\n```text\n{output}\n```\n");
-                let _ = renderer.stream_markdown(&rendered_output, out);
+            StreamEvent::MessageDelta(delta) => {
+                // Extract usage info if present.
+                *turn_usage = delta.usage;
             }
-            StreamEvent::Usage(usage) => {
-                *turn_usage = usage;
+            StreamEvent::MessageStop(_) => {
+                // end-of-message marker; nothing special here for now.
             }
         }
     }
@@ -405,6 +478,26 @@ impl CliApp {
         summary: &runtime::TurnSummary,
         out: &mut impl Write,
     ) -> io::Result<()> {
+        // Convert assistant messages into plain text for output/serialization
+        let assistant_text = summary
+            .assistant_messages
+            .iter()
+            .map(|msg| {
+                msg.blocks
+                    .iter()
+                    .map(|b| match b {
+                        ContentBlock::Text { text } => text.clone(),
+                        ContentBlock::ToolUse { name, input, .. } => {
+                            format!("[tool {} called with {}]", name, input)
+                        }
+                        ContentBlock::ToolResult { output, .. } => output.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect::<Vec<_>>()
+            .join("\n---\n");
+
         match self.config.output_format {
             OutputFormat::Text => {
                 writeln!(
@@ -418,7 +511,7 @@ impl CliApp {
                     out,
                     "{}",
                     serde_json::json!({
-                        "message": summary.assistant_messages,
+                        "message": assistant_text,
                         "usage": {
                             "input_tokens": self.state.last_usage.input_tokens,
                             "output_tokens": self.state.last_usage.output_tokens,
@@ -432,7 +525,7 @@ impl CliApp {
                     "{}",
                     serde_json::json!({
                         "type": "message",
-                        "text": summary.assistant_messages,
+                        "text": assistant_text,
                         "usage": {
                             "input_tokens": self.state.last_usage.input_tokens,
                             "output_tokens": self.state.last_usage.output_tokens,
@@ -452,45 +545,134 @@ impl CliApp {
             out,
         )?;
 
-        let mut turn_usage = Usage::default();
-        let mut tool_spinner = Spinner::new();
-        let mut saw_text = false;
         let renderer = &self.renderer;
 
-        let result =
-            self.conversation_client
-                .stream_message(&mut self.conversation_history, input, |event| {
-                    Self::handle_stream_event(
-                        renderer,
-                        event,
-                        &mut stream_spinner,
-                        &mut tool_spinner,
-                        &mut saw_text,
-                        &mut turn_usage,
-                        out,
-                    );
-                });
-
-        let summary = match result {
-            Ok(summary) => summary,
-            Err(error) => {
-                stream_spinner.fail(
-                    "Streaming response failed",
-                    self.renderer.color_theme(),
-                    out,
-                )?;
-                return Err(io::Error::other(error));
-            }
+        // Build a streaming MessageRequest and process events as they arrive.
+        let message_request = MessageRequest {
+            model: self.config.model.clone(),
+            max_tokens: 64_000,
+            messages: vec![InputMessage::user_text(input)],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
         };
-        self.state.last_usage = summary.usage.clone();
+
+        // Prepare local mutable state used during streaming rendering and collection.
+        let mut assistant_messages: Vec<ConversationMessage> = Vec::new();
+        let mut turn_usage: Usage = Usage::default();
+        let mut tool_spinner = Spinner::new();
+        let mut saw_text = false;
+
+        // Clone client for use inside the runtime.
+        let client = self.conversation_client.clone();
+
+        // Reuse the runtime stored on the CLI instance (created in `new`) so we don't recreate
+        // a runtime on every turn.
+
+        // Run the streaming loop and process events as they arrive.
+        let stream_err = self.runtime.block_on(async {
+            let mut stream = client
+                .stream_message(&message_request)
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+            while let Some(event) = stream
+                .next_event()
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+            {
+                // Render the event synchronously using the existing handler.
+                // We pass mutable references to local spinners/flags so the handler can update them.
+                Self::handle_stream_event(
+                    renderer,
+                    event.clone(),
+                    &mut stream_spinner,
+                    &mut tool_spinner,
+                    &mut saw_text,
+                    &mut turn_usage,
+                    out,
+                );
+
+                // Inspect the event to capture assistant text into collected messages.
+                match event {
+                    StreamEvent::MessageStart(start) => {
+                        for block in start.message.content {
+                            if let OutputContentBlock::Text { text } = block {
+                                assistant_messages.push(ConversationMessage {
+                                    role: MessageRole::Assistant,
+                                    blocks: vec![ContentBlock::Text { text }],
+                                    usage: None,
+                                });
+                            }
+                        }
+                    }
+                    StreamEvent::ContentBlockStart(start) => {
+                        if let OutputContentBlock::Text { text } = start.content_block {
+                            assistant_messages.push(ConversationMessage {
+                                role: MessageRole::Assistant,
+                                blocks: vec![ContentBlock::Text { text }],
+                                usage: None,
+                            });
+                        }
+                    }
+                    StreamEvent::ContentBlockDelta(delta) => {
+                        if let api::ContentBlockDelta::TextDelta { text } = delta.delta {
+                            if !text.is_empty() {
+                                assistant_messages.push(ConversationMessage {
+                                    role: MessageRole::Assistant,
+                                    blocks: vec![ContentBlock::Text { text }],
+                                    usage: None,
+                                });
+                            }
+                        }
+                    }
+                    StreamEvent::ContentBlockStop(_) => {
+                        // Content block finished — nothing to accumulate for the summary here.
+                    }
+                    StreamEvent::MessageDelta(delta) => {
+                        // Update turn usage when a MessageDelta with usage arrives.
+                        turn_usage = delta.usage;
+                    }
+                    StreamEvent::MessageStop(_) => {
+                        // End of message marker; nothing special to do here.
+                    }
+                }
+            }
+
+            Ok::<(), io::Error>(())
+        });
+
+        if let Err(e) = stream_err {
+            stream_spinner.fail(
+                "Streaming response failed",
+                self.renderer.color_theme(),
+                out,
+            )?;
+            return Err(e);
+        }
+
+        // Update last usage from the usage we observed during streaming.
+        self.state.last_usage = turn_usage.clone();
+
+        // Ensure spacing after streamed text.
         if saw_text {
             writeln!(out)?;
         } else {
             stream_spinner.finish("Streaming response", self.renderer.color_theme(), out)?;
         }
 
+        // Build a TurnSummary from the collected assistant messages and the observed usage.
+        let summary = runtime::TurnSummary {
+            assistant_messages,
+            tool_results: Vec::new(),
+            prompt_cache_events: Vec::new(),
+            iterations: 1,
+            usage: turn_usage.token_usage(),
+            auto_compaction: None,
+        };
+
         self.write_turn_output(&summary, out)?;
-        let _ = turn_usage;
         Ok(())
     }
 }
