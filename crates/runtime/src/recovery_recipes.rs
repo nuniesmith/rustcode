@@ -1,9 +1,9 @@
-//! Recovery recipes for common failure scenarios.
-//!
-//! Encodes known automatic recoveries for the six failure scenarios
-//! listed in ROADMAP item 8, and enforces one automatic recovery
-//! attempt before escalation. Each attempt is emitted as a structured
-//! recovery event.
+// Recovery recipes for common failure scenarios.
+//
+// Encodes known automatic recoveries for the six failure scenarios
+// listed in ROADMAP item 8, and enforces one automatic recovery
+// attempt before escalation. Each attempt is emitted as a structured
+// recovery event.
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::worker_boot::WorkerFailureKind;
 
-/// The six failure scenarios that have known recovery recipes.
+// The six failure scenarios that have known recovery recipes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureScenario {
@@ -25,7 +25,7 @@ pub enum FailureScenario {
 }
 
 impl FailureScenario {
-    /// Returns all known failure scenarios.
+    // Returns all known failure scenarios.
     #[must_use]
     pub fn all() -> &'static [FailureScenario] {
         &[
@@ -39,8 +39,8 @@ impl FailureScenario {
         ]
     }
 
-    /// Map a `WorkerFailureKind` to the corresponding `FailureScenario`.
-    /// This is the bridge that lets recovery policy consume worker boot events.
+    // Map a `WorkerFailureKind` to the corresponding `FailureScenario`.
+    // This is the bridge that lets recovery policy consume worker boot events.
     #[must_use]
     pub fn from_worker_failure_kind(kind: WorkerFailureKind) -> Self {
         match kind {
@@ -66,7 +66,7 @@ impl std::fmt::Display for FailureScenario {
     }
 }
 
-/// Individual step that can be executed as part of a recovery recipe.
+// Individual step that can be executed as part of a recovery recipe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryStep {
@@ -80,7 +80,7 @@ pub enum RecoveryStep {
     EscalateToHuman { reason: String },
 }
 
-/// Policy governing what happens when automatic recovery is exhausted.
+// Policy governing what happens when automatic recovery is exhausted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EscalationPolicy {
@@ -89,9 +89,9 @@ pub enum EscalationPolicy {
     Abort,
 }
 
-/// A recovery recipe encodes the sequence of steps to attempt for a
-/// given failure scenario, along with the maximum number of automatic
-/// attempts and the escalation policy.
+// A recovery recipe encodes the sequence of steps to attempt for a
+// given failure scenario, along with the maximum number of automatic
+// attempts and the escalation policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecoveryRecipe {
     pub scenario: FailureScenario,
@@ -100,7 +100,7 @@ pub struct RecoveryRecipe {
     pub escalation_policy: EscalationPolicy,
 }
 
-/// Outcome of a recovery attempt.
+// Outcome of a recovery attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryResult {
@@ -116,7 +116,7 @@ pub enum RecoveryResult {
     },
 }
 
-/// Structured event emitted during recovery.
+// Structured event emitted during recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryEvent {
@@ -130,16 +130,16 @@ pub enum RecoveryEvent {
     Escalated,
 }
 
-/// Minimal context for tracking recovery state and emitting events.
-///
-/// Holds per-scenario attempt counts, a structured event log, and an
-/// optional simulation knob for controlling step outcomes during tests.
+// Minimal context for tracking recovery state and emitting events.
+//
+// Holds per-scenario attempt counts, a structured event log, and an
+// optional simulation knob for controlling step outcomes during tests.
 #[derive(Debug, Clone, Default)]
 pub struct RecoveryContext {
     attempts: HashMap<FailureScenario, u32>,
     events: Vec<RecoveryEvent>,
-    /// Optional step index at which simulated execution fails.
-    /// `None` means all steps succeed.
+    // Optional step index at which simulated execution fails.
+    // `None` means all steps succeed.
     fail_at_step: Option<usize>,
 }
 
@@ -149,27 +149,27 @@ impl RecoveryContext {
         Self::default()
     }
 
-    /// Configure a step index at which simulated execution will fail.
+    // Configure a step index at which simulated execution will fail.
     #[must_use]
     pub fn with_fail_at_step(mut self, index: usize) -> Self {
         self.fail_at_step = Some(index);
         self
     }
 
-    /// Returns the structured event log populated during recovery.
+    // Returns the structured event log populated during recovery.
     #[must_use]
     pub fn events(&self) -> &[RecoveryEvent] {
         &self.events
     }
 
-    /// Returns the number of recovery attempts made for a scenario.
+    // Returns the number of recovery attempts made for a scenario.
     #[must_use]
     pub fn attempt_count(&self, scenario: &FailureScenario) -> u32 {
         self.attempts.get(scenario).copied().unwrap_or(0)
     }
 }
 
-/// Returns the known recovery recipe for the given failure scenario.
+// Returns the known recovery recipe for the given failure scenario.
 #[must_use]
 pub fn recipe_for(scenario: &FailureScenario) -> RecoveryRecipe {
     match scenario {
@@ -223,11 +223,11 @@ pub fn recipe_for(scenario: &FailureScenario) -> RecoveryRecipe {
     }
 }
 
-/// Attempts automatic recovery for the given failure scenario.
-///
-/// Looks up the recipe, enforces the one-attempt-before-escalation
-/// policy, simulates step execution (controlled by the context), and
-/// emits structured [`RecoveryEvent`]s for every attempt.
+// Attempts automatic recovery for the given failure scenario.
+//
+// Looks up the recipe, enforces the one-attempt-before-escalation
+// policy, simulates step execution (controlled by the context), and
+// emits structured [`RecoveryEvent`]s for every attempt.
 pub fn attempt_recovery(scenario: &FailureScenario, ctx: &mut RecoveryContext) -> RecoveryResult {
     let recipe = recipe_for(scenario);
     let attempt_count = ctx.attempts.entry(*scenario).or_insert(0);

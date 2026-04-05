@@ -1,19 +1,19 @@
-//! Audit runner — orchestrates StaticAnalyzer → GrokClient → result serialisation
-//!
-//! This is the core of the `/api/audit` pipeline. It accepts a repo path,
-//! runs static analysis for fast file triage, then feeds interesting files
-//! through the LLM for deep analysis, and serialises the results.
-//!
-//! # Workflow
-//!
-//! ```text
-//! 1. Collect source files via walkdir (respecting skip-extensions config)
-//! 2. StaticAnalyzer scores each file (pattern matching, no LLM cost)
-//! 3. PromptRouter decides which files warrant an LLM call
-//! 4. GrokClient::score_file() for each prioritised file (with cost cap)
-//! 5. Aggregate findings into AuditResult
-//! 6. Optionally append new findings to repo's todo.md via TodoFile::append_item
-//! ```
+// Audit runner — orchestrates StaticAnalyzer → GrokClient → result serialisation
+//
+// This is the core of the `/api/audit` pipeline. It accepts a repo path,
+// runs static analysis for fast file triage, then feeds interesting files
+// through the LLM for deep analysis, and serialises the results.
+//
+// # Workflow
+//
+// ```text
+// 1. Collect source files via walkdir (respecting skip-extensions config)
+// 2. StaticAnalyzer scores each file (pattern matching, no LLM cost)
+// 3. PromptRouter decides which files warrant an LLM call
+// 4. GrokClient::score_file() for each prioritised file (with cost cap)
+// 5. Aggregate findings into AuditResult
+// 6. Optionally append new findings to repo's todo.md via TodoFile::append_item
+// ```
 
 use crate::audit::types::{
     AuditFinding, AuditRequest, AuditResponse, AuditSeverity, AuditStatus, AuditSummary,
@@ -32,22 +32,22 @@ use tracing::{debug, info, warn};
 // Configuration
 // ============================================================================
 
-/// Configuration for the audit runner
+// Configuration for the audit runner
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditRunnerConfig {
-    /// Maximum number of files to send to the LLM in one audit run
+    // Maximum number of files to send to the LLM in one audit run
     pub max_llm_files: usize,
-    /// Maximum cost budget in USD for LLM calls in one run
+    // Maximum cost budget in USD for LLM calls in one run
     pub max_cost_usd: f64,
-    /// Whether to append new findings to the repo's `todo.md`
+    // Whether to append new findings to the repo's `todo.md`
     pub append_to_todo_md: bool,
-    /// Minimum static analysis score to escalate a file to the LLM (0.0–1.0)
+    // Minimum static analysis score to escalate a file to the LLM (0.0–1.0)
     pub llm_escalation_threshold: f32,
-    /// File extensions to skip entirely (binary, generated, model files)
+    // File extensions to skip entirely (binary, generated, model files)
     pub skip_extensions: Vec<String>,
-    /// Path fragments to skip (vendor dirs, build output, etc.)
+    // Path fragments to skip (vendor dirs, build output, etc.)
     pub skip_paths: Vec<String>,
-    /// Maximum file size in bytes to analyse
+    // Maximum file size in bytes to analyse
     pub max_file_bytes: u64,
 }
 
@@ -103,7 +103,7 @@ impl Default for AuditRunnerConfig {
 // AuditRunner
 // ============================================================================
 
-/// Orchestrates the full audit pipeline for a repository
+// Orchestrates the full audit pipeline for a repository
 pub struct AuditRunner {
     config: AuditRunnerConfig,
 }
@@ -117,7 +117,7 @@ impl AuditRunner {
         Self::new(AuditRunnerConfig::default())
     }
 
-    /// Create a runner with a custom config and an optional Grok client.
+    // Create a runner with a custom config and an optional Grok client.
     pub fn with_grok(config: AuditRunnerConfig, grok: Arc<GrokClient>) -> AuditRunnerWithGrok {
         AuditRunnerWithGrok {
             runner: Self { config },
@@ -129,14 +129,14 @@ impl AuditRunner {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Run a static-only audit on the repo path given in `request.repo`.
-    ///
-    /// This is the no-API-key path. It runs the same file collection and static
-    /// analysis as [`run_static_only`] but accepts a full [`AuditRequest`] so
-    /// that callers don't need to branch on whether they have a `GrokClient`.
-    ///
-    /// For LLM-assisted scoring use [`AuditRunner::with_grok`] to get an
-    /// [`AuditRunnerWithGrok`] and call its `run()` method.
+    // Run a static-only audit on the repo path given in `request.repo`.
+    //
+    // This is the no-API-key path. It runs the same file collection and static
+    // analysis as [`run_static_only`] but accepts a full [`AuditRequest`] so
+    // that callers don't need to branch on whether they have a `GrokClient`.
+    //
+    // For LLM-assisted scoring use [`AuditRunner::with_grok`] to get an
+    // [`AuditRunnerWithGrok`] and call its `run()` method.
     pub async fn run(&self, request: AuditRequest) -> Result<AuditResponse> {
         let repo_path = std::path::PathBuf::from(&request.repo);
         let mut response = self.run_static_only(&repo_path).await?;
@@ -146,9 +146,9 @@ impl AuditRunner {
         Ok(response)
     }
 
-    /// Run only the static analysis stage (no LLM calls, free).
-    ///
-    /// Useful for the `/api/audit?mode=static` fast path.
+    // Run only the static analysis stage (no LLM calls, free).
+    //
+    // Useful for the `/api/audit?mode=static` fast path.
     pub async fn run_static_only(&self, repo_path: impl AsRef<Path>) -> Result<AuditResponse> {
         let repo_path = repo_path.as_ref();
         let start = Instant::now();
@@ -196,9 +196,9 @@ impl AuditRunner {
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// Collect all source files under `repo_path` that pass the skip filters.
-    ///
-    /// Returns paths relative to `repo_path`, sorted for deterministic ordering.
+    // Collect all source files under `repo_path` that pass the skip filters.
+    //
+    // Returns paths relative to `repo_path`, sorted for deterministic ordering.
     pub fn collect_files(&self, repo_path: &Path) -> Result<Vec<PathBuf>> {
         use walkdir::WalkDir;
 
@@ -252,18 +252,18 @@ impl AuditRunner {
         Ok(files)
     }
 
-    /// Run static analysis on a file and return a priority score (0.0–1.0).
-    ///
-    /// Higher scores indicate the file is more likely to have issues worth
-    /// escalating to the LLM.
+    // Run static analysis on a file and return a priority score (0.0–1.0).
+    //
+    // Higher scores indicate the file is more likely to have issues worth
+    // escalating to the LLM.
     pub fn static_score(&self, path: &Path, content: &str) -> f32 {
         let analyzer = StaticAnalyzer::new();
         let result = analyzer.analyze(&path.to_string_lossy(), content);
         result.estimated_llm_value as f32
     }
 
-    /// Convert a `StaticAnalysisResult` into lightweight `AuditFinding`s
-    /// (no LLM cost — severity is inferred from static signals).
+    // Convert a `StaticAnalysisResult` into lightweight `AuditFinding`s
+    // (no LLM cost — severity is inferred from static signals).
     fn findings_from_static(
         &self,
         result: &crate::static_analysis::StaticAnalysisResult,
@@ -302,7 +302,7 @@ impl AuditRunner {
         }]
     }
 
-    /// Convert a `FileScoreResult` from GrokClient into `AuditFinding`s.
+    // Convert a `FileScoreResult` from GrokClient into `AuditFinding`s.
     pub fn finding_from_score(&self, file: &Path, score: &FileScoreResult) -> Vec<AuditFinding> {
         let mut findings = Vec::new();
         let file_str = file.to_string_lossy().into_owned();
@@ -377,23 +377,23 @@ impl AuditRunner {
 // AuditRunner with Grok (full pipeline)
 // ============================================================================
 
-/// `AuditRunner` with a wired `GrokClient` for LLM-assisted scoring.
+// `AuditRunner` with a wired `GrokClient` for LLM-assisted scoring.
 pub struct AuditRunnerWithGrok {
     pub runner: AuditRunner,
     pub grok: Arc<GrokClient>,
 }
 
 impl AuditRunnerWithGrok {
-    /// Run a full audit on a repository path.
-    ///
-    /// # Pipeline
-    /// 1. Collect source files (respecting skip config)
-    /// 2. Static analysis triage — cheap, no LLM
-    /// 3. Sort by `estimated_llm_value`, cap at `max_llm_files`
-    /// 4. For each prioritised file: call `GrokClient::score_file` (with cost cap)
-    /// 5. Aggregate `FileScoreResult` → `AuditFinding`
-    /// 6. Optionally append High/Critical findings to `todo.md`
-    /// 7. Return `AuditResponse`
+    // Run a full audit on a repository path.
+    //
+    // # Pipeline
+    // 1. Collect source files (respecting skip config)
+    // 2. Static analysis triage — cheap, no LLM
+    // 3. Sort by `estimated_llm_value`, cap at `max_llm_files`
+    // 4. For each prioritised file: call `GrokClient::score_file` (with cost cap)
+    // 5. Aggregate `FileScoreResult` → `AuditFinding`
+    // 6. Optionally append High/Critical findings to `todo.md`
+    // 7. Return `AuditResponse`
     pub async fn run(&self, request: AuditRequest) -> Result<AuditResponse> {
         let repo_path = PathBuf::from(&request.repo);
         let start = Instant::now();
@@ -625,7 +625,7 @@ impl AuditRunnerWithGrok {
 // Helpers
 // ============================================================================
 
-/// Append High/Critical audit findings to a `todo.md` file as new backlog items.
+// Append High/Critical audit findings to a `todo.md` file as new backlog items.
 fn append_findings_to_todo(todo_path: &Path, findings: &[&AuditFinding]) -> Result<usize> {
     use std::io::Write;
 

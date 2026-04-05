@@ -1,4 +1,4 @@
-//! Background job queue for asynchronous document indexing
+// Background job queue for asynchronous document indexing
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use sqlx::PgPool;
 // Job Types
 // ============================================================================
 
-/// Job status
+// Job status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
@@ -26,7 +26,7 @@ pub enum JobStatus {
     Cancelled,
 }
 
-/// Index job
+// Index job
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexJob {
     pub id: String,
@@ -41,7 +41,7 @@ pub struct IndexJob {
     pub force_reindex: bool,
 }
 
-/// Job progress tracking
+// Job progress tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobProgress {
     pub total: usize,
@@ -122,7 +122,7 @@ impl IndexJob {
 // Job Queue
 // ============================================================================
 
-/// Job queue configuration
+// Job queue configuration
 #[derive(Debug, Clone)]
 pub struct JobQueueConfig {
     pub max_concurrent_jobs: usize,
@@ -140,7 +140,7 @@ impl Default for JobQueueConfig {
     }
 }
 
-/// Background job queue
+// Background job queue
 pub struct JobQueue {
     config: JobQueueConfig,
     jobs: Arc<RwLock<HashMap<String, IndexJob>>>,
@@ -167,7 +167,7 @@ impl JobQueue {
         }
     }
 
-    /// Submit a new job
+    // Submit a new job
     pub async fn submit_job(&self, document_ids: Vec<String>, force_reindex: bool) -> String {
         let job = IndexJob::new(document_ids, force_reindex);
         let job_id = job.id.clone();
@@ -182,9 +182,9 @@ impl JobQueue {
         job_id
     }
 
-    /// Return the number of queued (pending) jobs without async overhead.
-    ///
-    /// Uses `try_read` so it never blocks; returns 0 if the lock is contended.
+    // Return the number of queued (pending) jobs without async overhead.
+    //
+    // Uses `try_read` so it never blocks; returns 0 if the lock is contended.
     pub fn pending_count(&self) -> usize {
         match self.jobs.try_read() {
             Ok(jobs) => jobs
@@ -195,13 +195,13 @@ impl JobQueue {
         }
     }
 
-    /// Get job status
+    // Get job status
     pub async fn get_job(&self, job_id: &str) -> Option<IndexJob> {
         let jobs = self.jobs.read().await;
         jobs.get(job_id).cloned()
     }
 
-    /// List all jobs
+    // List all jobs
     pub async fn list_jobs(&self) -> Vec<IndexJob> {
         let jobs = self.jobs.read().await;
         let mut job_list: Vec<_> = jobs.values().cloned().collect();
@@ -209,7 +209,7 @@ impl JobQueue {
         job_list
     }
 
-    /// Cancel a job
+    // Cancel a job
     pub async fn cancel_job(&self, job_id: &str) -> Result<(), String> {
         let mut jobs = self.jobs.write().await;
         if let Some(job) = jobs.get_mut(job_id) {
@@ -224,7 +224,7 @@ impl JobQueue {
         }
     }
 
-    /// Delete a job from queue
+    // Delete a job from queue
     pub async fn delete_job(&self, job_id: &str) -> Result<(), String> {
         let mut jobs = self.jobs.write().await;
         if jobs.remove(job_id).is_some() {
@@ -234,7 +234,7 @@ impl JobQueue {
         }
     }
 
-    /// Process next queued job
+    // Process next queued job
     async fn process_next_job(&self) {
         // Check if we can start a new job
         let processing = self.processing.lock().await;
@@ -257,7 +257,7 @@ impl JobQueue {
         }
     }
 
-    /// Process a specific job
+    // Process a specific job
     async fn process_job(&self, job_id: String) {
         // Mark as processing
         {
@@ -303,7 +303,7 @@ impl JobQueue {
         Box::pin(self.process_next_job()).await;
     }
 
-    /// Index multiple documents
+    // Index multiple documents
     async fn index_documents(
         &self,
         job_id: String,
@@ -344,7 +344,7 @@ impl JobQueue {
         Ok(())
     }
 
-    /// Clean up old completed jobs
+    // Clean up old completed jobs
     pub async fn cleanup_old_jobs(&self, retention_hours: i64) {
         let cutoff = Utc::now() - chrono::Duration::hours(retention_hours);
         let mut jobs = self.jobs.write().await;
@@ -358,7 +358,7 @@ impl JobQueue {
         });
     }
 
-    /// Get queue statistics
+    // Get queue statistics
     pub async fn get_stats(&self) -> JobQueueStats {
         let jobs = self.jobs.read().await;
         let processing = self.processing.lock().await;
@@ -387,7 +387,7 @@ impl JobQueue {
     }
 }
 
-/// Job queue statistics
+// Job queue statistics
 #[derive(Debug, Clone, Serialize)]
 pub struct JobQueueStats {
     pub total_jobs: usize,

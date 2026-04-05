@@ -1,53 +1,53 @@
-//! GitHub Integration Module
-//!
-//! Provides comprehensive GitHub API integration for rustcode, enabling:
-//! - Repository synchronization and tracking
-//! - Issue and PR management
-//! - Commit history and activity tracking
-//! - Webhook support for real-time updates
-//! - Cost-free GitHub API usage (vs expensive LLM calls)
-//!
-//! # Architecture
-//!
-//! This module follows the "crates vs services" pattern from the architectural
-//! research, providing clean abstractions for GitHub operations:
-//!
-//! - `client`: Low-level GitHub API client (GraphQL + REST)
-//! - `models`: Type-safe domain models for GitHub entities
-//! - `sync`: Bidirectional synchronization with local database
-//! - `webhook`: Event-driven updates from GitHub
-//! - `search`: Unified search across repos, issues, PRs
-//!
-//! # Cost Optimization
-//!
-//! GitHub API calls are FREE (rate-limited to 5000/hour for authenticated users).
-//! This module implements the query router pattern to prefer GitHub API over LLM
-//! calls whenever possible, achieving significant cost savings.
-//!
-//! # Example Usage
-//!
-//! ```rust,no_run
-//! use rustcode::github::{GitHubClient, SyncEngine};
-//! use sqlx::PgPool;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Initialize client with PAT
-//!     let client = GitHubClient::new("ghp_your_token_here")?;
-//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
-//!
-//!     // Sync all user repositories
-//!     let sync = SyncEngine::new(client, pool);
-//!     let result = sync.sync_all_repos().await?;
-//!     println!("Synced {} repositories", result.repos_synced);
-//!
-//!     // Incremental sync (only changes since last sync)
-//!     let result = sync.sync_incremental().await?;
-//!     println!("Updated {} items", result.items_updated);
-//!
-//!     Ok(())
-//! }
-//! ```
+// GitHub Integration Module
+//
+// Provides comprehensive GitHub API integration for rustcode, enabling:
+// - Repository synchronization and tracking
+// - Issue and PR management
+// - Commit history and activity tracking
+// - Webhook support for real-time updates
+// - Cost-free GitHub API usage (vs expensive LLM calls)
+//
+// # Architecture
+//
+// This module follows the "crates vs services" pattern from the architectural
+// research, providing clean abstractions for GitHub operations:
+//
+// - `client`: Low-level GitHub API client (GraphQL + REST)
+// - `models`: Type-safe domain models for GitHub entities
+// - `sync`: Bidirectional synchronization with local database
+// - `webhook`: Event-driven updates from GitHub
+// - `search`: Unified search across repos, issues, PRs
+//
+// # Cost Optimization
+//
+// GitHub API calls are FREE (rate-limited to 5000/hour for authenticated users).
+// This module implements the query router pattern to prefer GitHub API over LLM
+// calls whenever possible, achieving significant cost savings.
+//
+// # Example Usage
+//
+// ```rust,no_run
+// use rustcode::github::{GitHubClient, SyncEngine};
+// use sqlx::PgPool;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     // Initialize client with PAT
+//     let client = GitHubClient::new("ghp_your_token_here")?;
+//     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
+//
+//     // Sync all user repositories
+//     let sync = SyncEngine::new(client, pool);
+//     let result = sync.sync_all_repos().await?;
+//     println!("Synced {} repositories", result.repos_synced);
+//
+//     // Incremental sync (only changes since last sync)
+//     let result = sync.sync_incremental().await?;
+//     println!("Updated {} items", result.items_updated);
+//
+//     Ok(())
+// }
+// ```
 
 pub mod background_sync;
 pub mod client;
@@ -72,7 +72,7 @@ pub use webhook::{WebhookEvent, WebhookHandler, WebhookPayload};
 
 use thiserror::Error;
 
-/// GitHub integration specific errors
+// GitHub integration specific errors
 #[derive(Error, Debug)]
 pub enum GitHubError {
     #[error("GitHub API error: {0}")]

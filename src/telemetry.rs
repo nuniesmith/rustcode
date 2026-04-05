@@ -1,80 +1,80 @@
-//! OpenTelemetry Tracing Module
-//!
-//! Provides distributed tracing capabilities using OpenTelemetry.
-//! Exports traces to OTLP-compatible backends (Jaeger, Tempo, etc.).
-//!
-//! # Features
-//!
-//! - **Distributed Tracing**: Track requests across services
-//! - **Span Attributes**: Rich context with semantic conventions
-//! - **OTLP Export**: Compatible with Jaeger, Tempo, Honeycomb, etc.
-//! - **Sampling**: Configurable trace sampling
-//! - **Resource Detection**: Automatic service metadata
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::telemetry::{init_telemetry, TelemetryConfig};
-//! use tracing::instrument;
-//!
-//! #[instrument]
-//! async fn process_document(doc_id: &str) {
-//!     tracing::info!("Processing document");
-//!     // Work happens here
-//! }
-//!
-//! # #[tokio::main]
-//! # async fn main() -> anyhow::Result<()> {
-//! let config = TelemetryConfig::default();
-//! init_telemetry(config).await?;
-//!
-//! process_document("doc-123").await;
-//! # Ok(())
-//! # }
-//! ```
+// OpenTelemetry Tracing Module
+//
+// Provides distributed tracing capabilities using OpenTelemetry.
+// Exports traces to OTLP-compatible backends (Jaeger, Tempo, etc.).
+//
+// # Features
+//
+// - **Distributed Tracing**: Track requests across services
+// - **Span Attributes**: Rich context with semantic conventions
+// - **OTLP Export**: Compatible with Jaeger, Tempo, Honeycomb, etc.
+// - **Sampling**: Configurable trace sampling
+// - **Resource Detection**: Automatic service metadata
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::telemetry::{init_telemetry, TelemetryConfig};
+// use tracing::instrument;
+//
+// #[instrument]
+// async fn process_document(doc_id: &str) {
+//     tracing::info!("Processing document");
+// }
+//
+// # #[tokio::main]
+// # async fn main() -> anyhow::Result<()> {
+// let config = TelemetryConfig::default();
+// let _guard = init_telemetry(config).await?;
+// process_document("doc-123").await;
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
-use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::{KeyValue, global};
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{
-    trace::{self, RandomIdGenerator, Sampler},
     Resource,
+    trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
 };
 use opentelemetry_semantic_conventions as semconv;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_opentelemetry::layer;
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-/// Telemetry configuration
+// Telemetry configuration
 #[derive(Debug, Clone)]
 pub struct TelemetryConfig {
-    /// Service name
+    // Service name
     pub service_name: String,
 
-    /// Service version
+    // Service version
     pub service_version: String,
 
-    /// Environment (dev, staging, prod)
+    // Environment (dev, staging, prod)
     pub environment: String,
 
-    /// OTLP endpoint (e.g., "http://localhost:4317")
+    // OTLP endpoint (e.g., "http://localhost:4317")
     pub otlp_endpoint: String,
 
-    /// Enable telemetry
+    // Enable telemetry
     pub enabled: bool,
 
-    /// Sampling rate (0.0 to 1.0)
+    // Sampling rate (0.0 to 1.0)
     pub sampling_rate: f64,
 
-    /// Enable stdout logging
+    // Enable stdout logging
     pub enable_stdout: bool,
 
-    /// Log level filter
+    // Log level filter
     pub log_level: String,
 
-    /// Additional resource attributes
+    // Additional resource attributes
     pub resource_attributes: Vec<(String, String)>,
 }
 
@@ -95,7 +95,7 @@ impl Default for TelemetryConfig {
 }
 
 impl TelemetryConfig {
-    /// Create production configuration
+    // Create production configuration
     pub fn production(otlp_endpoint: String) -> Self {
         Self {
             service_name: "rustcode".to_string(),
@@ -103,14 +103,14 @@ impl TelemetryConfig {
             environment: "production".to_string(),
             otlp_endpoint,
             enabled: true,
-            sampling_rate: 0.1, // Sample 10% in production
+            sampling_rate: 0.1,
             enable_stdout: false,
             log_level: "warn".to_string(),
             resource_attributes: Vec::new(),
         }
     }
 
-    /// Create development configuration
+    // Create development configuration
     pub fn development() -> Self {
         Self {
             service_name: "rustcode".to_string(),
@@ -125,7 +125,7 @@ impl TelemetryConfig {
         }
     }
 
-    /// Add custom resource attribute
+    // Add a custom resource attribute
     pub fn with_attribute(mut self, key: String, value: String) -> Self {
         self.resource_attributes.push((key, value));
         self
@@ -133,50 +133,81 @@ impl TelemetryConfig {
 }
 
 // ============================================================================
+// Guard — holds the provider alive; drops trigger graceful shutdown
+// ============================================================================
+
+// Returned by [`init_telemetry`]. Keep alive for the duration of the process;
+// dropping it flushes and shuts down the tracer provider.
+pub struct TelemetryGuard {
+    provider: Option<SdkTracerProvider>,
+}
+
+impl Drop for TelemetryGuard {
+    fn drop(&mut self) {
+        if let Some(provider) = self.provider.take() {
+            if let Err(e) = provider.shutdown() {
+                eprintln!("Failed to shut down tracer provider: {e}");
+            }
+        }
+    }
+}
+
+impl TelemetryGuard {
+    // Explicitly shut down telemetry before the guard is dropped.
+    pub fn shutdown(mut self) {
+        if let Some(provider) = self.provider.take() {
+            if let Err(e) = provider.shutdown() {
+                eprintln!("Failed to shut down tracer provider: {e}");
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Initialization
 // ============================================================================
 
-/// Initialize OpenTelemetry tracing
-pub async fn init_telemetry(config: TelemetryConfig) -> Result<()> {
+// Initialize OpenTelemetry tracing.
+//
+// Returns a [`TelemetryGuard`] that must be kept alive for the duration of
+// the process. Dropping it triggers a graceful provider shutdown.
+pub async fn init_telemetry(config: TelemetryConfig) -> Result<TelemetryGuard> {
     if !config.enabled {
-        // Just set up basic logging without tracing
         init_basic_logging(&config);
-        return Ok(());
+        return Ok(TelemetryGuard { provider: None });
     }
 
-    // Build resource with service information
     let resource = build_resource(&config);
 
-    // Create OTLP tracer
-    let tracer = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(
-            opentelemetry_otlp::new_exporter()
-                .tonic()
-                .with_endpoint(&config.otlp_endpoint),
-        )
-        .with_trace_config(
-            trace::config()
-                .with_sampler(Sampler::TraceIdRatioBased(config.sampling_rate))
-                .with_id_generator(RandomIdGenerator::default())
-                .with_resource(resource),
-        )
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
-        .context("Failed to install OTLP tracer")?;
+    // Build the OTLP span exporter (gRPC/tonic transport)
+    let exporter = SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(&config.otlp_endpoint)
+        .build()
+        .context("Failed to build OTLP span exporter")?;
 
-    // Create tracing layer
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    // Build the SDK tracer provider
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_sampler(Sampler::TraceIdRatioBased(config.sampling_rate))
+        .with_id_generator(RandomIdGenerator::default())
+        .with_resource(resource)
+        .build();
 
-    // Create env filter
+    // Register as the global provider so `global::tracer(...)` works anywhere
+    global::set_tracer_provider(provider.clone());
+
+    // Obtain a tracer for the tracing-opentelemetry bridge layer
+    let tracer = provider.tracer("rustcode");
+    let telemetry_layer = layer().with_tracer(tracer);
+
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
-    // Build subscriber
-    let subscriber = tracing_subscriber::registry()
+    let registry = tracing_subscriber::registry()
         .with(env_filter)
         .with(telemetry_layer);
 
-    // Optionally add stdout logging
     if config.enable_stdout {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_target(true)
@@ -184,22 +215,24 @@ pub async fn init_telemetry(config: TelemetryConfig) -> Result<()> {
             .with_level(true)
             .with_filter(EnvFilter::new(&config.log_level));
 
-        subscriber.with(fmt_layer).init();
+        registry.with(fmt_layer).init();
     } else {
-        subscriber.init();
+        registry.init();
     }
 
     tracing::info!(
-        service = %config.service_name,
-        version = %config.service_version,
+        service  = %config.service_name,
+        version  = %config.service_version,
         environment = %config.environment,
         "Telemetry initialized"
     );
 
-    Ok(())
+    Ok(TelemetryGuard {
+        provider: Some(provider),
+    })
 }
 
-/// Initialize basic logging without telemetry
+// Initialize basic stdout logging without any OTLP tracing.
 fn init_basic_logging(config: &TelemetryConfig) {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
@@ -215,38 +248,30 @@ fn init_basic_logging(config: &TelemetryConfig) {
         .init();
 }
 
-/// Build OpenTelemetry resource
+// Build the OpenTelemetry [`Resource`] describing this service.
 fn build_resource(config: &TelemetryConfig) -> Resource {
+    // semconv::resource constants are stable in 0.31
     let mut attributes = vec![
         KeyValue::new(semconv::resource::SERVICE_NAME, config.service_name.clone()),
         KeyValue::new(
             semconv::resource::SERVICE_VERSION,
             config.service_version.clone(),
         ),
-        KeyValue::new(
-            semconv::resource::DEPLOYMENT_ENVIRONMENT,
-            config.environment.clone(),
-        ),
     ];
 
-    // Add custom attributes
     for (key, value) in &config.resource_attributes {
         attributes.push(KeyValue::new(key.clone(), value.clone()));
     }
 
-    Resource::new(attributes)
-}
-
-/// Shutdown telemetry gracefully
-pub async fn shutdown_telemetry() {
-    global::shutdown_tracer_provider();
+    // Resource::new() is pub(crate) in 0.31 — use the builder instead
+    Resource::builder().with_attributes(attributes).build()
 }
 
 // ============================================================================
 // Tracing Helpers
 // ============================================================================
 
-/// Add span attribute helper
+// Record a key/value attribute on the current span.
 #[macro_export]
 macro_rules! span_attr {
     ($key:expr, $value:expr) => {
@@ -254,7 +279,7 @@ macro_rules! span_attr {
     };
 }
 
-/// Create error span event
+// Emit an error event on the current span.
 #[macro_export]
 macro_rules! span_error {
     ($error:expr) => {
@@ -266,11 +291,11 @@ macro_rules! span_error {
 }
 
 // ============================================================================
-// Common Span Attributes
+// Common Span Attribute Constants
 // ============================================================================
 
 pub mod attributes {
-    //! Common span attributes following semantic conventions
+    // Common span attributes following semantic conventions.
 
     pub const HTTP_METHOD: &str = "http.method";
     pub const HTTP_URL: &str = "http.url";
@@ -295,7 +320,7 @@ pub mod attributes {
 }
 
 // ============================================================================
-// Instrumentation Examples
+// Tests
 // ============================================================================
 
 #[cfg(test)]
@@ -308,7 +333,6 @@ mod tests {
             enabled: false,
             ..Default::default()
         };
-
         let result = init_telemetry(config).await;
         assert!(result.is_ok());
     }
@@ -349,5 +373,12 @@ mod tests {
         assert_eq!(config.resource_attributes.len(), 2);
         assert_eq!(config.resource_attributes[0].0, "region");
         assert_eq!(config.resource_attributes[1].1, "prod-1");
+    }
+
+    #[test]
+    fn test_guard_drop_without_provider() {
+        // Should not panic when dropped with no provider (disabled mode)
+        let guard = TelemetryGuard { provider: None };
+        drop(guard);
     }
 }

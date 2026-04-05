@@ -1,51 +1,51 @@
-//! AST-Aware Code Chunker for Cross-Repo Vector Indexing
-//!
-//! This module provides semantic code chunking that splits source files at
-//! meaningful boundaries (functions, structs, impls, traits) rather than
-//! arbitrary line/word counts. Each chunk carries rich metadata for:
-//!
-//! 1. **Content-addressable deduplication** — same function across repos = one embedding
-//! 2. **Cross-repo similarity search** — find near-duplicate patterns via vector similarity
-//! 3. **Smart LLM triage** — only send chunks with static issues to the LLM
-//!
-//! # Architecture
-//!
-//! ```text
-//! Source File → CodeChunker::chunk_file()
-//!              ├─ Language detection
-//!              ├─ Line-by-line boundary detection (fn, struct, impl, trait, mod, etc.)
-//!              ├─ Doc comment + attribute attachment
-//!              ├─ Metadata extraction (visibility, imports, complexity)
-//!              └─ Content hashing for dedup
-//!
-//! Result: Vec<CodeChunk> with full metadata per chunk
-//! ```
-//!
-//! # Cross-Repo Deduplication Strategy
-//!
-//! The key insight: hash the chunk **content**, not the file path. If the same
-//! function appears in multiple repos (or as a copy-paste), it gets one embedding
-//! and one analysis result.
-//!
-//! ```text
-//! Global Index:
-//!   content_hash → (embedding, analysis_result, [(repo_a, path_a), (repo_b, path_b)])
-//! ```
-//!
-//! When scanning repo B and a chunk matches a hash from repo A's cache:
-//! - Skip embedding generation (free)
-//! - Skip LLM analysis (free)
-//! - Link the existing result to the new location
-//!
-//! # Supported Languages
-//!
-//! - **Rust**: `fn`, `struct`, `enum`, `trait`, `impl`, `mod`, `const`, `static`, `type`
-//! - **Kotlin**: `fun`, `class`, `object`, `interface`, `data class`, `sealed class`
-//! - **Python**: `def`, `class`, `async def`
-//! - **Go**: `func`, `type`, `struct`
-//! - **TypeScript/JavaScript**: `function`, `class`, `interface`, `const`, `export`
-//!
-//! For unsupported languages, falls back to paragraph-based chunking.
+// AST-Aware Code Chunker for Cross-Repo Vector Indexing
+//
+// This module provides semantic code chunking that splits source files at
+// meaningful boundaries (functions, structs, impls, traits) rather than
+// arbitrary line/word counts. Each chunk carries rich metadata for:
+//
+// 1. **Content-addressable deduplication** — same function across repos = one embedding
+// 2. **Cross-repo similarity search** — find near-duplicate patterns via vector similarity
+// 3. **Smart LLM triage** — only send chunks with static issues to the LLM
+//
+// # Architecture
+//
+// ```text
+// Source File → CodeChunker::chunk_file()
+//              ├─ Language detection
+//              ├─ Line-by-line boundary detection (fn, struct, impl, trait, mod, etc.)
+//              ├─ Doc comment + attribute attachment
+//              ├─ Metadata extraction (visibility, imports, complexity)
+//              └─ Content hashing for dedup
+//
+// Result: Vec<CodeChunk> with full metadata per chunk
+// ```
+//
+// # Cross-Repo Deduplication Strategy
+//
+// The key insight: hash the chunk **content**, not the file path. If the same
+// function appears in multiple repos (or as a copy-paste), it gets one embedding
+// and one analysis result.
+//
+// ```text
+// Global Index:
+//   content_hash → (embedding, analysis_result, [(repo_a, path_a), (repo_b, path_b)])
+// ```
+//
+// When scanning repo B and a chunk matches a hash from repo A's cache:
+// - Skip embedding generation (free)
+// - Skip LLM analysis (free)
+// - Link the existing result to the new location
+//
+// # Supported Languages
+//
+// - **Rust**: `fn`, `struct`, `enum`, `trait`, `impl`, `mod`, `const`, `static`, `type`
+// - **Kotlin**: `fun`, `class`, `object`, `interface`, `data class`, `sealed class`
+// - **Python**: `def`, `class`, `async def`
+// - **Go**: `func`, `type`, `struct`
+// - **TypeScript/JavaScript**: `function`, `class`, `interface`, `const`, `export`
+//
+// For unsupported languages, falls back to paragraph-based chunking.
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -59,83 +59,83 @@ use crate::static_analysis::FileLanguage;
 // Core Types
 // ============================================================================
 
-/// A semantically meaningful chunk of code with rich metadata.
-///
-/// This is the unit of storage for the cross-repo vector index.
-/// Each chunk maps to one embedding vector and can be independently
-/// analyzed, cached, and deduplicated.
+// A semantically meaningful chunk of code with rich metadata.
+//
+// This is the unit of storage for the cross-repo vector index.
+// Each chunk maps to one embedding vector and can be independently
+// analyzed, cached, and deduplicated.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeChunk {
     // --- Identity ---
-    /// SHA-256 hash of the chunk content (for deduplication)
+    // SHA-256 hash of the chunk content (for deduplication)
     pub content_hash: String,
 
-    /// The repo this chunk was extracted from
+    // The repo this chunk was extracted from
     pub repo_id: String,
 
-    /// Relative file path within the repo
+    // Relative file path within the repo
     pub file_path: String,
 
     // --- Content ---
-    /// The actual chunk content (code text)
+    // The actual chunk content (code text)
     pub content: String,
 
-    /// Word count of the content
+    // Word count of the content
     pub word_count: usize,
 
     // --- Semantic ---
-    /// What kind of code entity this chunk represents
+    // What kind of code entity this chunk represents
     pub entity_type: EntityType,
 
-    /// Name of the entity (e.g., "parse_config", "MyStruct")
+    // Name of the entity (e.g., "parse_config", "MyStruct")
     pub entity_name: String,
 
-    /// Programming language
+    // Programming language
     pub language: FileLanguage,
 
     // --- Position ---
-    /// Start line in the original file (1-based)
+    // Start line in the original file (1-based)
     pub start_line: u32,
 
-    /// End line in the original file (1-based, inclusive)
+    // End line in the original file (1-based, inclusive)
     pub end_line: u32,
 
     // --- Context ---
-    /// Parent module path (e.g., "crate::config", "com.example.app")
+    // Parent module path (e.g., "crate::config", "com.example.app")
     pub parent_module: String,
 
-    /// Import/use statements this chunk depends on
+    // Import/use statements this chunk depends on
     pub imports_used: Vec<String>,
 
-    /// Whether this entity is public/exported
+    // Whether this entity is public/exported
     pub is_public: bool,
 
-    /// Whether a test exists for this entity (heuristic)
+    // Whether a test exists for this entity (heuristic)
     pub has_tests: bool,
 
-    /// Whether this chunk is itself test code
+    // Whether this chunk is itself test code
     pub is_test_code: bool,
 
     // --- Analysis Metadata (filled in later by static_analysis + LLM) ---
-    /// Complexity score from static analysis (0.0 = trivial, 1.0 = very complex)
+    // Complexity score from static analysis (0.0 = trivial, 1.0 = very complex)
     pub complexity_score: f32,
 
-    /// Number of issues found (static + LLM combined)
+    // Number of issues found (static + LLM combined)
     pub issue_count: u32,
 
-    /// Unix timestamp of last analysis
+    // Unix timestamp of last analysis
     pub last_analyzed: i64,
 
     // --- Embedding (filled in later by indexing pipeline) ---
-    /// The embedding vector (e.g., 384-dim from bge-small-en-v1.5)
-    /// Empty until the embedding pipeline runs.
+    // The embedding vector (e.g., 384-dim from bge-small-en-v1.5)
+    // Empty until the embedding pipeline runs.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub vector: Vec<f32>,
 }
 
 impl CodeChunk {
-    /// Create a new CodeChunk with the minimum required fields.
-    /// Analysis metadata and embedding are left as defaults.
+    // Create a new CodeChunk with the minimum required fields.
+    // Analysis metadata and embedding are left as defaults.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         content: String,
@@ -173,37 +173,37 @@ impl CodeChunk {
         }
     }
 
-    /// Set the parent module path
+    // Set the parent module path
     pub fn with_parent_module(mut self, module: impl Into<String>) -> Self {
         self.parent_module = module.into();
         self
     }
 
-    /// Set the imports used by this chunk
+    // Set the imports used by this chunk
     pub fn with_imports(mut self, imports: Vec<String>) -> Self {
         self.imports_used = imports;
         self
     }
 
-    /// Set public visibility
+    // Set public visibility
     pub fn with_public(mut self, is_public: bool) -> Self {
         self.is_public = is_public;
         self
     }
 
-    /// Mark as test code
+    // Mark as test code
     pub fn with_test_code(mut self, is_test: bool) -> Self {
         self.is_test_code = is_test;
         self
     }
 
-    /// Set the complexity score
+    // Set the complexity score
     pub fn with_complexity(mut self, score: f32) -> Self {
         self.complexity_score = score;
         self
     }
 
-    /// A compact one-line identifier for logging
+    // A compact one-line identifier for logging
     pub fn display_id(&self) -> String {
         format!(
             "{}::{}({}) [L{}-{}]",
@@ -212,35 +212,35 @@ impl CodeChunk {
     }
 }
 
-/// The type of code entity a chunk represents
+// The type of code entity a chunk represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
-    /// A function or method definition
+    // A function or method definition
     Function,
-    /// A struct/data class definition
+    // A struct/data class definition
     Struct,
-    /// An enum definition
+    // An enum definition
     Enum,
-    /// A trait/interface/protocol definition
+    // A trait/interface/protocol definition
     Trait,
-    /// An impl block (Rust-specific)
+    // An impl block (Rust-specific)
     ImplBlock,
-    /// A class definition
+    // A class definition
     Class,
-    /// A module declaration
+    // A module declaration
     Module,
-    /// Constants and static variables grouped together
+    // Constants and static variables grouped together
     Constants,
-    /// Type aliases
+    // Type aliases
     TypeAlias,
-    /// Import/use statements grouped together
+    // Import/use statements grouped together
     Imports,
-    /// Test function or test module
+    // Test function or test module
     Test,
-    /// Top-level code that doesn't fit other categories
+    // Top-level code that doesn't fit other categories
     TopLevel,
-    /// Doc comment or documentation block
+    // Doc comment or documentation block
     Documentation,
 }
 
@@ -268,31 +268,31 @@ impl std::fmt::Display for EntityType {
 // Configuration
 // ============================================================================
 
-/// Configuration for code chunking behavior
+// Configuration for code chunking behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkerConfig {
-    /// Maximum chunk size in lines before forcing a split (default: 200)
+    // Maximum chunk size in lines before forcing a split (default: 200)
     pub max_chunk_lines: usize,
 
-    /// Minimum chunk size in lines — smaller chunks get merged with neighbors (default: 3)
+    // Minimum chunk size in lines — smaller chunks get merged with neighbors (default: 3)
     pub min_chunk_lines: usize,
 
-    /// Whether to include doc comments as part of their associated entity (default: true)
+    // Whether to include doc comments as part of their associated entity (default: true)
     pub attach_doc_comments: bool,
 
-    /// Whether to include attributes (#[...]) as part of their associated entity (default: true)
+    // Whether to include attributes (#[...]) as part of their associated entity (default: true)
     pub attach_attributes: bool,
 
-    /// Whether to group consecutive constants into a single chunk (default: true)
+    // Whether to group consecutive constants into a single chunk (default: true)
     pub group_constants: bool,
 
-    /// Whether to group use/import statements into a single chunk (default: true)
+    // Whether to group use/import statements into a single chunk (default: true)
     pub group_imports: bool,
 
-    /// Whether to extract test functions as separate chunks (default: true)
+    // Whether to extract test functions as separate chunks (default: true)
     pub separate_tests: bool,
 
-    /// Maximum number of chunks per file (safety limit, default: 500)
+    // Maximum number of chunks per file (safety limit, default: 500)
     pub max_chunks_per_file: usize,
 }
 
@@ -315,18 +315,18 @@ impl Default for ChunkerConfig {
 // Code Chunker
 // ============================================================================
 
-/// The main code chunker that splits source files into semantic chunks.
+// The main code chunker that splits source files into semantic chunks.
 pub struct CodeChunker {
     config: ChunkerConfig,
-    /// Pre-compiled patterns for Rust boundary detection
+    // Pre-compiled patterns for Rust boundary detection
     rust_patterns: RustPatterns,
-    /// Pre-compiled patterns for Kotlin boundary detection
+    // Pre-compiled patterns for Kotlin boundary detection
     kotlin_patterns: KotlinPatterns,
-    /// Pre-compiled patterns for general boundary detection
+    // Pre-compiled patterns for general boundary detection
     general_patterns: GeneralPatterns,
 }
 
-/// Pre-compiled regex patterns for Rust code boundaries
+// Pre-compiled regex patterns for Rust code boundaries
 struct RustPatterns {
     fn_def: Regex,
     struct_def: Regex,
@@ -343,7 +343,7 @@ struct RustPatterns {
     attribute: Regex,
 }
 
-/// Pre-compiled regex patterns for Kotlin code boundaries
+// Pre-compiled regex patterns for Kotlin code boundaries
 struct KotlinPatterns {
     fun_def: Regex,
     class_def: Regex,
@@ -352,7 +352,7 @@ struct KotlinPatterns {
     import_stmt: Regex,
 }
 
-/// Pre-compiled patterns for general/fallback boundary detection
+// Pre-compiled patterns for general/fallback boundary detection
 struct GeneralPatterns {
     python_def: Regex,
     python_class: Regex,
@@ -381,7 +381,7 @@ impl RustPatterns {
             use_stmt: Regex::new(r"^\s*(?:pub\s+)?use\s+").unwrap(),
             test_fn: Regex::new(r"#\[test\]|#\[tokio::test\]|#\[async_std::test\]").unwrap(),
             test_mod: Regex::new(r"#\[cfg\(test\)\]").unwrap(),
-            doc_comment: Regex::new(r"^\s*(///|//!)").unwrap(),
+            doc_comment: Regex::new(r"^\s*(//|//)").unwrap(),
             attribute: Regex::new(r"^\s*#\[").unwrap(),
         }
     }
@@ -427,7 +427,7 @@ impl GeneralPatterns {
 }
 
 impl CodeChunker {
-    /// Create a new code chunker with default configuration
+    // Create a new code chunker with default configuration
     pub fn new() -> Self {
         Self {
             config: ChunkerConfig::default(),
@@ -437,7 +437,7 @@ impl CodeChunker {
         }
     }
 
-    /// Create a new code chunker with custom configuration
+    // Create a new code chunker with custom configuration
     pub fn with_config(config: ChunkerConfig) -> Self {
         Self {
             config,
@@ -447,10 +447,10 @@ impl CodeChunker {
         }
     }
 
-    /// Chunk a source file into semantic code chunks.
-    ///
-    /// This is the main entry point. It detects the language from the file path,
-    /// then uses language-specific boundary detection to split the file.
+    // Chunk a source file into semantic code chunks.
+    //
+    // This is the main entry point. It detects the language from the file path,
+    // then uses language-specific boundary detection to split the file.
     pub fn chunk_file(&self, file_path: &str, content: &str, repo_id: &str) -> Vec<CodeChunk> {
         let language = FileLanguage::from_extension(file_path);
         let lines: Vec<&str> = content.lines().collect();
@@ -521,7 +521,7 @@ impl CodeChunker {
         chunks
     }
 
-    /// Chunk a file by reading it from disk.
+    // Chunk a file by reading it from disk.
     pub fn chunk_file_from_path(
         &self,
         file_path: &Path,
@@ -532,7 +532,7 @@ impl CodeChunker {
         Ok(self.chunk_file(&rel_path, &content, repo_id))
     }
 
-    /// Get the chunker configuration
+    // Get the chunker configuration
     pub fn config(&self) -> &ChunkerConfig {
         &self.config
     }
@@ -1141,8 +1141,8 @@ impl CodeChunker {
     // Boundary → Chunk Conversion
     // ========================================================================
 
-    /// Convert detected boundaries into actual CodeChunk objects by extracting
-    /// the content between consecutive boundaries and tracking brace depth.
+    // Convert detected boundaries into actual CodeChunk objects by extracting
+    // the content between consecutive boundaries and tracking brace depth.
     fn boundaries_to_chunks(
         &self,
         boundaries: &[Boundary],
@@ -1272,8 +1272,8 @@ impl CodeChunker {
         chunks
     }
 
-    /// Find the end of a brace-delimited block starting at a given line.
-    /// Tracks brace depth to handle nested blocks correctly.
+    // Find the end of a brace-delimited block starting at a given line.
+    // Tracks brace depth to handle nested blocks correctly.
     fn find_block_end(&self, lines: &[&str], start: usize) -> usize {
         let mut depth: i32 = 0;
         let mut found_open = false;
@@ -1309,7 +1309,7 @@ impl CodeChunker {
         lines.len()
     }
 
-    /// Split a large impl block into individual method chunks.
+    // Split a large impl block into individual method chunks.
     fn split_large_impl_block(
         &self,
         block_lines: &[&str],
@@ -1364,7 +1364,7 @@ impl CodeChunker {
                 let mut actual_end = next_start;
                 while actual_end > *start + 1 {
                     let prev = block_lines[actual_end - 1].trim();
-                    if prev.is_empty() || prev.starts_with("///") || prev.starts_with("#[") {
+                    if prev.is_empty() || prev.starts_with("//") || prev.starts_with("#[") {
                         actual_end -= 1;
                     } else {
                         break;
@@ -1398,7 +1398,7 @@ impl CodeChunker {
     // Context Extraction Helpers
     // ========================================================================
 
-    /// Extract all import/use statements from the file
+    // Extract all import/use statements from the file
     fn extract_imports(&self, lines: &[&str], language: FileLanguage) -> Vec<String> {
         let pattern = match language {
             FileLanguage::Rust => &self.rust_patterns.use_stmt,
@@ -1413,8 +1413,8 @@ impl CodeChunker {
             .collect()
     }
 
-    /// Find which imports are relevant to a chunk by checking if the imported
-    /// name appears in the chunk content.
+    // Find which imports are relevant to a chunk by checking if the imported
+    // name appears in the chunk content.
     fn find_relevant_imports(&self, chunk_content: &str, all_imports: &[String]) -> Vec<String> {
         all_imports
             .iter()
@@ -1436,7 +1436,7 @@ impl CodeChunker {
             .collect()
     }
 
-    /// Detect the parent module path from the file structure and content
+    // Detect the parent module path from the file structure and content
     fn detect_parent_module(
         &self,
         file_path: &str,
@@ -1490,7 +1490,7 @@ impl CodeChunker {
         }
     }
 
-    /// Extract test function names (for cross-referencing with entity names)
+    // Extract test function names (for cross-referencing with entity names)
     fn extract_test_names(&self, lines: &[&str], language: FileLanguage) -> Vec<String> {
         let mut names = Vec::new();
 
@@ -1543,7 +1543,7 @@ impl CodeChunker {
         names
     }
 
-    /// Compute a simple complexity score for a chunk (0.0–1.0)
+    // Compute a simple complexity score for a chunk (0.0–1.0)
     fn compute_chunk_complexity(&self, content: &str) -> f32 {
         let lines: Vec<&str> = content.lines().collect();
         let line_count = lines.len().max(1);
@@ -1601,20 +1601,20 @@ impl Default for CodeChunker {
 // Internal Types
 // ============================================================================
 
-/// A detected boundary in source code (internal representation)
+// A detected boundary in source code (internal representation)
 #[derive(Debug)]
 struct Boundary {
-    /// Line index where this entity's chunk starts (including doc comments/attributes)
+    // Line index where this entity's chunk starts (including doc comments/attributes)
     start_line: usize,
-    /// Line index where the actual entity definition starts
+    // Line index where the actual entity definition starts
     entity_start_line: usize,
-    /// What kind of entity this is
+    // What kind of entity this is
     entity_type: EntityType,
-    /// Name of the entity
+    // Name of the entity
     entity_name: String,
-    /// Whether the entity is public
+    // Whether the entity is public
     is_public: bool,
-    /// Whether this is test code
+    // Whether this is test code
     is_test: bool,
 }
 
@@ -1622,31 +1622,31 @@ struct Boundary {
 // Utility Functions
 // ============================================================================
 
-/// Compute a SHA-256 content hash for deduplication
+// Compute a SHA-256 content hash for deduplication
 pub fn compute_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     hex::encode(hasher.finalize())
 }
 
-/// Summary statistics for a batch of chunks
+// Summary statistics for a batch of chunks
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChunkingStats {
-    /// Total chunks produced
+    // Total chunks produced
     pub total_chunks: usize,
-    /// Chunks by entity type
+    // Chunks by entity type
     pub by_type: std::collections::HashMap<String, usize>,
-    /// Number of unique content hashes (for dedup measurement)
+    // Number of unique content hashes (for dedup measurement)
     pub unique_hashes: usize,
-    /// Number of duplicate chunks detected
+    // Number of duplicate chunks detected
     pub duplicate_count: usize,
-    /// Total word count across all chunks
+    // Total word count across all chunks
     pub total_words: usize,
-    /// Average chunk size in lines
+    // Average chunk size in lines
     pub avg_chunk_lines: f64,
 }
 
-/// Compute statistics for a batch of chunks
+// Compute statistics for a batch of chunks
 pub fn compute_chunking_stats(chunks: &[CodeChunk]) -> ChunkingStats {
     use std::collections::{HashMap, HashSet};
 
@@ -1683,25 +1683,25 @@ pub fn compute_chunking_stats(chunks: &[CodeChunk]) -> ChunkingStats {
 // Cross-Repo Deduplication Index
 // ============================================================================
 
-/// An entry in the global deduplication index.
-///
-/// Maps a content hash to its embedding and the set of locations where this
-/// exact code appears across repos.
+// An entry in the global deduplication index.
+//
+// Maps a content hash to its embedding and the set of locations where this
+// exact code appears across repos.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DedupEntry {
-    /// Content hash (SHA-256)
+    // Content hash (SHA-256)
     pub content_hash: String,
-    /// The embedding vector (shared across all locations)
+    // The embedding vector (shared across all locations)
     pub vector: Vec<f32>,
-    /// All locations where this exact code appears
+    // All locations where this exact code appears
     pub locations: Vec<ChunkLocation>,
-    /// Analysis result (shared)
+    // Analysis result (shared)
     pub issue_count: u32,
-    /// Last analyzed timestamp
+    // Last analyzed timestamp
     pub last_analyzed: i64,
 }
 
-/// A specific location where a chunk appears
+// A specific location where a chunk appears
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkLocation {
     pub repo_id: String,
@@ -1711,10 +1711,10 @@ pub struct ChunkLocation {
     pub entity_name: String,
 }
 
-/// A simple in-memory dedup index for tracking cross-repo duplicates.
-///
-/// In production, this would be backed by SQLite/LanceDB, but this provides
-/// the interface and logic for the dedup strategy.
+// A simple in-memory dedup index for tracking cross-repo duplicates.
+//
+// In production, this would be backed by SQLite/LanceDB, but this provides
+// the interface and logic for the dedup strategy.
 #[derive(Debug, Default)]
 pub struct DedupIndex {
     entries: std::collections::HashMap<String, DedupEntry>,
@@ -1727,19 +1727,19 @@ impl DedupIndex {
         }
     }
 
-    /// Check if a content hash already exists in the index
+    // Check if a content hash already exists in the index
     pub fn contains(&self, content_hash: &str) -> bool {
         self.entries.contains_key(content_hash)
     }
 
-    /// Get an existing entry by content hash
+    // Get an existing entry by content hash
     pub fn get(&self, content_hash: &str) -> Option<&DedupEntry> {
         self.entries.get(content_hash)
     }
 
-    /// Insert or update a chunk in the index.
-    /// If the hash already exists, adds the new location. Returns true if this
-    /// was a new entry (needs embedding), false if it was a duplicate (free).
+    // Insert or update a chunk in the index.
+    // If the hash already exists, adds the new location. Returns true if this
+    // was a new entry (needs embedding), false if it was a duplicate (free).
     pub fn insert_or_link(&mut self, chunk: &CodeChunk) -> bool {
         let location = ChunkLocation {
             repo_id: chunk.repo_id.clone(),
@@ -1775,7 +1775,7 @@ impl DedupIndex {
         }
     }
 
-    /// Get all entries that appear in multiple repos (cross-repo duplicates)
+    // Get all entries that appear in multiple repos (cross-repo duplicates)
     pub fn cross_repo_duplicates(&self) -> Vec<&DedupEntry> {
         self.entries
             .values()
@@ -1790,12 +1790,12 @@ impl DedupIndex {
             .collect()
     }
 
-    /// Get total number of unique chunks
+    // Get total number of unique chunks
     pub fn unique_count(&self) -> usize {
         self.entries.len()
     }
 
-    /// Get total number of duplicate links saved
+    // Get total number of duplicate links saved
     pub fn duplicates_saved(&self) -> usize {
         self.entries
             .values()
@@ -1821,13 +1821,13 @@ mod tests {
         let content = r#"use std::fs;
 use std::path::Path;
 
-/// Read a config file from disk
+// Read a config file from disk
 pub fn read_config(path: &str) -> Result<String, std::io::Error> {
     let content = fs::read_to_string(path)?;
     Ok(content)
 }
 
-/// Write data to a file
+// Write data to a file
 fn write_data(path: &str, data: &str) -> Result<(), std::io::Error> {
     fs::write(path, data)?;
     Ok(())
@@ -1856,7 +1856,7 @@ fn write_data(path: &str, data: &str) -> Result<(), std::io::Error> {
 
     #[test]
     fn test_rust_struct_and_impl() {
-        let content = r#"/// A user in the system
+        let content = r#"// A user in the system
 pub struct User {
     pub name: String,
     pub email: String,
@@ -2146,4 +2146,60 @@ pub fn process(items: &[Item]) -> Result<Vec<Output>, Error> {
             "main"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Conversion helpers: CodeChunk → rustcode-db record types
+//
+// These live here (not in rustcode-db/src/db/chunks.rs) because CodeChunk is
+// defined in this file. Putting them in rustcode-db would require it to
+// depend on the root crate — a circular dependency.
+// ---------------------------------------------------------------------------
+
+use crate::db::chunks::{ChunkLocationRecord, ChunkRecord};
+
+// Convert a [`CodeChunk`] into a [`ChunkRecord`] for persistence.
+pub fn chunk_to_record(chunk: &CodeChunk) -> ChunkRecord {
+    ChunkRecord {
+        content_hash: chunk.content_hash.clone(),
+        entity_type: chunk.entity_type.to_string(),
+        entity_name: chunk.entity_name.clone(),
+        language: chunk.language.to_string(),
+        word_count: chunk.word_count as i64,
+        complexity_score: chunk.complexity_score as i64,
+        is_public: chunk.is_public,
+        has_tests: chunk.has_tests,
+        is_test_code: chunk.is_test_code,
+        issue_count: chunk.issue_count as i64,
+        embedding: if chunk.vector.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&chunk.vector).unwrap_or_default())
+        },
+    }
+}
+
+// Convert a [`CodeChunk`] into a [`ChunkLocationRecord`].
+pub fn chunk_to_location(chunk: &CodeChunk) -> ChunkLocationRecord {
+    ChunkLocationRecord {
+        content_hash: chunk.content_hash.clone(),
+        repo_id: chunk.repo_id.clone(),
+        file_path: chunk.file_path.clone(),
+        start_line: chunk.start_line as i64,
+        end_line: chunk.end_line as i64,
+        entity_name: chunk.entity_name.clone(),
+    }
+}
+
+// Convert a batch of [`CodeChunk`]s into paired record + location vecs.
+pub fn chunks_to_records(
+    chunks: &[CodeChunk],
+) -> (Vec<ChunkRecord>, Vec<ChunkLocationRecord>) {
+    let mut records = Vec::with_capacity(chunks.len());
+    let mut locations = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        records.push(chunk_to_record(chunk));
+        locations.push(chunk_to_location(chunk));
+    }
+    (records, locations)
 }

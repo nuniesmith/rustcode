@@ -282,9 +282,9 @@ fn command_exists(command: &str) -> bool {
         .is_some_and(|paths| env::split_paths(&paths).any(|path| path.join(command).exists()))
 }
 
-/// Check whether `unshare --user` actually works on this system.
-/// On some CI environments (e.g. GitHub Actions), the binary exists but
-/// user namespaces are restricted, causing silent failures.
+// Check whether `unshare --user` actually works on this system.
+// On some CI environments (e.g. GitHub Actions), the binary exists but
+// user namespaces are restricted, causing silent failures.
 fn unshare_user_namespace_works() -> bool {
     use std::sync::OnceLock;
     static RESULT: OnceLock<bool> = OnceLock::new();

@@ -1,40 +1,40 @@
-//! Parser module for language-specific code analysis
-//!
-//! This module provides Rust-aware parsing for static analysis,
-//! using regex patterns to extract function signatures, types,
-//! imports, and calculate complexity metrics.
+// Parser module for language-specific code analysis
+//
+// This module provides Rust-aware parsing for static analysis,
+// using regex patterns to extract function signatures, types,
+// imports, and calculate complexity metrics.
 
 use crate::error::Result;
 use crate::types::Category;
 use regex::Regex;
 use std::path::Path;
 
-/// Code parser for Rust source files
+// Code parser for Rust source files
 pub struct Parser {
-    /// Regex for function signatures
+    // Regex for function signatures
     fn_regex: Regex,
-    /// Regex for async function signatures
+    // Regex for async function signatures
     async_fn_regex: Regex,
-    /// Regex for struct definitions
+    // Regex for struct definitions
     struct_regex: Regex,
-    /// Regex for enum definitions
+    // Regex for enum definitions
     enum_regex: Regex,
-    /// Regex for trait definitions
+    // Regex for trait definitions
     trait_regex: Regex,
-    /// Regex for impl blocks (reserved for future use)
+    // Regex for impl blocks (reserved for future use)
     #[allow(dead_code)]
     impl_regex: Regex,
-    /// Regex for use statements
+    // Regex for use statements
     use_regex: Regex,
-    /// Regex for pub use (re-exports)
+    // Regex for pub use (re-exports)
     pub_use_regex: Regex,
-    /// Regex for mod declarations (reserved for future use)
+    // Regex for mod declarations (reserved for future use)
     #[allow(dead_code)]
     mod_regex: Regex,
 }
 
 impl Parser {
-    /// Create a new parser
+    // Create a new parser
     pub fn new() -> Result<Self> {
         Ok(Self {
             // Match: pub fn name(...) or fn name(...)
@@ -93,7 +93,7 @@ impl Parser {
         })
     }
 
-    /// Parse a file and extract symbols
+    // Parse a file and extract symbols
     pub fn parse_file(
         &self,
         path: &Path,
@@ -121,7 +121,7 @@ impl Parser {
         })
     }
 
-    /// Extract function signatures
+    // Extract function signatures
     pub fn extract_functions(
         &self,
         content: &str,
@@ -174,7 +174,7 @@ impl Parser {
         Ok(functions)
     }
 
-    /// Count function parameters
+    // Count function parameters
     fn count_parameters(&self, params: &str) -> usize {
         if params.trim().is_empty() {
             return 0;
@@ -196,7 +196,7 @@ impl Parser {
         }
     }
 
-    /// Extract type definitions (structs, enums, traits)
+    // Extract type definitions (structs, enums, traits)
     fn extract_types(&self, content: &str) -> Result<Vec<TypeInfo>> {
         let mut types = Vec::new();
 
@@ -254,7 +254,7 @@ impl Parser {
         Ok(types)
     }
 
-    /// Extract import statements
+    // Extract import statements
     fn extract_imports(&self, content: &str) -> Vec<String> {
         self.use_regex
             .captures_iter(content)
@@ -262,7 +262,7 @@ impl Parser {
             .collect()
     }
 
-    /// Extract re-exports (pub use statements)
+    // Extract re-exports (pub use statements)
     fn extract_exports(&self, content: &str) -> Vec<String> {
         self.pub_use_regex
             .captures_iter(content)
@@ -270,7 +270,7 @@ impl Parser {
             .collect()
     }
 
-    /// Detect unused code patterns
+    // Detect unused code patterns
     pub fn detect_unused(&self, content: &str, _category: Category) -> Result<Vec<UnusedCode>> {
         let mut unused = Vec::new();
 
@@ -311,7 +311,7 @@ impl Parser {
         Ok(unused)
     }
 
-    /// Calculate complexity metrics
+    // Calculate complexity metrics
     pub fn calculate_complexity(
         &self,
         content: &str,
@@ -348,7 +348,7 @@ impl Parser {
         })
     }
 
-    /// Estimate cyclomatic complexity
+    // Estimate cyclomatic complexity
     fn estimate_cyclomatic_complexity(&self, content: &str) -> usize {
         let mut complexity = 1; // Base complexity
 
@@ -377,7 +377,7 @@ impl Parser {
         complexity
     }
 
-    /// Estimate cognitive complexity
+    // Estimate cognitive complexity
     fn estimate_cognitive_complexity(&self, content: &str) -> usize {
         let mut complexity = 0;
         let mut nesting_level = 0;
@@ -426,35 +426,35 @@ impl Default for Parser {
     }
 }
 
-/// Parse result containing AST information
+// Parse result containing AST information
 #[derive(Debug, Clone, Default)]
 pub struct ParseResult {
-    /// Functions/methods found
+    // Functions/methods found
     pub functions: Vec<FunctionInfo>,
-    /// Types/classes found
+    // Types/classes found
     pub types: Vec<TypeInfo>,
-    /// Imports found
+    // Imports found
     pub imports: Vec<String>,
-    /// Exports found
+    // Exports found
     pub exports: Vec<String>,
 }
 
-/// Function information
+// Function information
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
-    /// Function name
+    // Function name
     pub name: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Parameter count
+    // Parameter count
     pub param_count: usize,
-    /// Whether it's public/exported
+    // Whether it's public/exported
     pub is_public: bool,
-    /// Whether it's async
+    // Whether it's async
     pub is_async: bool,
 }
 
-/// Type kind
+// Type kind
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Struct,
@@ -462,42 +462,42 @@ pub enum TypeKind {
     Trait,
 }
 
-/// Type information
+// Type information
 #[derive(Debug, Clone)]
 pub struct TypeInfo {
-    /// Type name
+    // Type name
     pub name: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Whether it's public/exported
+    // Whether it's public/exported
     pub is_public: bool,
-    /// Type kind (struct, enum, trait)
+    // Type kind (struct, enum, trait)
     pub kind: TypeKind,
 }
 
-/// Unused code detection result
+// Unused code detection result
 #[derive(Debug, Clone)]
 pub struct UnusedCode {
-    /// Code element type
+    // Code element type
     pub element_type: String,
-    /// Element name
+    // Element name
     pub name: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Reason why it appears unused
+    // Reason why it appears unused
     pub reason: String,
 }
 
-/// Complexity metrics
+// Complexity metrics
 #[derive(Debug, Clone, Default)]
 pub struct ComplexityMetrics {
-    /// Cyclomatic complexity
+    // Cyclomatic complexity
     pub cyclomatic: usize,
-    /// Cognitive complexity
+    // Cognitive complexity
     pub cognitive: usize,
-    /// Lines of code
+    // Lines of code
     pub loc: usize,
-    /// Logical lines of code
+    // Logical lines of code
     pub lloc: usize,
 }
 

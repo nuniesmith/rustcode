@@ -27,15 +27,15 @@ pub struct Cli {
 
 #[derive(Debug, Clone, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Read upstream TS sources and print extracted counts
+    // Read upstream TS sources and print extracted counts
     DumpManifests,
-    /// Print the current bootstrap phase skeleton
+    // Print the current bootstrap phase skeleton
     BootstrapPlan,
-    /// Start the OAuth login flow
+    // Start the OAuth login flow
     Login,
-    /// Clear saved OAuth credentials
+    // Clear saved OAuth credentials
     Logout,
-    /// Run a non-interactive prompt and exit
+    // Run a non-interactive prompt and exit
     Prompt { prompt: Vec<String> },
 }
 

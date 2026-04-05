@@ -1,6 +1,6 @@
-//! CLI module
-//!
-//! Provides command-line interface functionality for queue, scan, and report operations.
+// CLI module
+//
+// Provides command-line interface functionality for queue, scan, and report operations.
 
 pub mod github_commands;
 pub mod queue_commands;

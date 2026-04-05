@@ -1,35 +1,35 @@
-//! # Cache Migration Utility
-//!
-//! Provides utilities for migrating cache data between different storage backends.
-//!
-//! ## Features
-//!
-//! - Migrate from JSON file-based cache to SQLite
-//! - Validate migration completeness
-//! - Progress tracking and reporting
-//! - Safe migration with rollback support
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::cache_migrate::CacheMigrator;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let migrator = CacheMigrator::new(
-//!         "~/.rustcode/cache/repos",  // JSON source
-//!         "~/.rustcode/cache.db"       // SQLite destination
-//!     ).await?;
-//!
-//!     // Run migration with progress callback
-//!     let result = migrator.migrate(|progress| {
-//!         println!("Progress: {}/{}", progress.migrated, progress.total);
-//!     }).await?;
-//!
-//!     println!("Migrated {} entries", result.total_migrated);
-//!     Ok(())
-//! }
-//! ```
+// # Cache Migration Utility
+//
+// Provides utilities for migrating cache data between different storage backends.
+//
+// ## Features
+//
+// - Migrate from JSON file-based cache to SQLite
+// - Validate migration completeness
+// - Progress tracking and reporting
+// - Safe migration with rollback support
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::cache_migrate::CacheMigrator;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let migrator = CacheMigrator::new(
+//         "~/.rustcode/cache/repos",  // JSON source
+//         "~/.rustcode/cache.db"       // SQLite destination
+//     ).await?;
+//
+//     // Run migration with progress callback
+//     let result = migrator.migrate(|progress| {
+//         println!("Progress: {}/{}", progress.migrated, progress.total);
+//     }).await?;
+//
+//     println!("Migrated {} entries", result.total_migrated);
+//     Ok(())
+// }
+// ```
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -39,50 +39,50 @@ use tracing::{debug, info, warn};
 use crate::repo_cache::{CacheType, RepoCacheEntry};
 use crate::repo_cache_sql::RepoCacheSql;
 
-/// Migration progress information
+// Migration progress information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationProgress {
-    /// Total entries to migrate
+    // Total entries to migrate
     pub total: usize,
-    /// Entries migrated so far
+    // Entries migrated so far
     pub migrated: usize,
-    /// Entries failed
+    // Entries failed
     pub failed: usize,
-    /// Current file being migrated
+    // Current file being migrated
     pub current_file: String,
 }
 
-/// Migration result summary
+// Migration result summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationResult {
-    /// Total entries found in source
+    // Total entries found in source
     pub total_entries: usize,
-    /// Successfully migrated entries
+    // Successfully migrated entries
     pub total_migrated: usize,
-    /// Failed migrations
+    // Failed migrations
     pub total_failed: usize,
-    /// Size of source cache (bytes)
+    // Size of source cache (bytes)
     pub source_size: u64,
-    /// Size of destination cache (bytes)
+    // Size of destination cache (bytes)
     pub destination_size: u64,
-    /// Space savings (bytes)
+    // Space savings (bytes)
     pub space_saved: u64,
-    /// Failed entries with reasons
+    // Failed entries with reasons
     pub failures: Vec<MigrationFailure>,
 }
 
-/// Information about a failed migration
+// Information about a failed migration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationFailure {
-    /// File path that failed
+    // File path that failed
     pub file_path: String,
-    /// Cache type
+    // Cache type
     pub cache_type: String,
-    /// Error message
+    // Error message
     pub error: String,
 }
 
-/// Cache migration orchestrator
+// Cache migration orchestrator
 pub struct CacheMigrator {
     source_path: PathBuf,
     destination_path: PathBuf,
@@ -90,7 +90,7 @@ pub struct CacheMigrator {
 }
 
 impl CacheMigrator {
-    /// Create a new cache migrator
+    // Create a new cache migrator
     pub async fn new(
         source_path: impl AsRef<Path>,
         destination_path: impl AsRef<Path>,
@@ -108,7 +108,7 @@ impl CacheMigrator {
         })
     }
 
-    /// Run the migration
+    // Run the migration
     pub async fn migrate<F>(&self, mut progress_callback: F) -> Result<MigrationResult>
     where
         F: FnMut(MigrationProgress),
@@ -186,7 +186,7 @@ impl CacheMigrator {
         Ok(result)
     }
 
-    /// Collect all JSON cache entries from the source
+    // Collect all JSON cache entries from the source
     fn collect_json_entries(&self) -> Result<Vec<(String, CacheType, RepoCacheEntry)>> {
         let mut entries = Vec::new();
 
@@ -240,7 +240,7 @@ impl CacheMigrator {
         Ok(entries)
     }
 
-    /// Recursively collect entries from a directory
+    // Recursively collect entries from a directory
     fn collect_entries_from_dir(
         &self,
         dir: &Path,
@@ -276,7 +276,7 @@ impl CacheMigrator {
         Ok(())
     }
 
-    /// Migrate a single entry to SQLite
+    // Migrate a single entry to SQLite
     async fn migrate_entry(
         &self,
         repo_path: &str,
@@ -332,7 +332,7 @@ impl CacheMigrator {
         Ok(())
     }
 
-    /// Calculate total size of source cache
+    // Calculate total size of source cache
     fn calculate_source_size(&self) -> Result<u64> {
         let mut total_size = 0u64;
 
@@ -350,13 +350,13 @@ impl CacheMigrator {
         Ok(total_size)
     }
 
-    /// Calculate size of SQLite database
+    // Calculate size of SQLite database
     async fn calculate_destination_size(&self) -> Result<u64> {
         let metadata = std::fs::metadata(&self.destination_path)?;
         Ok(metadata.len())
     }
 
-    /// Verify migration by comparing counts
+    // Verify migration by comparing counts
     pub async fn verify(&self) -> Result<bool> {
         let json_entries = self.collect_json_entries()?;
         let stats = self.sql_cache.stats().await?;
@@ -368,7 +368,7 @@ impl CacheMigrator {
         Ok(json_entries.len() == stats.total_entries as usize)
     }
 
-    /// Create a backup of the source cache
+    // Create a backup of the source cache
     pub fn backup(&self, backup_path: impl AsRef<Path>) -> Result<()> {
         let backup_path = backup_path.as_ref();
 
@@ -386,7 +386,7 @@ impl CacheMigrator {
         Ok(())
     }
 
-    /// Recursively copy directory
+    // Recursively copy directory
     fn copy_dir_recursive(&self, src: &Path, dst: &Path) -> Result<()> {
         std::fs::create_dir_all(dst)?;
 

@@ -1,33 +1,33 @@
-//! # Refactoring Assistant Module
-//!
-//! AI-powered code smell detection and refactoring suggestions.
-//!
-//! ## Features
-//!
-//! - Detect code smells and anti-patterns
-//! - Suggest specific refactoring strategies
-//! - Generate refactoring plans
-//! - Extract function/module suggestions
-//! - Complexity reduction recommendations
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::refactor_assistant::RefactorAssistant;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustcode.db").await?;
-//!     let assistant = RefactorAssistant::new(db).await?;
-//!
-//!     // Analyze file for refactoring opportunities
-//!     let analysis = assistant.analyze_file("src/legacy.rs").await?;
-//!     println!("{}", analysis.format_markdown());
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Refactoring Assistant Module
+//
+// AI-powered code smell detection and refactoring suggestions.
+//
+// ## Features
+//
+// - Detect code smells and anti-patterns
+// - Suggest specific refactoring strategies
+// - Generate refactoring plans
+// - Extract function/module suggestions
+// - Complexity reduction recommendations
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::refactor_assistant::RefactorAssistant;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("data/rustcode.db").await?;
+//     let assistant = RefactorAssistant::new(db).await?;
+//
+//     // Analyze file for refactoring opportunities
+//     let analysis = assistant.analyze_file("src/legacy.rs").await?;
+//     println!("{}", analysis.format_markdown());
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::grok_client::GrokClient;
@@ -35,259 +35,259 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Refactoring assistant with AI-powered analysis
+// Refactoring assistant with AI-powered analysis
 pub struct RefactorAssistant {
     grok_client: GrokClient,
 }
 
-/// Complete refactoring analysis for a file or directory
+// Complete refactoring analysis for a file or directory
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefactoringAnalysis {
-    /// File or directory analyzed
+    // File or directory analyzed
     pub path: String,
-    /// Code smells detected
+    // Code smells detected
     pub code_smells: Vec<CodeSmell>,
-    /// Refactoring suggestions
+    // Refactoring suggestions
     pub suggestions: Vec<RefactoringSuggestion>,
-    /// Overall complexity score (0-100, lower is better)
+    // Overall complexity score (0-100, lower is better)
     pub complexity_score: f64,
-    /// Maintainability score (0-100, higher is better)
+    // Maintainability score (0-100, higher is better)
     pub maintainability_score: f64,
-    /// Priority recommendations
+    // Priority recommendations
     pub priorities: Vec<String>,
-    /// Estimated effort
+    // Estimated effort
     pub estimated_effort: EffortEstimate,
-    /// Tokens used in the analysis
+    // Tokens used in the analysis
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens_used: Option<usize>,
 }
 
-/// Detected code smell
+// Detected code smell
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeSmell {
-    /// Smell type
+    // Smell type
     pub smell_type: CodeSmellType,
-    /// Severity
+    // Severity
     pub severity: SmellSeverity,
-    /// Description of the issue
+    // Description of the issue
     pub description: String,
-    /// Location in code
+    // Location in code
     pub location: Option<CodeLocation>,
-    /// Impact on code quality
+    // Impact on code quality
     pub impact: String,
 }
 
-/// Code smell types
+// Code smell types
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CodeSmellType {
-    /// Function too long
+    // Function too long
     LongFunction,
-    /// Too many parameters
+    // Too many parameters
     LongParameterList,
-    /// Duplicated code
+    // Duplicated code
     DuplicatedCode,
-    /// Large class/module
+    // Large class/module
     LargeModule,
-    /// Feature envy (using another module's data heavily)
+    // Feature envy (using another module's data heavily)
     FeatureEnvy,
-    /// Primitive obsession (should use domain types)
+    // Primitive obsession (should use domain types)
     PrimitiveObsession,
-    /// Deep nesting
+    // Deep nesting
     DeepNesting,
-    /// Complex conditionals
+    // Complex conditionals
     ComplexConditional,
-    /// Shotgun surgery (change requires many small edits)
+    // Shotgun surgery (change requires many small edits)
     ShotgunSurgery,
-    /// Divergent change (module changes for many reasons)
+    // Divergent change (module changes for many reasons)
     DivergentChange,
-    /// Dead code
+    // Dead code
     DeadCode,
-    /// Magic numbers
+    // Magic numbers
     MagicNumbers,
-    /// God object (does too much)
+    // God object (does too much)
     GodObject,
-    /// Tight coupling
+    // Tight coupling
     TightCoupling,
-    /// Missing error handling
+    // Missing error handling
     MissingErrorHandling,
-    /// Overuse of unwrap/expect
+    // Overuse of unwrap/expect
     UnsafeUnwrapping,
 }
 
-/// Code smell severity
+// Code smell severity
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SmellSeverity {
-    /// Critical issue affecting correctness
+    // Critical issue affecting correctness
     Critical,
-    /// High priority refactoring needed
+    // High priority refactoring needed
     High,
-    /// Medium priority
+    // Medium priority
     Medium,
-    /// Low priority
+    // Low priority
     Low,
 }
 
-/// Location in code
+// Location in code
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeLocation {
-    /// File path
+    // File path
     pub file: String,
-    /// Start line
+    // Start line
     pub line_start: Option<usize>,
-    /// End line
+    // End line
     pub line_end: Option<usize>,
-    /// Function or item name
+    // Function or item name
     pub item_name: Option<String>,
 }
 
-/// Refactoring suggestion
+// Refactoring suggestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefactoringSuggestion {
-    /// Suggestion type
+    // Suggestion type
     pub refactoring_type: RefactoringType,
-    /// Title/summary
+    // Title/summary
     pub title: String,
-    /// Detailed description
+    // Detailed description
     pub description: String,
-    /// Benefits of applying this refactoring
+    // Benefits of applying this refactoring
     pub benefits: Vec<String>,
-    /// Step-by-step instructions
+    // Step-by-step instructions
     pub steps: Vec<String>,
-    /// Code example (before/after)
+    // Code example (before/after)
     pub example: Option<RefactoringExample>,
-    /// Estimated effort
+    // Estimated effort
     pub effort: EffortEstimate,
-    /// Priority
+    // Priority
     pub priority: RefactoringPriority,
 }
 
-/// Refactoring types
+// Refactoring types
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RefactoringType {
-    /// Extract function from code block
+    // Extract function from code block
     ExtractFunction,
-    /// Extract module from large file
+    // Extract module from large file
     ExtractModule,
-    /// Rename for clarity
+    // Rename for clarity
     Rename,
-    /// Inline unnecessary abstraction
+    // Inline unnecessary abstraction
     Inline,
-    /// Replace conditional with polymorphism
+    // Replace conditional with polymorphism
     ReplaceConditional,
-    /// Introduce parameter object
+    // Introduce parameter object
     IntroduceParameterObject,
-    /// Replace magic number with constant
+    // Replace magic number with constant
     ReplaceMagicNumber,
-    /// Decompose conditional
+    // Decompose conditional
     DecomposeConditional,
-    /// Consolidate duplicate code
+    // Consolidate duplicate code
     ConsolidateDuplicate,
-    /// Simplify complex expression
+    // Simplify complex expression
     SimplifyExpression,
-    /// Remove dead code
+    // Remove dead code
     RemoveDeadCode,
-    /// Improve error handling
+    // Improve error handling
     ImproveErrorHandling,
-    /// Reduce coupling
+    // Reduce coupling
     ReduceCoupling,
-    /// Split large function
+    // Split large function
     SplitFunction,
 }
 
-/// Refactoring priority
+// Refactoring priority
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RefactoringPriority {
-    /// Must do (correctness/security)
+    // Must do (correctness/security)
     Critical,
-    /// Should do soon (maintainability)
+    // Should do soon (maintainability)
     High,
-    /// Nice to have (code quality)
+    // Nice to have (code quality)
     Medium,
-    /// Optional (minor improvement)
+    // Optional (minor improvement)
     Low,
 }
 
-/// Effort estimate
+// Effort estimate
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum EffortEstimate {
-    /// Less than 30 minutes
+    // Less than 30 minutes
     Trivial,
-    /// 30 minutes to 2 hours
+    // 30 minutes to 2 hours
     Small,
-    /// 2 hours to 1 day
+    // 2 hours to 1 day
     Medium,
-    /// 1-3 days
+    // 1-3 days
     Large,
-    /// More than 3 days
+    // More than 3 days
     VeryLarge,
 }
 
-/// Refactoring example (before/after)
+// Refactoring example (before/after)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefactoringExample {
-    /// Code before refactoring
+    // Code before refactoring
     pub before: String,
-    /// Code after refactoring
+    // Code after refactoring
     pub after: String,
-    /// Explanation of changes
+    // Explanation of changes
     pub explanation: String,
 }
 
-/// Refactoring plan for multiple files
+// Refactoring plan for multiple files
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefactoringPlan {
-    /// Plan title
+    // Plan title
     pub title: String,
-    /// Overall goal
+    // Overall goal
     pub goal: String,
-    /// Files to refactor
+    // Files to refactor
     pub files: Vec<String>,
-    /// Ordered steps
+    // Ordered steps
     pub steps: Vec<PlanStep>,
-    /// Total estimated effort
+    // Total estimated effort
     pub total_effort: EffortEstimate,
-    /// Expected benefits
+    // Expected benefits
     pub benefits: Vec<String>,
-    /// Risks and mitigation
+    // Risks and mitigation
     pub risks: Vec<Risk>,
 }
 
-/// Step in refactoring plan
+// Step in refactoring plan
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanStep {
-    /// Step number
+    // Step number
     pub step_number: usize,
-    /// Step description
+    // Step description
     pub description: String,
-    /// Files affected
+    // Files affected
     pub affected_files: Vec<String>,
-    /// Effort estimate
+    // Effort estimate
     pub effort: EffortEstimate,
-    /// Dependencies (previous steps required)
+    // Dependencies (previous steps required)
     pub dependencies: Vec<usize>,
-    /// Validation criteria
+    // Validation criteria
     pub validation: Vec<String>,
 }
 
-/// Risk in refactoring plan
+// Risk in refactoring plan
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Risk {
-    /// Risk description
+    // Risk description
     pub description: String,
-    /// Mitigation strategy
+    // Mitigation strategy
     pub mitigation: String,
-    /// Severity
+    // Severity
     pub severity: SmellSeverity,
 }
 
 impl RefactorAssistant {
-    /// Create a new refactoring assistant
+    // Create a new refactoring assistant
     pub async fn new(db: Database) -> Result<Self> {
         let grok_client = GrokClient::from_env(db).await?;
         Ok(Self { grok_client })
     }
 
-    /// Analyze a file for refactoring opportunities
+    // Analyze a file for refactoring opportunities
     pub async fn analyze_file(&self, file_path: impl AsRef<Path>) -> Result<RefactoringAnalysis> {
         let file_path = file_path.as_ref();
         let content = std::fs::read_to_string(file_path)
@@ -297,7 +297,7 @@ impl RefactorAssistant {
             .await
     }
 
-    /// Analyze directory for refactoring opportunities
+    // Analyze directory for refactoring opportunities
     pub async fn analyze_directory(
         &self,
         dir_path: impl AsRef<Path>,
@@ -322,7 +322,7 @@ impl RefactorAssistant {
         Ok(analyses)
     }
 
-    /// Analyze code content
+    // Analyze code content
     async fn analyze_content(
         &self,
         file_path: String,
@@ -404,7 +404,7 @@ For each smell, provide:
         Ok(analysis)
     }
 
-    /// Generate a refactoring plan for multiple files
+    // Generate a refactoring plan for multiple files
     pub async fn generate_plan(
         &self,
         path: impl AsRef<Path>,
@@ -482,7 +482,7 @@ Make the plan:
         self.parse_plan_response(&response, goal)
     }
 
-    /// Suggest extract function refactoring
+    // Suggest extract function refactoring
     pub async fn suggest_extract_function(
         &self,
         file_path: impl AsRef<Path>,
@@ -536,7 +536,7 @@ Suggest:
         self.parse_suggestion_response(&response)
     }
 
-    /// Parse refactoring analysis response
+    // Parse refactoring analysis response
     fn parse_refactoring_response(
         &self,
         response: &str,
@@ -634,7 +634,7 @@ Suggest:
         }
     }
 
-    /// Parse suggestion response
+    // Parse suggestion response
     fn parse_suggestion_response(&self, response: &str) -> Result<RefactoringSuggestion> {
         let json_str = self.extract_json(response);
 
@@ -653,7 +653,7 @@ Suggest:
         }
     }
 
-    /// Parse suggestion from JSON value
+    // Parse suggestion from JSON value
     fn parse_suggestion_from_json(
         &self,
         json: &serde_json::Value,
@@ -692,7 +692,7 @@ Suggest:
         })
     }
 
-    /// Parse plan response
+    // Parse plan response
     fn parse_plan_response(&self, response: &str, goal: &str) -> Result<RefactoringPlan> {
         let json_str = self.extract_json(response);
 
@@ -789,7 +789,7 @@ Suggest:
         }
     }
 
-    /// Extract JSON from response
+    // Extract JSON from response
     fn extract_json(&self, response: &str) -> String {
         if let Some(start) = response.find("```json") {
             if let Some(end) = response[start..].find("```\n") {
@@ -807,7 +807,7 @@ Suggest:
         response.to_string()
     }
 
-    /// Check if file is a source file
+    // Check if file is a source file
     fn is_source_file(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             matches!(
@@ -819,7 +819,7 @@ Suggest:
         }
     }
 
-    /// Parse code smell type
+    // Parse code smell type
     fn parse_smell_type(&self, s: &str) -> CodeSmellType {
         match s.to_lowercase().replace("_", "").as_str() {
             "longfunction" => CodeSmellType::LongFunction,
@@ -842,7 +842,7 @@ Suggest:
         }
     }
 
-    /// Parse refactoring type
+    // Parse refactoring type
     fn parse_refactoring_type(&self, s: &str) -> RefactoringType {
         match s.to_lowercase().replace("_", "").as_str() {
             "extractfunction" => RefactoringType::ExtractFunction,
@@ -863,7 +863,7 @@ Suggest:
         }
     }
 
-    /// Parse severity
+    // Parse severity
     fn parse_severity(&self, s: &str) -> SmellSeverity {
         match s.to_lowercase().as_str() {
             "critical" => SmellSeverity::Critical,
@@ -874,7 +874,7 @@ Suggest:
         }
     }
 
-    /// Parse effort
+    // Parse effort
     fn parse_effort(&self, s: &str) -> EffortEstimate {
         match s.to_lowercase().replace("_", "").as_str() {
             "trivial" => EffortEstimate::Trivial,
@@ -886,7 +886,7 @@ Suggest:
         }
     }
 
-    /// Parse priority
+    // Parse priority
     fn parse_priority(&self, s: &str) -> RefactoringPriority {
         match s.to_lowercase().as_str() {
             "critical" => RefactoringPriority::Critical,
@@ -899,7 +899,7 @@ Suggest:
 }
 
 impl RefactoringAnalysis {
-    /// Format analysis as markdown
+    // Format analysis as markdown
     pub fn format_markdown(&self) -> String {
         let mut output = String::new();
 
@@ -1030,7 +1030,7 @@ impl RefactoringAnalysis {
 }
 
 impl RefactoringPlan {
-    /// Format plan as markdown
+    // Format plan as markdown
     pub fn format_markdown(&self) -> String {
         let mut output = String::new();
 

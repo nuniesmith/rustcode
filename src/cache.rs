@@ -1,11 +1,11 @@
-//! Cache module for storing and retrieving LLM audit results
-//!
-//! This module provides intelligent caching of LLM analysis results to:
-//! - Avoid re-analyzing unchanged files
-//! - Track file changes via content hashing
-//! - Store analysis results with timestamps
-//! - Enable incremental audits
-//! - Track API usage and costs
+// Cache module for storing and retrieving LLM audit results
+//
+// This module provides intelligent caching of LLM analysis results to:
+// - Avoid re-analyzing unchanged files
+// - Track file changes via content hashing
+// - Store analysis results with timestamps
+// - Enable incremental audits
+// - Track API usage and costs
 
 use crate::error::{AuditError, Result};
 use serde::{Deserialize, Serialize};
@@ -15,59 +15,59 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-/// Directory name for audit cache
+// Directory name for audit cache
 pub const CACHE_DIR: &str = ".audit-cache";
 
-/// Cache entry for a single file's LLM analysis
+// Cache entry for a single file's LLM analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
-    /// File path (relative to project root)
+    // File path (relative to project root)
     pub file_path: String,
 
-    /// SHA-256 hash of file content when analyzed
+    // SHA-256 hash of file content when analyzed
     pub content_hash: String,
 
-    /// Timestamp when analysis was performed
+    // Timestamp when analysis was performed
     pub analyzed_at: String,
 
-    /// LLM provider used
+    // LLM provider used
     pub provider: String,
 
-    /// Model used
+    // Model used
     pub model: String,
 
-    /// Analysis result (JSON)
+    // Analysis result (JSON)
     pub analysis: serde_json::Value,
 
-    /// Token count (if available)
+    // Token count (if available)
     pub tokens_used: Option<usize>,
 
-    /// File size in bytes
+    // File size in bytes
     pub file_size: usize,
 }
 
-/// Statistics about cache usage
+// Statistics about cache usage
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStats {
-    /// Total files in cache
+    // Total files in cache
     pub total_entries: usize,
 
-    /// Total API calls saved by cache hits
+    // Total API calls saved by cache hits
     pub cache_hits: usize,
 
-    /// Total API calls made (cache misses)
+    // Total API calls made (cache misses)
     pub cache_misses: usize,
 
-    /// Total tokens used (lifetime)
+    // Total tokens used (lifetime)
     pub total_tokens: usize,
 
-    /// Last updated timestamp
+    // Last updated timestamp
     pub last_updated: String,
 
-    /// Estimated cost savings (in USD)
+    // Estimated cost savings (in USD)
     pub estimated_savings: f64,
 
-    /// Total files analyzed (lifetime)
+    // Total files analyzed (lifetime)
     pub total_files_analyzed: usize,
 }
 
@@ -85,23 +85,23 @@ impl Default for CacheStats {
     }
 }
 
-/// Cache manager for LLM audit results
+// Cache manager for LLM audit results
 pub struct AuditCache {
-    /// Cache directory path
+    // Cache directory path
     cache_dir: PathBuf,
 
-    /// In-memory cache of entries (using RefCell for interior mutability)
+    // In-memory cache of entries (using RefCell for interior mutability)
     entries: RefCell<HashMap<String, CacheEntry>>,
 
-    /// Cache statistics (using RefCell for interior mutability)
+    // Cache statistics (using RefCell for interior mutability)
     stats: RefCell<CacheStats>,
 
-    /// Whether cache is enabled
+    // Whether cache is enabled
     enabled: bool,
 }
 
 impl AuditCache {
-    /// Create a new cache manager with config
+    // Create a new cache manager with config
     pub fn new(project_root: &Path, config: &crate::llm_config::CacheConfig) -> Result<Self> {
         let cache_dir = project_root.join(CACHE_DIR);
 
@@ -125,7 +125,7 @@ impl AuditCache {
         Ok(cache)
     }
 
-    /// Create a disabled cache (no-op)
+    // Create a disabled cache (no-op)
     pub fn disabled() -> Self {
         Self {
             cache_dir: PathBuf::from("."),
@@ -135,17 +135,17 @@ impl AuditCache {
         }
     }
 
-    /// Check if cache is enabled
+    // Check if cache is enabled
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    /// Get cache directory path
+    // Get cache directory path
     pub fn cache_dir(&self) -> &Path {
         &self.cache_dir
     }
 
-    /// Load cache from disk
+    // Load cache from disk
     fn load(&mut self) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -180,7 +180,7 @@ impl AuditCache {
         Ok(())
     }
 
-    /// Save cache to disk
+    // Save cache to disk
     pub fn save(&self) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -204,7 +204,7 @@ impl AuditCache {
         Ok(())
     }
 
-    /// Calculate SHA-256 hash of file content
+    // Calculate SHA-256 hash of file content
     pub fn hash_content(&self, content: &str) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
@@ -212,7 +212,7 @@ impl AuditCache {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Get cache entry for a file (takes string key and content for hash check)
+    // Get cache entry for a file (takes string key and content for hash check)
     pub fn get(&self, cache_key: &str, content: &str) -> Result<Option<CacheEntry>> {
         if !self.enabled {
             return Ok(None);
@@ -234,7 +234,7 @@ impl AuditCache {
         Ok(None)
     }
 
-    /// Store a new cache entry (simplified API taking CacheEntry)
+    // Store a new cache entry (simplified API taking CacheEntry)
     pub fn set(&self, cache_key: String, entry: CacheEntry) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -258,17 +258,17 @@ impl AuditCache {
         Ok(())
     }
 
-    /// Get cache statistics (clone to avoid borrowing issues)
+    // Get cache statistics (clone to avoid borrowing issues)
     pub fn stats(&self) -> CacheStats {
         self.stats.borrow().clone()
     }
 
-    /// Get count of cached entries
+    // Get count of cached entries
     pub fn entry_count(&self) -> usize {
         self.entries.borrow().len()
     }
 
-    /// Clear all cache entries
+    // Clear all cache entries
     pub fn clear(&self) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -282,7 +282,7 @@ impl AuditCache {
         Ok(())
     }
 
-    /// Prune stale entries (files that no longer exist)
+    // Prune stale entries (files that no longer exist)
     pub fn prune(&self, project_root: &Path) -> Result<usize> {
         if !self.enabled {
             return Ok(0);
@@ -312,7 +312,7 @@ impl AuditCache {
         Ok(removed)
     }
 
-    /// Get cache hit rate as percentage
+    // Get cache hit rate as percentage
     pub fn hit_rate(&self) -> f64 {
         let stats = self.stats.borrow();
         let total = stats.cache_hits + stats.cache_misses;
@@ -323,7 +323,7 @@ impl AuditCache {
         }
     }
 
-    /// Print cache summary
+    // Print cache summary
     pub fn print_summary(&self) {
         let stats = self.stats.borrow();
         println!("\n📦 Audit Cache Summary");

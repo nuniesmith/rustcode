@@ -1,10 +1,10 @@
-//! LLM configuration module
-//!
-//! Provides configuration for LLM-based audits with:
-//! - Master enable/disable switch
-//! - File selection criteria
-//! - Cost limits and quotas
-//! - Provider preferences
+// LLM configuration module
+//
+// Provides configuration for LLM-based audits with:
+// - Master enable/disable switch
+// - File selection criteria
+// - Cost limits and quotas
+// - Provider preferences
 
 use crate::error::{AuditError, Result};
 use serde::{Deserialize, Serialize};
@@ -13,124 +13,124 @@ use std::fs;
 use std::path::Path;
 use tracing::{info, warn};
 
-/// LLM audit configuration file name
+// LLM audit configuration file name
 pub const LLM_CONFIG_FILE: &str = ".llm-audit.toml";
 
-/// Configuration for LLM audits
+// Configuration for LLM audits
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LlmConfig {
-    /// Master switch - enable/disable all LLM audits
+    // Master switch - enable/disable all LLM audits
     pub enabled: bool,
 
-    /// File selection settings
+    // File selection settings
     pub file_selection: FileSelectionConfig,
 
-    /// Provider settings
+    // Provider settings
     pub provider: ProviderConfig,
 
-    /// Cost and quota settings
+    // Cost and quota settings
     pub limits: LimitsConfig,
 
-    /// Cache settings
+    // Cache settings
     pub cache: CacheConfig,
 }
 
-/// File selection configuration
+// File selection configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSelectionConfig {
-    /// Maximum number of files to analyze per run
+    // Maximum number of files to analyze per run
     pub max_files_per_run: usize,
 
-    /// Minimum file importance score (0-100) to analyze
+    // Minimum file importance score (0-100) to analyze
     pub min_importance_score: f64,
 
-    /// Minimum file risk score (0-100) to analyze
+    // Minimum file risk score (0-100) to analyze
     pub min_risk_score: f64,
 
-    /// Analyze only files changed in last N commits
+    // Analyze only files changed in last N commits
     pub changed_in_last_n_commits: Option<usize>,
 
-    /// Skip files larger than N bytes
+    // Skip files larger than N bytes
     pub max_file_size_bytes: usize,
 
-    /// File patterns to exclude (glob patterns)
+    // File patterns to exclude (glob patterns)
     pub exclude_patterns: Vec<String>,
 
-    /// File patterns to include (glob patterns)
+    // File patterns to include (glob patterns)
     pub include_patterns: Vec<String>,
 
-    /// Prioritize files with these extensions
+    // Prioritize files with these extensions
     pub priority_extensions: Vec<String>,
 }
 
-/// Provider configuration
+// Provider configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
-    /// Default provider (xai, google, anthropic)
+    // Default provider (xai, google, anthropic)
     pub default_provider: String,
 
-    /// Default model name
+    // Default model name
     pub default_model: String,
 
-    /// API key (can be overridden by env var)
+    // API key (can be overridden by env var)
     pub api_key: Option<String>,
 
-    /// Max tokens per request
+    // Max tokens per request
     pub max_tokens: usize,
 
-    /// Temperature for LLM responses
+    // Temperature for LLM responses
     pub temperature: f64,
 }
 
-/// Cost and quota limits
+// Cost and quota limits
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitsConfig {
-    /// Maximum daily API calls
+    // Maximum daily API calls
     pub max_daily_calls: Option<usize>,
 
-    /// Maximum monthly cost in USD
+    // Maximum monthly cost in USD
     pub max_monthly_cost_usd: Option<f64>,
 
-    /// Maximum tokens per day
+    // Maximum tokens per day
     pub max_daily_tokens: Option<usize>,
 
-    /// Maximum tokens per month
+    // Maximum tokens per month
     pub max_monthly_tokens: Option<usize>,
 
-    /// Warn when approaching limits (percentage)
+    // Warn when approaching limits (percentage)
     pub warn_threshold_pct: f64,
 
-    /// Cost per 1M input tokens (USD) - for default provider
+    // Cost per 1M input tokens (USD) - for default provider
     pub cost_per_1m_input_tokens: f64,
 
-    /// Cost per 1M output tokens (USD) - for default provider
+    // Cost per 1M output tokens (USD) - for default provider
     pub cost_per_1m_output_tokens: f64,
 
-    /// Anthropic/Claude specific pricing (USD per 1M tokens)
-    /// Claude Opus 4.5: $15 input, $75 output
+    // Anthropic/Claude specific pricing (USD per 1M tokens)
+    // Claude Opus 4.5: $15 input, $75 output
     pub anthropic_cost_per_1m_input_tokens: Option<f64>,
     pub anthropic_cost_per_1m_output_tokens: Option<f64>,
 
-    /// Maximum retries for API calls
+    // Maximum retries for API calls
     pub max_retries: usize,
 
-    /// Retry delay in milliseconds
+    // Retry delay in milliseconds
     pub retry_delay_ms: u64,
 
-    /// Enable exponential backoff for retries
+    // Enable exponential backoff for retries
     pub exponential_backoff: bool,
 }
 
-/// Cache configuration
+// Cache configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
-    /// Enable caching
+    // Enable caching
     pub enabled: bool,
 
-    /// Auto-prune stale entries older than N days
+    // Auto-prune stale entries older than N days
     pub auto_prune_days: Option<usize>,
 
-    /// Maximum cache size in MB
+    // Maximum cache size in MB
     pub max_size_mb: Option<usize>,
 }
 
@@ -174,19 +174,19 @@ impl Default for ProviderConfig {
     }
 }
 
-/// Available Claude models for auditing
+// Available Claude models for auditing
 pub mod claude_models {
-    /// Claude Opus 4.5 - Anthropic's most capable model
-    /// Best for: deep analysis, whitepaper conformity, high-stakes auditing
-    /// Context: 200K tokens, excellent reasoning capabilities
+    // Claude Opus 4.5 - Anthropic's most capable model
+    // Best for: deep analysis, whitepaper conformity, high-stakes auditing
+    // Context: 200K tokens, excellent reasoning capabilities
     pub const CLAUDE_OPUS_4_5: &str = "claude-opus-4-20250514";
 
-    /// Claude Sonnet 4 - Balanced performance and cost
-    /// Good for: routine audits, code review, general analysis
+    // Claude Sonnet 4 - Balanced performance and cost
+    // Good for: routine audits, code review, general analysis
     pub const CLAUDE_SONNET_4: &str = "claude-sonnet-4-20250514";
 
-    /// Claude Haiku 3.5 - Fast and cost-effective
-    /// Good for: quick scans, simple checks, high-volume analysis
+    // Claude Haiku 3.5 - Fast and cost-effective
+    // Good for: quick scans, simple checks, high-volume analysis
     pub const CLAUDE_HAIKU_3_5: &str = "claude-3-5-haiku-20241022";
 }
 
@@ -222,7 +222,7 @@ impl Default for CacheConfig {
 }
 
 impl LlmConfig {
-    /// Load configuration from file or create default
+    // Load configuration from file or create default
     pub fn load(project_root: &Path) -> Result<Self> {
         let config_path = project_root.join(LLM_CONFIG_FILE);
 
@@ -250,7 +250,7 @@ impl LlmConfig {
         }
     }
 
-    /// Save configuration to file
+    // Save configuration to file
     pub fn save(&self, project_root: &Path) -> Result<()> {
         let config_path = project_root.join(LLM_CONFIG_FILE);
 
@@ -264,7 +264,7 @@ impl LlmConfig {
         Ok(())
     }
 
-    /// Create a new enabled configuration with sensible defaults
+    // Create a new enabled configuration with sensible defaults
     pub fn enabled_default() -> Self {
         Self {
             enabled: true,
@@ -272,13 +272,13 @@ impl LlmConfig {
         }
     }
 
-    /// Get API key from config or environment
-    /// Get the appropriate API key for the given provider
+    // Get API key from config or environment
+    // Get the appropriate API key for the given provider
     pub fn get_api_key(&self) -> Result<String> {
         self.get_api_key_for_provider(&self.provider.default_provider)
     }
 
-    /// Get API key for a specific provider
+    // Get API key for a specific provider
     pub fn get_api_key_for_provider(&self, provider: &str) -> Result<String> {
         // Determine which env var to check based on provider
         let env_var = match provider.to_lowercase().as_str() {
@@ -308,7 +308,7 @@ impl LlmConfig {
         )))
     }
 
-    /// Get API key (deprecated - use get_api_key or get_api_key_for_provider)
+    // Get API key (deprecated - use get_api_key or get_api_key_for_provider)
     #[deprecated(note = "Use get_api_key() or get_api_key_for_provider() instead")]
     pub fn get_api_key_legacy(&self) -> Result<String> {
         // First check environment variable
@@ -333,7 +333,7 @@ impl LlmConfig {
         )))
     }
 
-    /// Check if file should be analyzed based on selection criteria
+    // Check if file should be analyzed based on selection criteria
     pub fn should_analyze_file(
         &self,
         file_path: &Path,
@@ -379,8 +379,8 @@ impl LlmConfig {
         true
     }
 
-    /// Print configuration summary
-    /// Check if using Anthropic/Claude provider
+    // Print configuration summary
+    // Check if using Anthropic/Claude provider
     pub fn is_anthropic(&self) -> bool {
         matches!(
             self.provider.default_provider.to_lowercase().as_str(),
@@ -388,7 +388,7 @@ impl LlmConfig {
         )
     }
 
-    /// Get the cost per 1M input tokens for the current provider
+    // Get the cost per 1M input tokens for the current provider
     pub fn get_input_cost_per_1m(&self) -> f64 {
         if self.is_anthropic() {
             self.limits
@@ -399,7 +399,7 @@ impl LlmConfig {
         }
     }
 
-    /// Get the cost per 1M output tokens for the current provider
+    // Get the cost per 1M output tokens for the current provider
     pub fn get_output_cost_per_1m(&self) -> f64 {
         if self.is_anthropic() {
             self.limits
@@ -459,7 +459,7 @@ impl LlmConfig {
         );
     }
 
-    /// Calculate estimated cost for token usage
+    // Calculate estimated cost for token usage
     pub fn estimate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64 {
         let input_cost = (input_tokens as f64 / 1_000_000.0) * self.limits.cost_per_1m_input_tokens;
         let output_cost =
@@ -467,7 +467,7 @@ impl LlmConfig {
         input_cost + output_cost
     }
 
-    /// Check if we're within budget
+    // Check if we're within budget
     pub fn check_budget(&self, current_cost: f64) -> BudgetStatus {
         if let Some(max_cost) = self.limits.max_monthly_cost_usd {
             let usage_pct = (current_cost / max_cost) * 100.0;
@@ -488,18 +488,18 @@ impl LlmConfig {
     }
 }
 
-/// Budget status for cost tracking
+// Budget status for cost tracking
 #[derive(Debug, Clone)]
 pub enum BudgetStatus {
-    /// Within budget
+    // Within budget
     Ok,
-    /// Approaching limit
+    // Approaching limit
     Warning {
         current: f64,
         limit: f64,
         usage_pct: f64,
     },
-    /// Budget exceeded
+    // Budget exceeded
     Exceeded { current: f64, limit: f64 },
 }
 
@@ -513,7 +513,7 @@ impl BudgetStatus {
     }
 }
 
-/// Simple glob pattern matching (basic implementation)
+// Simple glob pattern matching (basic implementation)
 fn glob_match(pattern: &str, path: &str) -> bool {
     // Handle ** for recursive matching
     if pattern.contains("**") {

@@ -1,4 +1,4 @@
-//! TODO scanner for detecting TODO comments and tasks in source code
+// TODO scanner for detecting TODO comments and tasks in source code
 
 use crate::error::{AuditError, Result};
 use crate::types::Category;
@@ -8,24 +8,24 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// A TODO item found in code
+// A TODO item found in code
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TodoItem {
-    /// File path
+    // File path
     pub file: PathBuf,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// TODO text/description
+    // TODO text/description
     pub text: String,
-    /// Code category
+    // Code category
     pub category: Category,
-    /// Context (surrounding lines)
+    // Context (surrounding lines)
     pub context: Option<String>,
-    /// Priority inferred from text (high/medium/low)
+    // Priority inferred from text (high/medium/low)
     pub priority: TodoPriority,
 }
 
-/// Priority level for TODO items
+// Priority level for TODO items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TodoPriority {
     High,
@@ -33,14 +33,14 @@ pub enum TodoPriority {
     Low,
 }
 
-/// Scanner for TODO comments in source code
+// Scanner for TODO comments in source code
 pub struct TodoScanner {
-    /// Regex patterns for different comment styles
+    // Regex patterns for different comment styles
     patterns: Vec<Regex>,
 }
 
 impl TodoScanner {
-    /// Create a new TODO scanner
+    // Create a new TODO scanner
     pub fn new() -> Result<Self> {
         let patterns = vec![
             // Standard TODO: comment
@@ -69,7 +69,7 @@ impl TodoScanner {
         Ok(Self { patterns })
     }
 
-    /// Scan a file for TODO items
+    // Scan a file for TODO items
     pub fn scan_file(&self, path: &Path) -> Result<Vec<TodoItem>> {
         if !self.should_scan_file(path) {
             return Ok(Vec::new());
@@ -105,7 +105,7 @@ impl TodoScanner {
         Ok(todos)
     }
 
-    /// Scan a directory recursively for TODO items
+    // Scan a directory recursively for TODO items
     pub fn scan_directory(&self, dir: &Path) -> Result<Vec<TodoItem>> {
         let mut all_todos = Vec::new();
 
@@ -128,7 +128,7 @@ impl TodoScanner {
         Ok(all_todos)
     }
 
-    /// Group TODOs by file
+    // Group TODOs by file
     pub fn group_by_file<'a>(&self, todos: &'a [TodoItem]) -> HashMap<PathBuf, Vec<&'a TodoItem>> {
         let mut grouped = HashMap::new();
         for todo in todos {
@@ -140,7 +140,7 @@ impl TodoScanner {
         grouped
     }
 
-    /// Group TODOs by category
+    // Group TODOs by category
     pub fn group_by_category<'a>(
         &self,
         todos: &'a [TodoItem],
@@ -155,7 +155,7 @@ impl TodoScanner {
         grouped
     }
 
-    /// Group TODOs by priority
+    // Group TODOs by priority
     pub fn group_by_priority<'a>(
         &self,
         todos: &'a [TodoItem],
@@ -170,7 +170,7 @@ impl TodoScanner {
         grouped
     }
 
-    /// Infer priority from comment content
+    // Infer priority from comment content
     fn infer_priority(&self, line: &str, text: &str) -> TodoPriority {
         let lower_line = line.to_lowercase();
         let lower_text = text.to_lowercase();
@@ -205,7 +205,7 @@ impl TodoScanner {
         TodoPriority::Medium
     }
 
-    /// Extract context around a line
+    // Extract context around a line
     fn extract_context(&self, content: &str, line_num: usize) -> Option<String> {
         let lines: Vec<&str> = content.lines().collect();
         let start = line_num.saturating_sub(2);
@@ -219,12 +219,12 @@ impl TodoScanner {
         }
     }
 
-    /// Check if a file should be scanned
+    // Check if a file should be scanned
     fn should_scan_file(&self, path: &Path) -> bool {
         self.is_source_file(path) && !self.should_skip(path)
     }
 
-    /// Check if a file is a source file
+    // Check if a file is a source file
     fn is_source_file(&self, path: &Path) -> bool {
         if !path.is_file() {
             return false;
@@ -251,7 +251,7 @@ impl TodoScanner {
         )
     }
 
-    /// Check if a path should be skipped
+    // Check if a path should be skipped
     fn should_skip(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         path_str.contains("target/")
@@ -265,7 +265,7 @@ impl TodoScanner {
             || path_str.contains(".cargo/")
     }
 
-    /// Generate a summary report
+    // Generate a summary report
     pub fn generate_summary(&self, todos: &[TodoItem]) -> TodoSummary {
         let total = todos.len();
         let by_priority = self.group_by_priority(todos);
@@ -285,7 +285,7 @@ impl TodoScanner {
     }
 }
 
-/// Summary of TODO scan results
+// Summary of TODO scan results
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TodoSummary {
     pub total: usize,

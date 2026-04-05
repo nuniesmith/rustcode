@@ -1,6 +1,6 @@
-//! Queue module
-//!
-//! Provides staged processing pipeline for content from raw input to tagged, searchable knowledge.
+// Queue module
+//
+// Provides staged processing pipeline for content from raw input to tagged, searchable knowledge.
 
 pub mod processor;
 

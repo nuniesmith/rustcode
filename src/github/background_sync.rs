@@ -1,7 +1,7 @@
-//! Background sync job system for GitHub integration
-//!
-//! This module provides a background job system that periodically syncs
-//! GitHub data to keep the local database up-to-date.
+// Background sync job system for GitHub integration
+//
+// This module provides a background job system that periodically syncs
+// GitHub data to keep the local database up-to-date.
 
 use super::{GitHubClient, SyncEngine, SyncOptions};
 use sqlx::PgPool;
@@ -10,19 +10,19 @@ use std::time::Duration;
 use tokio::time::interval;
 use tracing::{error, info, warn};
 
-/// Configuration for background sync jobs
+// Configuration for background sync jobs
 #[derive(Debug, Clone)]
 pub struct BackgroundSyncConfig {
-    /// Interval between full syncs (in seconds)
+    // Interval between full syncs (in seconds)
     pub full_sync_interval: u64,
 
-    /// Interval between incremental syncs (in seconds)
+    // Interval between incremental syncs (in seconds)
     pub incremental_sync_interval: u64,
 
-    /// Maximum number of items to sync per repository
+    // Maximum number of items to sync per repository
     pub max_items_per_repo: Option<i64>,
 
-    /// Enable automatic sync on startup
+    // Enable automatic sync on startup
     pub sync_on_startup: bool,
 }
 
@@ -37,7 +37,7 @@ impl Default for BackgroundSyncConfig {
     }
 }
 
-/// Background sync job manager
+// Background sync job manager
 pub struct BackgroundSyncManager {
     pool: PgPool,
     client: GitHubClient,
@@ -45,7 +45,7 @@ pub struct BackgroundSyncManager {
 }
 
 impl BackgroundSyncManager {
-    /// Create a new background sync manager
+    // Create a new background sync manager
     pub fn new(pool: PgPool, client: GitHubClient, config: BackgroundSyncConfig) -> Self {
         Self {
             pool,
@@ -54,10 +54,10 @@ impl BackgroundSyncManager {
         }
     }
 
-    /// Start the background sync job
-    ///
-    /// This will spawn a background task that runs indefinitely,
-    /// performing periodic syncs based on the configuration.
+    // Start the background sync job
+    //
+    // This will spawn a background task that runs indefinitely,
+    // performing periodic syncs based on the configuration.
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error>> {
         let manager = Arc::new(self);
 
@@ -97,7 +97,7 @@ impl BackgroundSyncManager {
         Ok(())
     }
 
-    /// Run incremental sync loop
+    // Run incremental sync loop
     async fn run_incremental_sync_loop(&self) {
         let mut timer = interval(Duration::from_secs(self.config.incremental_sync_interval));
 
@@ -113,7 +113,7 @@ impl BackgroundSyncManager {
         }
     }
 
-    /// Run full sync loop
+    // Run full sync loop
     async fn run_full_sync_loop(&self) {
         let mut timer = interval(Duration::from_secs(self.config.full_sync_interval));
 
@@ -129,7 +129,7 @@ impl BackgroundSyncManager {
         }
     }
 
-    /// Perform an incremental sync
+    // Perform an incremental sync
     async fn run_incremental_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
         let sync_engine = SyncEngine::new(self.client.clone(), self.pool.clone());
 
@@ -147,7 +147,7 @@ impl BackgroundSyncManager {
         Ok(())
     }
 
-    /// Perform a full sync
+    // Perform a full sync
     async fn run_full_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
         let sync_engine = SyncEngine::new(self.client.clone(), self.pool.clone());
 
@@ -165,7 +165,7 @@ impl BackgroundSyncManager {
         Ok(())
     }
 
-    /// Update the last sync timestamp in the database
+    // Update the last sync timestamp in the database
     async fn update_last_sync_time(&self) -> Result<(), Box<dyn std::error::Error>> {
         sqlx::query(
             r#"
@@ -180,7 +180,7 @@ impl BackgroundSyncManager {
         Ok(())
     }
 
-    /// Get the last sync time
+    // Get the last sync time
     pub async fn get_last_sync_time(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
         let result: Option<String> =
             sqlx::query_scalar("SELECT value FROM github_sync_metadata WHERE key = 'last_sync'")
@@ -190,7 +190,7 @@ impl BackgroundSyncManager {
         Ok(result)
     }
 
-    /// Trigger a manual sync
+    // Trigger a manual sync
     pub async fn trigger_manual_sync(&self, full: bool) -> Result<(), Box<dyn std::error::Error>> {
         if full {
             info!("🔄 Manual full sync triggered");
@@ -203,7 +203,7 @@ impl BackgroundSyncManager {
         Ok(())
     }
 
-    /// Check GitHub API rate limits
+    // Check GitHub API rate limits
     pub async fn check_rate_limits(&self) -> Result<(), Box<dyn std::error::Error>> {
         let rate_limit = self.client.get_rate_limit().await?;
 
@@ -225,7 +225,7 @@ impl BackgroundSyncManager {
     }
 }
 
-/// Start background sync with default configuration
+// Start background sync with default configuration
 pub async fn start_background_sync(
     pool: PgPool,
     client: GitHubClient,
@@ -235,7 +235,7 @@ pub async fn start_background_sync(
     manager.start().await
 }
 
-/// Start background sync with custom configuration
+// Start background sync with custom configuration
 pub async fn start_background_sync_with_config(
     pool: PgPool,
     client: GitHubClient,

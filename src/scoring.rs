@@ -1,11 +1,11 @@
-//! File scoring system for audit analysis
-//!
-//! Provides comprehensive scoring of files based on:
-//! - Audit tags (@audit-tag, @audit-security, etc.)
-//! - TODO comments and priorities
-//! - Code complexity metrics
-//! - Dependencies and relationships
-//! - Security concerns
+// File scoring system for audit analysis
+//
+// Provides comprehensive scoring of files based on:
+// - Audit tags (@audit-tag, @audit-security, etc.)
+// - TODO comments and priorities
+// - Code complexity metrics
+// - Dependencies and relationships
+// - Security concerns
 
 use crate::error::Result;
 use crate::todo_scanner::{TodoItem, TodoPriority};
@@ -13,72 +13,72 @@ use crate::types::AuditTag;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// File score with multiple dimensions
+// File score with multiple dimensions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileScore {
-    /// File path
+    // File path
     pub path: PathBuf,
 
-    /// Overall importance score (0-100)
+    // Overall importance score (0-100)
     pub importance: f64,
 
-    /// Risk score (0-100, higher = more risky)
+    // Risk score (0-100, higher = more risky)
     pub risk: f64,
 
-    /// Quality score (0-100)
+    // Quality score (0-100)
     pub quality: f64,
 
-    /// Complexity score (0-100)
+    // Complexity score (0-100)
     pub complexity: f64,
 
-    /// Technical debt score (0-100)
+    // Technical debt score (0-100)
     pub tech_debt: f64,
 
-    /// Security concern level (0-100)
+    // Security concern level (0-100)
     pub security: f64,
 
-    /// Maintenance priority (0-100)
+    // Maintenance priority (0-100)
     pub maintenance_priority: f64,
 
-    /// Breakdown of score components
+    // Breakdown of score components
     pub breakdown: ScoreBreakdown,
 }
 
-/// Detailed breakdown of score components
+// Detailed breakdown of score components
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScoreBreakdown {
-    /// Audit tags found
+    // Audit tags found
     pub audit_tags: Vec<String>,
 
-    /// TODO count by priority
+    // TODO count by priority
     pub todos: TodoBreakdown,
 
-    /// Security tags count
+    // Security tags count
     pub security_tags: usize,
 
-    /// Freeze tags (critical code)
+    // Freeze tags (critical code)
     pub freeze_tags: usize,
 
-    /// Experimental tags
+    // Experimental tags
     pub experimental_tags: usize,
 
-    /// Deprecated tags
+    // Deprecated tags
     pub deprecated_tags: usize,
 
-    /// File size in lines
+    // File size in lines
     pub lines_of_code: usize,
 
-    /// Estimated complexity (based on patterns)
+    // Estimated complexity (based on patterns)
     pub complexity_indicators: ComplexityIndicators,
 
-    /// Critical issues count
+    // Critical issues count
     pub critical_issues: usize,
 
-    /// High priority issues
+    // High priority issues
     pub high_priority_issues: usize,
 }
 
-/// TODO breakdown by priority
+// TODO breakdown by priority
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TodoBreakdown {
     pub high: usize,
@@ -87,27 +87,27 @@ pub struct TodoBreakdown {
     pub total: usize,
 }
 
-/// Complexity indicators
+// Complexity indicators
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplexityIndicators {
-    /// Unwrap/panic patterns (Rust)
+    // Unwrap/panic patterns (Rust)
     pub unwraps_and_panics: usize,
 
-    /// Unsafe blocks (Rust)
+    // Unsafe blocks (Rust)
     pub unsafe_blocks: usize,
 
-    /// Nested depth estimate
+    // Nested depth estimate
     pub estimated_nesting: usize,
 
-    /// Function count estimate
+    // Function count estimate
     pub estimated_functions: usize,
 
-    /// Comment density (0-100)
+    // Comment density (0-100)
     pub comment_density: f64,
 }
 
 impl FileScore {
-    /// Create a new file score
+    // Create a new file score
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
@@ -122,7 +122,7 @@ impl FileScore {
         }
     }
 
-    /// Calculate overall health score (0-100, higher is better)
+    // Calculate overall health score (0-100, higher is better)
     pub fn health_score(&self) -> f64 {
         // Weighted average: quality high weight, risk/debt reduce score
         let quality_weight = 0.4;
@@ -138,7 +138,7 @@ impl FileScore {
         score.clamp(0.0, 100.0)
     }
 
-    /// Get priority rating (Critical, High, Medium, Low, Minimal)
+    // Get priority rating (Critical, High, Medium, Low, Minimal)
     pub fn priority_rating(&self) -> &'static str {
         let priority = self.maintenance_priority;
         if priority >= 80.0 {
@@ -154,7 +154,7 @@ impl FileScore {
         }
     }
 
-    /// Get risk rating
+    // Get risk rating
     pub fn risk_rating(&self) -> &'static str {
         if self.risk >= 80.0 {
             "Critical"
@@ -169,7 +169,7 @@ impl FileScore {
         }
     }
 
-    /// Whether this file needs immediate attention
+    // Whether this file needs immediate attention
     pub fn needs_immediate_attention(&self) -> bool {
         self.risk >= 80.0
             || self.security >= 80.0
@@ -190,34 +190,34 @@ impl Default for ComplexityIndicators {
     }
 }
 
-/// File scorer - calculates scores for files
+// File scorer - calculates scores for files
 pub struct FileScorer {
-    /// Weights for different scoring components
+    // Weights for different scoring components
     weights: ScoringWeights,
 }
 
-/// Configurable weights for scoring
+// Configurable weights for scoring
 #[derive(Debug, Clone)]
 pub struct ScoringWeights {
-    /// Weight for freeze tags (critical code)
+    // Weight for freeze tags (critical code)
     pub freeze_importance: f64,
 
-    /// Weight for security tags
+    // Weight for security tags
     pub security_importance: f64,
 
-    /// Weight for file size
+    // Weight for file size
     pub size_importance: f64,
 
-    /// Weight for TODO density
+    // Weight for TODO density
     pub todo_risk: f64,
 
-    /// Weight for experimental code
+    // Weight for experimental code
     pub experimental_risk: f64,
 
-    /// Weight for deprecated code
+    // Weight for deprecated code
     pub deprecated_debt: f64,
 
-    /// Weight for complexity
+    // Weight for complexity
     pub complexity_factor: f64,
 }
 
@@ -236,19 +236,19 @@ impl Default for ScoringWeights {
 }
 
 impl FileScorer {
-    /// Create a new file scorer with default weights
+    // Create a new file scorer with default weights
     pub fn new() -> Self {
         Self {
             weights: ScoringWeights::default(),
         }
     }
 
-    /// Create with custom weights
+    // Create with custom weights
     pub fn with_weights(weights: ScoringWeights) -> Self {
         Self { weights }
     }
 
-    /// Score a file based on tags, TODOs, and content
+    // Score a file based on tags, TODOs, and content
     pub fn score_file(
         &self,
         path: &Path,
@@ -313,7 +313,7 @@ impl FileScorer {
         Ok(score)
     }
 
-    /// Calculate importance score (0-100)
+    // Calculate importance score (0-100)
     fn calculate_importance(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut importance = 0.0;
 
@@ -335,7 +335,7 @@ impl FileScorer {
         importance.min(100.0)
     }
 
-    /// Calculate risk score (0-100)
+    // Calculate risk score (0-100)
     fn calculate_risk(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut risk = 0.0;
 
@@ -361,7 +361,7 @@ impl FileScorer {
         risk.min(100.0)
     }
 
-    /// Calculate quality score (0-100, starts at 100)
+    // Calculate quality score (0-100, starts at 100)
     fn calculate_quality(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut quality = 100.0;
 
@@ -382,7 +382,7 @@ impl FileScorer {
         quality.max(0.0)
     }
 
-    /// Calculate complexity score (0-100)
+    // Calculate complexity score (0-100)
     fn calculate_complexity(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut complexity = 0.0;
 
@@ -401,7 +401,7 @@ impl FileScorer {
         complexity.min(100.0)
     }
 
-    /// Calculate technical debt score (0-100)
+    // Calculate technical debt score (0-100)
     fn calculate_tech_debt(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut debt = 0.0;
 
@@ -418,7 +418,7 @@ impl FileScorer {
         debt.min(100.0)
     }
 
-    /// Calculate security concern score (0-100)
+    // Calculate security concern score (0-100)
     fn calculate_security(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut security = 0.0;
 
@@ -431,7 +431,7 @@ impl FileScorer {
         security.min(100.0)
     }
 
-    /// Calculate maintenance priority (0-100)
+    // Calculate maintenance priority (0-100)
     fn calculate_maintenance_priority(&self, breakdown: &ScoreBreakdown) -> f64 {
         let mut priority = 0.0;
 
@@ -450,7 +450,7 @@ impl FileScorer {
         priority.min(100.0)
     }
 
-    /// Analyze code complexity from content
+    // Analyze code complexity from content
     fn analyze_complexity(&self, content: &str) -> ComplexityIndicators {
         let mut indicators = ComplexityIndicators::default();
 
@@ -509,7 +509,7 @@ impl FileScorer {
         indicators
     }
 
-    /// Score multiple files and return sorted by priority
+    // Score multiple files and return sorted by priority
     pub fn score_files(
         &self,
         files: &[(PathBuf, String, Vec<AuditTag>, Vec<TodoItem>)],
@@ -538,39 +538,39 @@ impl Default for FileScorer {
     }
 }
 
-/// Aggregate scoring statistics for a codebase
+// Aggregate scoring statistics for a codebase
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodebaseScore {
-    /// Total files scored
+    // Total files scored
     pub total_files: usize,
 
-    /// Average scores across all files
+    // Average scores across all files
     pub averages: FileScore,
 
-    /// Files needing immediate attention
+    // Files needing immediate attention
     pub critical_files: Vec<PathBuf>,
 
-    /// High priority files
+    // High priority files
     pub high_priority_files: Vec<PathBuf>,
 
-    /// Files with best health scores
+    // Files with best health scores
     pub healthiest_files: Vec<PathBuf>,
 
-    /// Files with worst health scores
+    // Files with worst health scores
     pub unhealthiest_files: Vec<PathBuf>,
 
-    /// Total TODOs across codebase
+    // Total TODOs across codebase
     pub total_todos: TodoBreakdown,
 
-    /// Total technical debt score
+    // Total technical debt score
     pub total_tech_debt: f64,
 
-    /// Overall codebase health (0-100)
+    // Overall codebase health (0-100)
     pub overall_health: f64,
 }
 
 impl CodebaseScore {
-    /// Create codebase score from individual file scores
+    // Create codebase score from individual file scores
     pub fn from_file_scores(scores: &[FileScore]) -> Self {
         if scores.is_empty() {
             return Self::default();

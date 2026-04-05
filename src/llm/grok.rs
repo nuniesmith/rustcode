@@ -1,6 +1,6 @@
-//! Grok LLM Analyzer
-//!
-//! Uses xAI's Grok API to analyze content and files for the processing queue.
+// Grok LLM Analyzer
+//
+// Uses xAI's Grok API to analyze content and files for the processing queue.
 
 use crate::queue::processor::{AnalysisResult, FileAnalysisResult, LlmAnalyzer};
 use anyhow::Result;
@@ -26,7 +26,7 @@ const ANALYSIS_MODEL: &str = "grok-3"; // Better for complex file analysis
 pub struct GrokAnalyzer {
     client: Client,
     api_key: String,
-    /// Track token usage for cost management
+    // Track token usage for cost management
     tokens_used: std::sync::atomic::AtomicU64,
 }
 
@@ -308,7 +308,7 @@ Guidelines:
 // ============================================================================
 
 impl GrokAnalyzer {
-    /// Analyze a TODO comment with context
+    // Analyze a TODO comment with context
     pub async fn analyze_todo(
         &self,
         todo_content: &str,
@@ -359,7 +359,7 @@ Priority guidelines:
         })
     }
 
-    /// Analyze repository for standardization issues
+    // Analyze repository for standardization issues
     pub async fn analyze_repo_standardization(
         &self,
         repo_name: &str,
@@ -446,7 +446,7 @@ Be specific and actionable in recommendations."#;
         })
     }
 
-    /// Generate a project plan from analyzed content
+    // Generate a project plan from analyzed content
     pub async fn generate_project_plan(
         &self,
         project_name: &str,

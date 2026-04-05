@@ -1,22 +1,23 @@
-//! Audit cache — Redis-backed deduplication for audit results
-//!
-//! Skips re-auditing files whose content hash hasn't changed since the last
-//! run. Uses the same Redis pool as the LLM response cache (`allkeys-lru`,
-//! 256 MB) so there is no extra infrastructure required.
-//!
-//! # Key scheme
-//!
-//! ```text
-//! audit:file:<sha256_of_content>          → AuditFileCacheEntry (JSON, TTL 7 days)
-//! audit:repo:<repo_id>:run:<timestamp>    → AuditRunSummary     (JSON, TTL 30 days)
-//! audit:repo:<repo_id>:latest             → run timestamp string (no TTL)
-//! ```
-//!
-//! # TODO(scaffolder): implement
-//!
-//! The structs and trait are fully defined. Implement the Redis I/O in the
-//! `RedisAuditCache` methods — everything is stubbed with `todo!()`.
+// Audit cache — Redis-backed deduplication for audit results
+//
+// Skips re-auditing files whose content hash hasn't changed since the last
+// run. Uses the same Redis pool as the LLM response cache (`allkeys-lru`,
+// 256 MB) so there is no extra infrastructure required.
+//
+// # Key scheme
+//
+// ```text
+// audit:file:<sha256_of_content>          → AuditFileCacheEntry (JSON, TTL 7 days)
+// audit:repo:<repo_id>:run:<timestamp>    → AuditRunSummary     (JSON, TTL 30 days)
+// audit:repo:<repo_id>:latest             → run timestamp string (no TTL)
+// ```
+//
+// # TODO(scaffolder): implement
+//
+// The structs and trait are fully defined. Implement the Redis I/O in the
+// `RedisAuditCache` methods — everything is stubbed with `todo!()`.
 
+use redis::AsyncCommands;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,18 +29,18 @@ use crate::error::{AuditError, Result};
 // Configuration
 // ============================================================================
 
-/// Configuration for the audit result cache
+// Configuration for the audit result cache
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditCacheConfig {
-    /// Redis connection URL (e.g. `redis://127.0.0.1:6379`)
+    // Redis connection URL (e.g. `redis://127.0.0.1:6379`)
     pub redis_url: String,
-    /// TTL for per-file cache entries
+    // TTL for per-file cache entries
     pub file_entry_ttl: Duration,
-    /// TTL for per-run summary entries
+    // TTL for per-run summary entries
     pub run_summary_ttl: Duration,
-    /// Key prefix (allows namespacing in a shared Redis instance)
+    // Key prefix (allows namespacing in a shared Redis instance)
     pub key_prefix: String,
-    /// Whether caching is enabled at all (set to `false` to force re-audit)
+    // Whether caching is enabled at all (set to `false` to force re-audit)
     pub enabled: bool,
 }
 
@@ -56,7 +57,7 @@ impl Default for AuditCacheConfig {
 }
 
 impl AuditCacheConfig {
-    /// Create a disabled cache config (useful in tests / CI dry-runs)
+    // Create a disabled cache config (useful in tests / CI dry-runs)
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -64,17 +65,17 @@ impl AuditCacheConfig {
         }
     }
 
-    /// Build a file-level cache key from a content hash
+    // Build a file-level cache key from a content hash
     pub fn file_key(&self, sha256: &str) -> String {
         format!("{}:file:{}", self.key_prefix, sha256)
     }
 
-    /// Build a run-level cache key
+    // Build a run-level cache key
     pub fn run_key(&self, repo_id: &str, timestamp: &str) -> String {
         format!("{}:repo:{}:run:{}", self.key_prefix, repo_id, timestamp)
     }
 
-    /// Build the "latest run" pointer key for a repo
+    // Build the "latest run" pointer key for a repo
     pub fn latest_key(&self, repo_id: &str) -> String {
         format!("{}:repo:{}:latest", self.key_prefix, repo_id)
     }
@@ -84,7 +85,7 @@ impl AuditCacheConfig {
 // Cache entry types
 // ============================================================================
 
-/// The severity level of a single audit finding (mirrors `AuditSeverity`)
+// The severity level of a single audit finding (mirrors `AuditSeverity`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CachedSeverity {
@@ -95,31 +96,31 @@ pub enum CachedSeverity {
     Critical,
 }
 
-/// A cached audit result for a single source file
+// A cached audit result for a single source file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditFileCacheEntry {
-    /// SHA-256 of the file content at the time of the audit
+    // SHA-256 of the file content at the time of the audit
     pub content_sha256: String,
-    /// Relative path to the file within the repo
+    // Relative path to the file within the repo
     pub file_path: String,
-    /// When this entry was cached
+    // When this entry was cached
     pub cached_at: DateTime<Utc>,
-    /// Overall quality score (0–100)
+    // Overall quality score (0–100)
     pub quality_score: f32,
-    /// Security score (0–100)
+    // Security score (0–100)
     pub security_score: f32,
-    /// Number of findings by severity
+    // Number of findings by severity
     pub finding_counts: HashMap<String, usize>,
-    /// Serialised finding summaries (short strings, not full `AuditFinding` objects)
+    // Serialised finding summaries (short strings, not full `AuditFinding` objects)
     pub finding_summaries: Vec<String>,
-    /// Model that produced this result
+    // Model that produced this result
     pub model: String,
-    /// Token cost in USD
+    // Token cost in USD
     pub cost_usd: f64,
 }
 
 impl AuditFileCacheEntry {
-    /// Whether this cached result has any high/critical findings
+    // Whether this cached result has any high/critical findings
     pub fn has_critical_findings(&self) -> bool {
         self.finding_counts
             .iter()
@@ -127,42 +128,42 @@ impl AuditFileCacheEntry {
             .any(|(_, &count)| count > 0)
     }
 
-    /// Total finding count across all severities
+    // Total finding count across all severities
     pub fn total_findings(&self) -> usize {
         self.finding_counts.values().sum()
     }
 }
 
-/// Summary of a complete audit run stored in Redis
+// Summary of a complete audit run stored in Redis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditRunSummary {
-    /// Unique run identifier (timestamp-based)
+    // Unique run identifier (timestamp-based)
     pub run_id: String,
-    /// The repository that was audited
+    // The repository that was audited
     pub repo_id: String,
-    /// When the run started
+    // When the run started
     pub started_at: DateTime<Utc>,
-    /// When the run completed
+    // When the run completed
     pub completed_at: Option<DateTime<Utc>>,
-    /// Total files audited in this run
+    // Total files audited in this run
     pub files_audited: usize,
-    /// Files skipped due to cache hits
+    // Files skipped due to cache hits
     pub files_from_cache: usize,
-    /// Files that failed to audit
+    // Files that failed to audit
     pub files_failed: usize,
-    /// Aggregate quality score across all files
+    // Aggregate quality score across all files
     pub avg_quality_score: f32,
-    /// Aggregate security score across all files
+    // Aggregate security score across all files
     pub avg_security_score: f32,
-    /// Total LLM cost for this run in USD
+    // Total LLM cost for this run in USD
     pub total_cost_usd: f64,
-    /// High/critical finding count across all files
+    // High/critical finding count across all files
     pub critical_findings: usize,
-    /// Status of the run
+    // Status of the run
     pub status: RunStatus,
 }
 
-/// Status of an audit run
+// Status of an audit run
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RunStatus {
@@ -187,33 +188,33 @@ impl std::fmt::Display for RunStatus {
 // AuditCache trait
 // ============================================================================
 
-/// Interface for audit result caching backends
+// Interface for audit result caching backends
 #[async_trait::async_trait]
 pub trait AuditCache: Send + Sync {
-    /// Check whether a file with the given SHA-256 has a cached audit result.
-    /// Returns `None` if not cached or if caching is disabled.
+    // Check whether a file with the given SHA-256 has a cached audit result.
+    // Returns `None` if not cached or if caching is disabled.
     async fn get_file_result(&self, sha256: &str) -> Result<Option<AuditFileCacheEntry>>;
 
-    /// Store an audit result for a file
+    // Store an audit result for a file
     async fn set_file_result(&self, entry: &AuditFileCacheEntry) -> Result<()>;
 
-    /// Delete a cached file result (e.g. after a content update)
+    // Delete a cached file result (e.g. after a content update)
     async fn invalidate_file(&self, sha256: &str) -> Result<()>;
 
-    /// Retrieve a run summary by run ID
+    // Retrieve a run summary by run ID
     async fn get_run_summary(&self, repo_id: &str, run_id: &str)
     -> Result<Option<AuditRunSummary>>;
 
-    /// Store a run summary
+    // Store a run summary
     async fn set_run_summary(&self, summary: &AuditRunSummary) -> Result<()>;
 
-    /// Get the latest run summary for a repo (follows the `latest` pointer)
+    // Get the latest run summary for a repo (follows the `latest` pointer)
     async fn get_latest_run(&self, repo_id: &str) -> Result<Option<AuditRunSummary>>;
 
-    /// Return cache statistics (hits, misses, key count)
+    // Return cache statistics (hits, misses, key count)
     async fn stats(&self) -> Result<AuditCacheStats>;
 
-    /// Flush all audit cache keys (use with care — respects the key prefix)
+    // Flush all audit cache keys (use with care — respects the key prefix)
     async fn flush(&self) -> Result<usize>;
 }
 
@@ -221,16 +222,16 @@ pub trait AuditCache: Send + Sync {
 // Cache statistics
 // ============================================================================
 
-/// Statistics about the audit cache
+// Statistics about the audit cache
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuditCacheStats {
-    /// Total number of file-level cache keys present
+    // Total number of file-level cache keys present
     pub file_keys: usize,
-    /// Total number of run-level cache keys present
+    // Total number of run-level cache keys present
     pub run_keys: usize,
-    /// Approximate memory used by audit keys (bytes), if available
+    // Approximate memory used by audit keys (bytes), if available
     pub memory_bytes: Option<u64>,
-    /// Hit rate since the server started (0.0–1.0), if tracked
+    // Hit rate since the server started (0.0–1.0), if tracked
     pub hit_rate: Option<f64>,
 }
 
@@ -238,17 +239,17 @@ pub struct AuditCacheStats {
 // Redis implementation (stub — TODO: implement)
 // ============================================================================
 
-/// Redis-backed audit cache
+// Redis-backed audit cache
 pub struct RedisAuditCache {
     config: AuditCacheConfig,
     pool: Option<deadpool_redis::Pool>,
 }
 
 impl RedisAuditCache {
-    /// Create a new Redis-backed audit cache.
-    ///
-    /// If `config.enabled` is `false` or the Redis pool cannot be created,
-    /// the cache operates in no-op mode (all reads miss, all writes are dropped).
+    // Create a new Redis-backed audit cache.
+    //
+    // If `config.enabled` is `false` or the Redis pool cannot be created,
+    // the cache operates in no-op mode (all reads miss, all writes are dropped).
     pub async fn new(config: AuditCacheConfig) -> Result<Self> {
         let pool = if config.enabled {
             match deadpool_redis::Config::from_url(&config.redis_url)
@@ -270,7 +271,7 @@ impl RedisAuditCache {
         Ok(Self { config, pool })
     }
 
-    /// Build from environment — reads `REDIS_URL` or falls back to default
+    // Build from environment — reads `REDIS_URL` or falls back to default
     pub async fn from_env() -> Result<Self> {
         let redis_url =
             std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
@@ -281,13 +282,13 @@ impl RedisAuditCache {
         .await
     }
 
-    /// Serialise a value to JSON bytes for Redis storage
+    // Serialise a value to JSON bytes for Redis storage
     fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
         serde_json::to_vec(value)
             .map_err(|e| AuditError::other(format!("Cache serialisation error: {}", e)))
     }
 
-    /// Deserialise JSON bytes from Redis storage
+    // Deserialise JSON bytes from Redis storage
     fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
         serde_json::from_slice(bytes)
             .map_err(|e| AuditError::other(format!("Cache deserialisation error: {}", e)))
@@ -505,7 +506,7 @@ impl AuditCache for RedisAuditCache {
 // Helpers
 // ============================================================================
 
-/// Collect all keys matching `pattern` using SCAN (cursor-based, safe on large keyspaces).
+// Collect all keys matching `pattern` using SCAN (cursor-based, safe on large keyspaces).
 async fn scan_all_keys(
     conn: &mut deadpool_redis::Connection,
     pattern: &str,
@@ -531,7 +532,7 @@ async fn scan_all_keys(
     Ok(all_keys)
 }
 
-/// Parse `used_memory:` bytes from Redis `INFO memory` output.
+// Parse `used_memory:` bytes from Redis `INFO memory` output.
 fn parse_used_memory(info: &str) -> u64 {
     for line in info.lines() {
         if let Some(rest) = line.strip_prefix("used_memory:") {
@@ -547,8 +548,8 @@ fn parse_used_memory(info: &str) -> u64 {
 // No-op cache (for testing / offline mode)
 // ============================================================================
 
-/// A no-op cache that always returns `None` and discards all writes.
-/// Used in tests and when Redis is unavailable.
+// A no-op cache that always returns `None` and discards all writes.
+// Used in tests and when Redis is unavailable.
 pub struct NoopAuditCache;
 
 #[async_trait::async_trait]

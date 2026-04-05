@@ -1,60 +1,60 @@
-//! # Query Templates Module
-//!
-//! Reusable query patterns for common analysis tasks.
-//!
-//! ## Features
-//!
-//! - Pre-defined templates for common queries
-//! - Variable substitution
-//! - Template customization
-//! - Cost-optimized patterns
-//! - Batch-friendly templates
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::query_templates::{QueryTemplate, TemplateRegistry};
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let registry = TemplateRegistry::default();
-//!
-//!     // Get a template
-//!     let template = registry.get("security_audit")?;
-//!
-//!     // Render with variables
-//!     let query = template.render(&[("file", "auth.rs")])?;
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Query Templates Module
+//
+// Reusable query patterns for common analysis tasks.
+//
+// ## Features
+//
+// - Pre-defined templates for common queries
+// - Variable substitution
+// - Template customization
+// - Cost-optimized patterns
+// - Batch-friendly templates
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::query_templates::{QueryTemplate, TemplateRegistry};
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let registry = TemplateRegistry::default();
+//
+//     // Get a template
+//     let template = registry.get("security_audit")?;
+//
+//     // Render with variables
+//     let query = template.render(&[("file", "auth.rs")])?;
+//
+//     Ok(())
+// }
+// ```
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Query template with variable substitution
+// Query template with variable substitution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryTemplate {
-    /// Template name
+    // Template name
     pub name: String,
-    /// Template description
+    // Template description
     pub description: String,
-    /// Template pattern with {variable} placeholders
+    // Template pattern with {variable} placeholders
     pub pattern: String,
-    /// Required variables
+    // Required variables
     pub required_vars: Vec<String>,
-    /// Optional variables with defaults
+    // Optional variables with defaults
     pub optional_vars: HashMap<String, String>,
-    /// Expected operation type
+    // Expected operation type
     pub operation: String,
-    /// Estimated tokens (for budgeting)
+    // Estimated tokens (for budgeting)
     pub estimated_tokens: usize,
-    /// Recommended TTL in hours
+    // Recommended TTL in hours
     pub cache_ttl: i64,
 }
 
-/// Template category
+// Template category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TemplateCategory {
     Security,
@@ -82,7 +82,7 @@ impl TemplateCategory {
     }
 }
 
-/// Registry of query templates
+// Registry of query templates
 pub struct TemplateRegistry {
     templates: HashMap<String, QueryTemplate>,
 }
@@ -94,7 +94,7 @@ impl Default for TemplateRegistry {
 }
 
 impl TemplateRegistry {
-    /// Create a new template registry with built-in templates
+    // Create a new template registry with built-in templates
     pub fn new() -> Self {
         let mut registry = Self {
             templates: HashMap::new(),
@@ -103,7 +103,7 @@ impl TemplateRegistry {
         registry
     }
 
-    /// Register all built-in templates
+    // Register all built-in templates
     fn register_builtin_templates(&mut self) {
         // Security templates
         self.add_template(QueryTemplate {
@@ -240,7 +240,7 @@ impl TemplateRegistry {
                       - Function descriptions with parameters and return values\n\
                       - Usage examples\n\
                       - Important notes or warnings\n\
-                      Format as Rust doc comments (///)."
+                      Format as Rust doc comments (//)."
                 .to_string(),
             required_vars: vec!["file".to_string()],
             optional_vars: HashMap::new(),
@@ -384,24 +384,24 @@ impl TemplateRegistry {
         });
     }
 
-    /// Add a template to the registry
+    // Add a template to the registry
     pub fn add_template(&mut self, template: QueryTemplate) {
         self.templates.insert(template.name.clone(), template);
     }
 
-    /// Get a template by name
+    // Get a template by name
     pub fn get(&self, name: &str) -> Result<&QueryTemplate> {
         self.templates
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", name))
     }
 
-    /// List all available templates
+    // List all available templates
     pub fn list(&self) -> Vec<&QueryTemplate> {
         self.templates.values().collect()
     }
 
-    /// List templates by category
+    // List templates by category
     pub fn list_by_category(&self, category: TemplateCategory) -> Vec<&QueryTemplate> {
         let category_str = category.as_str();
         self.templates
@@ -410,7 +410,7 @@ impl TemplateRegistry {
             .collect()
     }
 
-    /// Search templates by keyword
+    // Search templates by keyword
     pub fn search(&self, keyword: &str) -> Vec<&QueryTemplate> {
         let keyword_lower = keyword.to_lowercase();
         self.templates
@@ -424,7 +424,7 @@ impl TemplateRegistry {
 }
 
 impl QueryTemplate {
-    /// Render the template with provided variables
+    // Render the template with provided variables
     pub fn render(&self, vars: &[(&str, &str)]) -> Result<String> {
         let mut result = self.pattern.clone();
 
@@ -457,14 +457,14 @@ impl QueryTemplate {
         Ok(result)
     }
 
-    /// Render with a hashmap of variables
+    // Render with a hashmap of variables
     pub fn render_map(&self, vars: &HashMap<String, String>) -> Result<String> {
         let vars_vec: Vec<(&str, &str)> =
             vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         self.render(&vars_vec)
     }
 
-    /// Get estimated cost based on token count
+    // Get estimated cost based on token count
     pub fn estimated_cost(&self, cost_per_1k_tokens: f64) -> f64 {
         (self.estimated_tokens as f64 / 1000.0) * cost_per_1k_tokens
     }

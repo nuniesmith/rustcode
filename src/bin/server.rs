@@ -1,7 +1,7 @@
-//! RustCode Server
-//!
-//! Thin entry point that loads configuration from environment
-//! and delegates to `server::run_server()`.
+// `RustCode` Server
+//
+// Thin entry point that loads configuration from environment
+// and delegates to `server::run_server()`.
 
 use rustcode::config::Config;
 
@@ -9,7 +9,7 @@ use rustcode::config::Config;
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    let config = Config::load().map_err(|e| anyhow::anyhow!("Config load failed: {}", e))?;
+    let config = Config::load().map_err(|e| anyhow::anyhow!("Config load failed: {e}"))?;
 
     if let Err(e) = config.validate() {
         // Non-fatal for missing LLM key — server can still serve proxied requests
@@ -18,5 +18,5 @@ async fn main() -> anyhow::Result<()> {
 
     rustcode::run_server(config)
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))
+        .map_err(|e| anyhow::anyhow!("Server error: {e}"))
 }

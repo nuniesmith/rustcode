@@ -14,7 +14,7 @@ const ROTATE_AFTER_BYTES: u64 = 256 * 1024;
 const MAX_ROTATED_FILES: usize = 3;
 static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Speaker role associated with a persisted conversation message.
+// Speaker role associated with a persisted conversation message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageRole {
     System,
@@ -23,7 +23,7 @@ pub enum MessageRole {
     Tool,
 }
 
-/// Structured message content stored inside a [`Session`].
+// Structured message content stored inside a [`Session`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentBlock {
     Text {
@@ -42,7 +42,7 @@ pub enum ContentBlock {
     },
 }
 
-/// One conversation message with optional token-usage metadata.
+// One conversation message with optional token-usage metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationMessage {
     pub role: MessageRole,
@@ -50,7 +50,7 @@ pub struct ConversationMessage {
     pub usage: Option<TokenUsage>,
 }
 
-/// Metadata describing the latest compaction that summarized a session.
+// Metadata describing the latest compaction that summarized a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCompaction {
     pub count: u32,
@@ -58,7 +58,7 @@ pub struct SessionCompaction {
     pub summary: String,
 }
 
-/// Provenance recorded when a session is forked from another session.
+// Provenance recorded when a session is forked from another session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionFork {
     pub parent_session_id: String,
@@ -70,7 +70,7 @@ struct SessionPersistence {
     path: PathBuf,
 }
 
-/// Persisted conversational state for the runtime and CLI session manager.
+// Persisted conversational state for the runtime and CLI session manager.
 #[derive(Debug, Clone)]
 pub struct Session {
     pub version: u32,
@@ -97,7 +97,7 @@ impl PartialEq for Session {
 
 impl Eq for Session {}
 
-/// Errors raised while loading, parsing, or saving sessions.
+// Errors raised while loading, parsing, or saving sessions.
 #[derive(Debug)]
 pub enum SessionError {
     Io(std::io::Error),

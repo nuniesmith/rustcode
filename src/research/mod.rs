@@ -1,7 +1,7 @@
-//! Research System
-//!
-//! Spawn multiple parallel research workers to investigate topics,
-//! aggregate findings, and produce comprehensive reports.
+// Research System
+//
+// Spawn multiple parallel research workers to investigate topics,
+// aggregate findings, and produce comprehensive reports.
 
 pub mod aggregator;
 pub mod worker;
@@ -20,28 +20,28 @@ pub struct ResearchRequest {
     pub topic: String,
     pub description: Option<String>,
 
-    /// Type of research: "general", "code", "idea", "comparison"
+    // Type of research: "general", "code", "idea", "comparison"
     pub research_type: String,
 
-    /// Scope: how deep to go (stored as string: "quick", "standard", "deep")
+    // Scope: how deep to go (stored as string: "quick", "standard", "deep")
     pub depth: String,
 
-    /// Related repository (for code research)
+    // Related repository (for code research)
     pub repo_context: Option<String>,
 
-    /// Related files to consider
+    // Related files to consider
     pub file_context: Option<String>,
 
-    /// Status of the research
+    // Status of the research
     pub status: String,
 
-    /// Number of parallel workers to spawn
+    // Number of parallel workers to spawn
     pub worker_count: i32,
 
-    /// Final aggregated report
+    // Final aggregated report
     pub report: Option<String>,
 
-    /// Total tokens used across all workers
+    // Total tokens used across all workers
     pub total_tokens: i64,
 
     pub created_at: i64,
@@ -51,12 +51,12 @@ pub struct ResearchRequest {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchDepth {
-    /// Quick overview, 1-2 workers
+    // Quick overview, 1-2 workers
     Quick,
     #[default]
-    /// Standard depth, 3-4 workers
+    // Standard depth, 3-4 workers
     Standard,
-    /// Deep dive, 5+ workers
+    // Deep dive, 5+ workers
     Deep,
 }
 
@@ -97,7 +97,7 @@ impl ResearchRequest {
         self
     }
 
-    /// Get the depth as an enum
+    // Get the depth as an enum
     pub fn depth_enum(&self) -> ResearchDepth {
         match self.depth.as_str() {
             "quick" => ResearchDepth::Quick,
@@ -128,22 +128,22 @@ pub struct WorkerResult {
     pub research_id: String,
     pub worker_index: i32,
 
-    /// The subtopic this worker investigated
+    // The subtopic this worker investigated
     pub subtopic: String,
 
-    /// Sources consulted (could be RAG results, web, docs)
+    // Sources consulted (could be RAG results, web, docs)
     pub sources: Option<String>, // JSON array
 
-    /// The worker's findings
+    // The worker's findings
     pub findings: String,
 
-    /// Key points extracted
+    // Key points extracted
     pub key_points: Option<String>, // JSON array
 
-    /// Confidence score (1-10)
+    // Confidence score (1-10)
     pub confidence: i32,
 
-    /// Tokens used by this worker
+    // Tokens used by this worker
     pub tokens_used: i64,
 
     pub status: String,

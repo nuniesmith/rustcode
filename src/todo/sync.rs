@@ -1,52 +1,52 @@
-//! Todo sync — apply `WorkResult` outcomes back to `todo.md`
-//!
-//! This module is the backend for `rustcode todo-sync <todo-md> <results-json>`.
-//! It reads a [`WorkResult`] JSON file produced by `todo-work`, then updates
-//! the corresponding items in `todo.md` with the correct status markers:
-//!
-//! | Outcome      | Marker | Checkbox |
-//! |--------------|--------|----------|
-//! | `success`    | ✅     | `[x]`    |
-//! | `partial`    | ⚠️     | `[ ]`    |
-//! | `failed`     | ❌     | `[ ]`    |
-//! | `skipped`    | —      | `[ ]`    |
-//!
-//! Items are matched by their stable 8-char hex `todo_id`. If an item cannot
-//! be found by ID the sync logs a warning and moves on — it never hard-fails
-//! on a missing item so that a partially-completed batch still produces a
-//! meaningful `todo.md` update.
-//!
-//! # CLI usage
-//!
-//! ```text
-//! rustcode todo-sync todo.md .rustcode/results/batch-001.json
-//! rustcode todo-sync todo.md .rustcode/results/batch-001.json --dry-run
-//! rustcode todo-sync todo.md .rustcode/results/batch-001.json --append-summary
-//! ```
-//!
-//! # Output shape
-//!
-//! ```json
-//! {
-//!   "synced_at": "2024-01-01T00:00:00Z",
-//!   "todo_path": "todo.md",
-//!   "results_path": ".rustcode/results/batch-001.json",
-//!   "dry_run": false,
-//!   "items_updated": 3,
-//!   "items_not_found": 1,
-//!   "items_skipped": 0,
-//!   "changes": [
-//!     {
-//!       "todo_id": "deadbeef",
-//!       "old_status": "pending",
-//!       "new_status": "done",
-//!       "text_preview": "Fix admin module — accessing non-existent ApiState fields"
-//!     }
-//!   ],
-//!   "not_found_ids": ["cafebabe"],
-//!   "summary_appended": false
-//! }
-//! ```
+// Todo sync — apply `WorkResult` outcomes back to `todo.md`
+//
+// This module is the backend for `rustcode todo-sync <todo-md> <results-json>`.
+// It reads a [`WorkResult`] JSON file produced by `todo-work`, then updates
+// the corresponding items in `todo.md` with the correct status markers:
+//
+// | Outcome      | Marker | Checkbox |
+// |--------------|--------|----------|
+// | `success`    | ✅     | `[x]`    |
+// | `partial`    | ⚠️     | `[ ]`    |
+// | `failed`     | ❌     | `[ ]`    |
+// | `skipped`    | —      | `[ ]`    |
+//
+// Items are matched by their stable 8-char hex `todo_id`. If an item cannot
+// be found by ID the sync logs a warning and moves on — it never hard-fails
+// on a missing item so that a partially-completed batch still produces a
+// meaningful `todo.md` update.
+//
+// # CLI usage
+//
+// ```text
+// rustcode todo-sync todo.md .rustcode/results/batch-001.json
+// rustcode todo-sync todo.md .rustcode/results/batch-001.json --dry-run
+// rustcode todo-sync todo.md .rustcode/results/batch-001.json --append-summary
+// ```
+//
+// # Output shape
+//
+// ```json
+// {
+//   "synced_at": "2024-01-01T00:00:00Z",
+//   "todo_path": "todo.md",
+//   "results_path": ".rustcode/results/batch-001.json",
+//   "dry_run": false,
+//   "items_updated": 3,
+//   "items_not_found": 1,
+//   "items_skipped": 0,
+//   "changes": [
+//     {
+//       "todo_id": "deadbeef",
+//       "old_status": "pending",
+//       "new_status": "done",
+//       "text_preview": "Fix admin module — accessing non-existent ApiState fields"
+//     }
+//   ],
+//   "not_found_ids": ["cafebabe"],
+//   "summary_appended": false
+// }
+// ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -61,16 +61,16 @@ use crate::todo::worker::{ItemStatus, WorkResult};
 // Configuration
 // ============================================================================
 
-/// Configuration for the sync operation
+// Configuration for the sync operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
-    /// When `true`, compute all changes but do NOT write to disk
+    // When `true`, compute all changes but do NOT write to disk
     pub dry_run: bool,
-    /// Whether to append a `## Batch Summary` section to `todo.md`
+    // Whether to append a `## Batch Summary` section to `todo.md`
     pub append_summary: bool,
-    /// Whether to also sync items whose outcome is `skipped`
+    // Whether to also sync items whose outcome is `skipped`
     pub sync_skipped: bool,
-    /// Preview length for item text in the sync report (characters)
+    // Preview length for item text in the sync report (characters)
     pub text_preview_len: usize,
 }
 
@@ -105,7 +105,7 @@ impl SyncConfig {
 // Output types
 // ============================================================================
 
-/// Human-readable label for the item's state before the sync
+// Human-readable label for the item's state before the sync
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OldStatus {
@@ -133,22 +133,22 @@ impl OldStatus {
     }
 }
 
-/// Description of a single item change applied during sync
+// Description of a single item change applied during sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncChange {
-    /// Stable todo item ID
+    // Stable todo item ID
     pub todo_id: String,
-    /// Status before sync
+    // Status before sync
     pub old_status: OldStatus,
-    /// Status after sync (mirrors `ItemStatus` names)
+    // Status after sync (mirrors `ItemStatus` names)
     pub new_status: String,
-    /// Truncated item text for human readability
+    // Truncated item text for human readability
     pub text_preview: String,
-    /// The note/message attached to the new status
+    // The note/message attached to the new status
     pub note: Option<String>,
 }
 
-/// Complete result of one `todo-sync` invocation
+// Complete result of one `todo-sync` invocation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncResult {
     pub synced_at: DateTime<Utc>,
@@ -179,24 +179,24 @@ impl SyncResult {
         }
     }
 
-    /// Serialise to pretty-printed JSON
+    // Serialise to pretty-printed JSON
     pub fn to_json_pretty(&self) -> Result<String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Serialise to compact JSON
+    // Serialise to compact JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Whether the sync updated at least one item without any missing IDs
+    // Whether the sync updated at least one item without any missing IDs
     pub fn is_clean(&self) -> bool {
         self.items_not_found == 0 && self.items_updated > 0
     }
 
-    /// Print a human-readable summary to stdout
+    // Print a human-readable summary to stdout
     pub fn print_summary(&self) {
         println!(
             "\n📋 todo-sync {}",
@@ -237,7 +237,7 @@ impl SyncResult {
 // Syncer
 // ============================================================================
 
-/// Applies a `WorkResult` to a `todo.md` file
+// Applies a `WorkResult` to a `todo.md` file
 pub struct TodoSyncer {
     config: SyncConfig,
 }
@@ -257,7 +257,7 @@ impl TodoSyncer {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Load a `WorkResult` from a JSON file and apply it to `todo_path`.
+    // Load a `WorkResult` from a JSON file and apply it to `todo_path`.
     pub fn sync_from_file(
         &self,
         todo_path: impl AsRef<Path>,
@@ -271,7 +271,7 @@ impl TodoSyncer {
         self.sync(todo_path, &work_result, Some(results_path))
     }
 
-    /// Apply an in-memory `WorkResult` to `todo_path`.
+    // Apply an in-memory `WorkResult` to `todo_path`.
     pub fn sync(
         &self,
         todo_path: impl AsRef<Path>,
@@ -376,7 +376,7 @@ impl TodoSyncer {
     // Helpers
     // -----------------------------------------------------------------------
 
-    /// Build the note string to attach to the updated item
+    // Build the note string to attach to the updated item
     fn build_note(&self, item_result: &crate::todo::worker::ItemResult) -> String {
         match item_result.status {
             ItemStatus::Success => {
@@ -401,7 +401,7 @@ impl TodoSyncer {
         }
     }
 
-    /// Append a human-readable `### Batch <id> Summary` block to the footer
+    // Append a human-readable `### Batch <id> Summary` block to the footer
     fn append_summary_section(
         &self,
         todo_file: &mut TodoFile,
@@ -450,7 +450,7 @@ impl TodoSyncer {
 // Convenience free functions
 // ============================================================================
 
-/// Sync a `WorkResult` JSON file to `todo.md` with default config
+// Sync a `WorkResult` JSON file to `todo.md` with default config
 pub fn sync_work_result(
     todo_path: impl AsRef<Path>,
     results_path: impl AsRef<Path>,
@@ -458,7 +458,7 @@ pub fn sync_work_result(
     TodoSyncer::default().sync_from_file(todo_path, results_path)
 }
 
-/// Sync an in-memory `WorkResult` to `todo.md` with default config
+// Sync an in-memory `WorkResult` to `todo.md` with default config
 pub fn sync_work_result_direct(
     todo_path: impl AsRef<Path>,
     work_result: &WorkResult,

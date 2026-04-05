@@ -1,36 +1,36 @@
-//! Document Indexing Module
-//!
-//! This module orchestrates the complete document indexing pipeline:
-//! 1. Chunk the document into smaller pieces
-//! 2. Generate embeddings for each chunk
-//! 3. Store chunks and embeddings in the database
-//! 4. Mark document as indexed
-//!
-//! # Features
-//!
-//! - **End-to-end indexing**: Complete pipeline from document to searchable embeddings
-//! - **Batch processing**: Efficient batch embedding generation
-//! - **Transaction safety**: Atomic operations with rollback on failure
-//! - **Progress tracking**: Monitor indexing progress for large documents
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::indexing::{DocumentIndexer, IndexingConfig};
-//! use rustcode::db::get_document;
-//! use sqlx::PgPool;
-//!
-//! # async fn example(pool: &PgPool) -> anyhow::Result<()> {
-//! let indexer = DocumentIndexer::new(IndexingConfig::default()).await?;
-//!
-//! // Index a document by ID
-//! let document_id = "doc-123";
-//! let result = indexer.index_document(pool, document_id).await?;
-//!
-//! println!("Indexed {} chunks", result.chunks_indexed);
-//! # Ok(())
-//! # }
-//! ```
+// Document Indexing Module
+//
+// This module orchestrates the complete document indexing pipeline:
+// 1. Chunk the document into smaller pieces
+// 2. Generate embeddings for each chunk
+// 3. Store chunks and embeddings in the database
+// 4. Mark document as indexed
+//
+// # Features
+//
+// - **End-to-end indexing**: Complete pipeline from document to searchable embeddings
+// - **Batch processing**: Efficient batch embedding generation
+// - **Transaction safety**: Atomic operations with rollback on failure
+// - **Progress tracking**: Monitor indexing progress for large documents
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::indexing::{DocumentIndexer, IndexingConfig};
+// use rustcode::db::get_document;
+// use sqlx::PgPool;
+//
+// # async fn example(pool: &PgPool) -> anyhow::Result<()> {
+// let indexer = DocumentIndexer::new(IndexingConfig::default()).await?;
+//
+// // Index a document by ID
+// let document_id = "doc-123";
+// let result = indexer.index_document(pool, document_id).await?;
+//
+// println!("Indexed {} chunks", result.chunks_indexed);
+// # Ok(())
+// # }
+// ```
 
 use crate::chunking::{chunk_document, ChunkConfig};
 use crate::db::{create_chunks, get_document, mark_document_indexed, store_embedding};
@@ -44,19 +44,19 @@ use std::sync::Arc;
 // Configuration
 // ============================================================================
 
-/// Configuration for document indexing
+// Configuration for document indexing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingConfig {
-    /// Chunking configuration
+    // Chunking configuration
     pub chunk_config: ChunkConfig,
 
-    /// Embedding configuration
+    // Embedding configuration
     pub embedding_config: EmbeddingConfig,
 
-    /// Maximum number of chunks to process in a single batch
+    // Maximum number of chunks to process in a single batch
     pub max_batch_size: usize,
 
-    /// Whether to overwrite existing embeddings
+    // Whether to overwrite existing embeddings
     pub overwrite_existing: bool,
 }
 
@@ -75,33 +75,33 @@ impl Default for IndexingConfig {
 // Indexing Results
 // ============================================================================
 
-/// Result of indexing a single document
+// Result of indexing a single document
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingResult {
-    /// Document ID that was indexed
+    // Document ID that was indexed
     pub document_id: String,
 
-    /// Number of chunks created
+    // Number of chunks created
     pub chunks_created: usize,
 
-    /// Number of chunks indexed (with embeddings)
+    // Number of chunks indexed (with embeddings)
     pub chunks_indexed: usize,
 
-    /// Total word count processed
+    // Total word count processed
     pub total_words: usize,
 
-    /// Model used for embeddings
+    // Model used for embeddings
     pub model_name: String,
 
-    /// Embedding dimension
+    // Embedding dimension
     pub embedding_dimension: usize,
 
-    /// Whether this was a re-index (overwrite)
+    // Whether this was a re-index (overwrite)
     pub was_reindexed: bool,
 }
 
 impl IndexingResult {
-    /// Create a new indexing result
+    // Create a new indexing result
     pub fn new(
         document_id: String,
         chunks_created: usize,
@@ -123,41 +123,41 @@ impl IndexingResult {
     }
 }
 
-/// Progress information during indexing
+// Progress information during indexing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingProgress {
-    /// Current chunk being processed
+    // Current chunk being processed
     pub current_chunk: usize,
 
-    /// Total chunks to process
+    // Total chunks to process
     pub total_chunks: usize,
 
-    /// Percentage complete (0-100)
+    // Percentage complete (0-100)
     pub percent_complete: f64,
 
-    /// Current stage
+    // Current stage
     pub stage: IndexingStage,
 }
 
-/// Stages of the indexing process
+// Stages of the indexing process
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum IndexingStage {
-    /// Loading document from database
+    // Loading document from database
     LoadingDocument,
 
-    /// Chunking document
+    // Chunking document
     Chunking,
 
-    /// Generating embeddings
+    // Generating embeddings
     GeneratingEmbeddings,
 
-    /// Storing to database
+    // Storing to database
     StoringToDatabase,
 
-    /// Marking as indexed
+    // Marking as indexed
     MarkingIndexed,
 
-    /// Complete
+    // Complete
     Complete,
 }
 
@@ -178,14 +178,14 @@ impl std::fmt::Display for IndexingStage {
 // Document Indexer
 // ============================================================================
 
-/// Main document indexer that orchestrates the indexing pipeline
+// Main document indexer that orchestrates the indexing pipeline
 pub struct DocumentIndexer {
     config: IndexingConfig,
     embedding_generator: Arc<EmbeddingGenerator>,
 }
 
 impl DocumentIndexer {
-    /// Create a new document indexer
+    // Create a new document indexer
     pub async fn new(config: IndexingConfig) -> Result<Self> {
         let embedding_generator = EmbeddingGenerator::new(config.embedding_config.clone())
             .context("Failed to create embedding generator")?;
@@ -196,14 +196,14 @@ impl DocumentIndexer {
         })
     }
 
-    /// Index a document by ID
-    ///
-    /// This performs the complete indexing pipeline:
-    /// 1. Load document from database
-    /// 2. Chunk the document
-    /// 3. Generate embeddings for chunks
-    /// 4. Store chunks and embeddings
-    /// 5. Mark document as indexed
+    // Index a document by ID
+    //
+    // This performs the complete indexing pipeline:
+    // 1. Load document from database
+    // 2. Chunk the document
+    // 3. Generate embeddings for chunks
+    // 4. Store chunks and embeddings
+    // 5. Mark document as indexed
     pub async fn index_document(&self, pool: &PgPool, document_id: &str) -> Result<IndexingResult> {
         tracing::info!("Starting indexing for document: {}", document_id);
 
@@ -321,7 +321,7 @@ impl DocumentIndexer {
         Ok(result)
     }
 
-    /// Index multiple documents in sequence
+    // Index multiple documents in sequence
     pub async fn index_documents(
         &self,
         pool: &PgPool,
@@ -349,12 +349,12 @@ impl DocumentIndexer {
         Ok(results)
     }
 
-    /// Get the indexer configuration
+    // Get the indexer configuration
     pub fn config(&self) -> &IndexingConfig {
         &self.config
     }
 
-    /// Get the embedding generator
+    // Get the embedding generator
     pub fn embedding_generator(&self) -> &EmbeddingGenerator {
         &self.embedding_generator
     }
@@ -364,14 +364,14 @@ impl DocumentIndexer {
 // Batch Indexing
 // ============================================================================
 
-/// Batch indexer for processing many documents concurrently.
+// Batch indexer for processing many documents concurrently.
 pub struct BatchIndexer {
     indexer: Arc<DocumentIndexer>,
     concurrency: usize,
 }
 
 impl BatchIndexer {
-    /// Create a new batch indexer.
+    // Create a new batch indexer.
     pub async fn new(config: IndexingConfig, concurrency: usize) -> Result<Self> {
         let indexer = DocumentIndexer::new(config).await?;
         Ok(Self {
@@ -380,10 +380,10 @@ impl BatchIndexer {
         })
     }
 
-    /// Index `document_ids` concurrently, gated by a semaphore of size `self.concurrency`.
-    ///
-    /// Individual document failures are logged and skipped — the method always
-    /// returns the results for documents that succeeded.
+    // Index `document_ids` concurrently, gated by a semaphore of size `self.concurrency`.
+    //
+    // Individual document failures are logged and skipped — the method always
+    // returns the results for documents that succeeded.
     pub async fn index_batch(
         &self,
         pool: &PgPool,
@@ -449,7 +449,7 @@ impl BatchIndexer {
         Ok(results)
     }
 
-    /// Return the configured concurrency limit.
+    // Return the configured concurrency limit.
     pub fn concurrency(&self) -> usize {
         self.concurrency
     }

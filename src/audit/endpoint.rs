@@ -1,20 +1,20 @@
-//! Audit endpoint — Axum handlers for `GET /api/audit` and `POST /api/audit`
-//!
-//! # Routes
-//!
-//! | Method | Path              | Description                                      |
-//! |--------|-------------------|--------------------------------------------------|
-//! | GET    | `/api/audit`      | List recent audit reports stored in `docs/audit/`|
-//! | POST   | `/api/audit`      | Trigger a new audit run for a given repo path    |
-//! | GET    | `/api/audit/:id`  | Fetch a specific audit report by ID              |
-//!
-//! # Integration notes
-//!
-//! - Wired into `src/server.rs` via `audit_router()`.
-//! - Delegates to `src/audit/runner.rs` (`AuditRunnerWithGrok`) for the actual work.
-//! - Uses `src/audit/cache.rs` (`RedisAuditCache`) to skip re-auditing unchanged files.
-//! - On completion, findings are appended to the target repo's `todo.md`
-//!   via the `append_to_todo` flag on `AuditRequest`.
+// Audit endpoint — Axum handlers for `GET /api/audit` and `POST /api/audit`
+//
+// # Routes
+//
+// | Method | Path              | Description                                      |
+// |--------|-------------------|--------------------------------------------------|
+// | GET    | `/api/audit`      | List recent audit reports stored in `docs/audit/`|
+// | POST   | `/api/audit`      | Trigger a new audit run for a given repo path    |
+// | GET    | `/api/audit/:id`  | Fetch a specific audit report by ID              |
+//
+// # Integration notes
+//
+// - Wired into `src/server.rs` via `audit_router()`.
+// - Delegates to `src/audit/runner.rs` (`AuditRunnerWithGrok`) for the actual work.
+// - Uses `src/audit/cache.rs` (`RedisAuditCache`) to skip re-auditing unchanged files.
+// - On completion, findings are appended to the target repo's `todo.md`
+//   via the `append_to_todo` flag on `AuditRequest`.
 
 use axum::{
     Json, Router,
@@ -38,30 +38,30 @@ use crate::grok_client::GrokClient;
 // State
 // ============================================================================
 
-/// Shared state for the audit sub-router.
-///
-/// Constructed once at startup in `server.rs` and handed to the router via
-/// `.with_state(Arc::new(audit_state))`.
+// Shared state for the audit sub-router.
+//
+// Constructed once at startup in `server.rs` and handed to the router via
+// `.with_state(Arc::new(audit_state))`.
 #[derive(Clone)]
 pub struct AuditState {
-    /// Optional Grok client for LLM-assisted scoring. `None` when `XAI_API_KEY` is unset.
+    // Optional Grok client for LLM-assisted scoring. `None` when `XAI_API_KEY` is unset.
     pub grok: Option<Arc<GrokClient>>,
-    /// Redis-backed dedup cache. Degrades gracefully to no-op when Redis is unreachable.
+    // Redis-backed dedup cache. Degrades gracefully to no-op when Redis is unreachable.
     pub cache: Arc<RwLock<RedisAuditCache>>,
-    /// Directory where audit JSON results are persisted (default: `docs/audit`).
+    // Directory where audit JSON results are persisted (default: `docs/audit`).
     pub output_dir: std::path::PathBuf,
-    /// Runner config — applies to every audit triggered via the API.
+    // Runner config — applies to every audit triggered via the API.
     pub runner_config: AuditRunnerConfig,
 }
 
 impl AuditState {
-    /// Build from environment variables.
-    ///
-    /// | Env var             | Default                 |
-    /// |---------------------|-------------------------|
-    /// | `XAI_API_KEY`       | (none) — LLM disabled   |
-    /// | `REDIS_URL`         | `redis://127.0.0.1:6379`|
-    /// | `AUDIT_OUTPUT_DIR`  | `docs/audit`            |
+    // Build from environment variables.
+    //
+    // | Env var             | Default                 |
+    // |---------------------|-------------------------|
+    // | `XAI_API_KEY`       | (none) — LLM disabled   |
+    // | `REDIS_URL`         | `redis://127.0.0.1:6379`|
+    // | `AUDIT_OUTPUT_DIR`  | `docs/audit`            |
     pub async fn from_env(db: crate::db::Database) -> Self {
         let grok = match std::env::var("XAI_API_KEY") {
             Ok(key) if !key.is_empty() => {
@@ -106,12 +106,12 @@ impl AuditState {
 // Router
 // ============================================================================
 
-/// Build the `/api/audit` sub-router.
-///
-/// Mount this inside `src/server.rs` with:
-/// ```rust,ignore
-/// .merge(audit_router(audit_state))
-/// ```
+// Build the `/api/audit` sub-router.
+//
+// Mount this inside `src/server.rs` with:
+// ```rust,ignore
+// .merge(audit_router(audit_state))
+// ```
 pub fn audit_router(state: Arc<AuditState>) -> Router {
     Router::new()
         .route("/api/audit", get(handle_audit_get))
@@ -124,10 +124,10 @@ pub fn audit_router(state: Arc<AuditState>) -> Router {
 // Handlers
 // ============================================================================
 
-/// `GET /api/audit`
-///
-/// Returns a list of recent audit reports from `docs/audit/`, ordered by
-/// `created_at` descending (newest first).
+// `GET /api/audit`
+//
+// Returns a list of recent audit reports from `docs/audit/`, ordered by
+// `created_at` descending (newest first).
 pub async fn handle_audit_get(State(state): State<Arc<AuditState>>) -> impl IntoResponse {
     let dir = &state.output_dir;
 
@@ -210,11 +210,11 @@ pub async fn handle_audit_get(State(state): State<Arc<AuditState>>) -> impl Into
         .into_response()
 }
 
-/// `POST /api/audit`
-///
-/// Triggers a new audit run. The runner is spawned in a background task; the
-/// endpoint returns **202 Accepted** immediately with the `audit_id` so callers
-/// can poll `GET /api/audit/:id`.
+// `POST /api/audit`
+//
+// Triggers a new audit run. The runner is spawned in a background task; the
+// endpoint returns **202 Accepted** immediately with the `audit_id` so callers
+// can poll `GET /api/audit/:id`.
 pub async fn handle_audit_post(
     State(state): State<Arc<AuditState>>,
     Json(req): Json<AuditRequest>,
@@ -318,9 +318,9 @@ pub async fn handle_audit_post(
         .into_response()
 }
 
-/// `GET /api/audit/:id`
-///
-/// Returns the full `AuditResponse` JSON for the given run ID, or 404.
+// `GET /api/audit/:id`
+//
+// Returns the full `AuditResponse` JSON for the given run ID, or 404.
 pub async fn handle_audit_get_by_id(
     State(state): State<Arc<AuditState>>,
     Path(audit_id): Path<String>,
@@ -373,7 +373,7 @@ pub async fn handle_audit_get_by_id(
 // Helpers
 // ============================================================================
 
-/// Write `AuditResponse` to `<output_dir>/<id>.json`.
+// Write `AuditResponse` to `<output_dir>/<id>.json`.
 async fn persist_audit_result(
     output_dir: &std::path::Path,
     response: &AuditResponse,
@@ -388,38 +388,38 @@ async fn persist_audit_result(
 // Response types
 // ============================================================================
 
-/// Summary entry for a single audit report (used in list response)
+// Summary entry for a single audit report (used in list response)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditReportSummary {
-    /// Unique audit ID (UUID v4)
+    // Unique audit ID (UUID v4)
     pub id: String,
-    /// Repository that was audited
+    // Repository that was audited
     pub repo: String,
-    /// ISO-8601 creation timestamp
+    // ISO-8601 creation timestamp
     pub created_at: String,
-    /// Current status
+    // Current status
     pub status: AuditStatus,
-    /// Total number of findings
+    // Total number of findings
     pub findings_count: usize,
-    /// Relative path to the Markdown report
+    // Relative path to the Markdown report
     pub report_path: String,
 }
 
-/// Response body for `GET /api/audit`
+// Response body for `GET /api/audit`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditListResponse {
     pub reports: Vec<AuditReportSummary>,
     pub total: usize,
 }
 
-/// Response body for `POST /api/audit` (202 Accepted)
+// Response body for `POST /api/audit` (202 Accepted)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditJobAccepted {
-    /// Unique audit run ID for polling
+    // Unique audit run ID for polling
     pub audit_id: String,
-    /// Current status (will be `running`)
+    // Current status (will be `running`)
     pub status: AuditStatus,
-    /// Human-readable message with polling instructions
+    // Human-readable message with polling instructions
     pub message: String,
 }
 

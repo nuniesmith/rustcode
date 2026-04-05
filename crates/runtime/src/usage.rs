@@ -5,7 +5,7 @@ const DEFAULT_OUTPUT_COST_PER_MILLION: f64 = 75.0;
 const DEFAULT_CACHE_CREATION_COST_PER_MILLION: f64 = 18.75;
 const DEFAULT_CACHE_READ_COST_PER_MILLION: f64 = 1.5;
 
-/// Per-million-token pricing used for cost estimation.
+// Per-million-token pricing used for cost estimation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelPricing {
     pub input_cost_per_million: f64,
@@ -26,7 +26,7 @@ impl ModelPricing {
     }
 }
 
-/// Token counters accumulated for a conversation turn or session.
+// Token counters accumulated for a conversation turn or session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TokenUsage {
     pub input_tokens: u32,
@@ -35,7 +35,7 @@ pub struct TokenUsage {
     pub cache_read_input_tokens: u32,
 }
 
-/// Estimated dollar cost derived from a [`TokenUsage`] sample.
+// Estimated dollar cost derived from a [`TokenUsage`] sample.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UsageCostEstimate {
     pub input_cost_usd: f64,
@@ -54,7 +54,7 @@ impl UsageCostEstimate {
     }
 }
 
-/// Returns pricing metadata for a known model alias or family.
+// Returns pricing metadata for a known model alias or family.
 #[must_use]
 pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     let normalized = model.to_ascii_lowercase();
@@ -159,12 +159,12 @@ fn cost_for_tokens(tokens: u32, usd_per_million_tokens: f64) -> f64 {
 }
 
 #[must_use]
-/// Formats a dollar-denominated value for CLI display.
+// Formats a dollar-denominated value for CLI display.
 pub fn format_usd(amount: f64) -> String {
     format!("${amount:.4}")
 }
 
-/// Aggregates token usage across a running session.
+// Aggregates token usage across a running session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UsageTracker {
     latest_turn: TokenUsage,

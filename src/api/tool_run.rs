@@ -1,23 +1,23 @@
-//! POST /api/v1/tools/run — execute a registered plugin tool
-//!
-//! RC-CRATES-D: Wires `tools::GlobalToolRegistry` into the RC HTTP API so
-//! external agents (OpenClaw, Claude Code, claw CLI) can invoke any built-in
-//! or plugin-defined tool over REST.
-//!
-//! ## Request
-//! ```json
-//! { "tool": "bash", "input": { "command": "echo hello" } }
-//! ```
-//!
-//! ## Response (success)
-//! ```json
-//! { "ok": true,  "output": "...", "tool": "bash" }
-//! ```
-//!
-//! ## Response (error)
-//! ```json
-//! { "ok": false, "error": "unsupported tool: nope", "tool": "nope" }
-//! ```
+// POST /api/v1/tools/run — execute a registered plugin tool
+//
+// RC-CRATES-D: Wires `tools::GlobalToolRegistry` into the RC HTTP API so
+// external agents (OpenClaw, Claude Code, claw CLI) can invoke any built-in
+// or plugin-defined tool over REST.
+//
+// ## Request
+// ```json
+// { "tool": "bash", "input": { "command": "echo hello" } }
+// ```
+//
+// ## Response (success)
+// ```json
+// { "ok": true,  "output": "...", "tool": "bash" }
+// ```
+//
+// ## Response (error)
+// ```json
+// { "ok": false, "error": "unsupported tool: nope", "tool": "nope" }
+// ```
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use plugins::{PluginManager, PluginManagerConfig};
@@ -30,10 +30,10 @@ use tracing::{info, warn};
 
 // ── Shared state ─────────────────────────────────────────────────────────────
 
-/// State injected into the tool-run router.
+// State injected into the tool-run router.
 #[derive(Clone)]
 pub struct ToolRunState {
-    /// Plugin config home (e.g. `infrastructure/config/rustcode/plugins/`)
+    // Plugin config home (e.g. `infrastructure/config/rustcode/plugins/`)
     pub plugin_config_home: String,
 }
 
@@ -44,7 +44,7 @@ impl ToolRunState {
         }
     }
 
-    /// Build a fresh `GlobalToolRegistry` that includes any enabled plugins.
+    // Build a fresh `GlobalToolRegistry` that includes any enabled plugins.
     pub fn registry(&self) -> Result<GlobalToolRegistry, String> {
         let config = PluginManagerConfig::new(&self.plugin_config_home);
         let manager = PluginManager::new(config);
@@ -59,9 +59,9 @@ impl ToolRunState {
 
 #[derive(Debug, Deserialize)]
 pub struct ToolRunRequest {
-    /// Tool name, e.g. `"bash"`, `"read_file"`, `"code_review"`.
+    // Tool name, e.g. `"bash"`, `"read_file"`, `"code_review"`.
     pub tool: String,
-    /// JSON input matching that tool's `inputSchema`.
+    // JSON input matching that tool's `inputSchema`.
     pub input: Value,
 }
 
@@ -77,7 +77,7 @@ pub struct ToolRunResponse {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// `POST /api/v1/tools/run`
+// `POST /api/v1/tools/run`
 pub async fn run_tool(
     State(state): State<Arc<ToolRunState>>,
     Json(req): Json<ToolRunRequest>,
@@ -130,7 +130,7 @@ pub async fn run_tool(
     }
 }
 
-/// `GET /api/v1/tools` — list every available tool name + description.
+// `GET /api/v1/tools` — list every available tool name + description.
 pub async fn list_tools(
     State(state): State<Arc<ToolRunState>>,
 ) -> impl IntoResponse {
@@ -160,7 +160,7 @@ pub async fn list_tools(
     (StatusCode::OK, Json(serde_json::json!({ "tools": tools })))
 }
 
-/// `GET /api/v1/plugins` — list enabled plugins and their tools.
+// `GET /api/v1/plugins` — list enabled plugins and their tools.
 pub async fn list_plugins(
     State(state): State<Arc<ToolRunState>>,
 ) -> impl IntoResponse {

@@ -1,21 +1,21 @@
-//! Automatic Repository Scanner
-//!
-//! Provides background scanning of enabled repositories at configurable intervals.
-//! Monitors git status and automatically re-analyzes changed files.
-//!
-//! ## Static Pre-Filter Integration (2026-02-08)
-//!
-//! Before sending any file to the LLM, the scanner runs a zero-cost static
-//! analysis pass via [`StaticAnalyzer`]. Based on the recommendation:
-//!
-//! - **Skip**: Generated code, trivial files, or provably clean files are skipped entirely.
-//! - **Minimal**: Small clean files use a cheaper prompt (fewer response tokens).
-//! - **Standard**: Normal analysis path.
-//! - **DeepDive**: Files with red flags (unsafe without SAFETY, high unwrap density,
-//!   potential secrets) get the full deep-analysis prompt.
-//!
-//! This reduces LLM spend by 30–50% based on observed scan data where 66% of files
-//! returned zero issues from the LLM.
+// Automatic Repository Scanner
+//
+// Provides background scanning of enabled repositories at configurable intervals.
+// Monitors git status and automatically re-analyzes changed files.
+//
+// ## Static Pre-Filter Integration (2026-02-08)
+//
+// Before sending any file to the LLM, the scanner runs a zero-cost static
+// analysis pass via [`StaticAnalyzer`]. Based on the recommendation:
+//
+// - **Skip**: Generated code, trivial files, or provably clean files are skipped entirely.
+// - **Minimal**: Small clean files use a cheaper prompt (fewer response tokens).
+// - **Standard**: Normal analysis path.
+// - **DeepDive**: Files with red flags (unsafe without SAFETY, high unwrap density,
+//   potential secrets) get the full deep-analysis prompt.
+//
+// This reduces LLM spend by 30–50% based on observed scan data where 66% of files
+// returned zero issues from the LLM.
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -35,17 +35,17 @@ use crate::repo_manager::RepoManager;
 use crate::static_analysis::{AnalysisRecommendation, StaticAnalyzer};
 use crate::todo_scanner::TodoScanner;
 
-/// Maximum file size to send to LLM analysis (100 KB)
+// Maximum file size to send to LLM analysis (100 KB)
 const MAX_ANALYSIS_FILE_SIZE: u64 = 100 * 1024;
 
-/// Default per-scan cost budget in dollars
+// Default per-scan cost budget in dollars
 const DEFAULT_SCAN_COST_BUDGET: f64 = 3.00;
 
-/// Grok 4.1 Fast pricing constants (mirrors grok_client.rs)
+// Grok 4.1 Fast pricing constants (mirrors grok_client.rs)
 const COST_PER_MILLION_INPUT: f64 = 0.20;
 const COST_PER_MILLION_OUTPUT: f64 = 0.50;
 
-/// Directories to always skip during scanning
+// Directories to always skip during scanning
 const SKIP_DIRS: &[&str] = &[
     "/dist/",
     "/build/",
@@ -60,7 +60,7 @@ const SKIP_DIRS: &[&str] = &[
     "/.cache/",
 ];
 
-/// File patterns to always skip (suffix match)
+// File patterns to always skip (suffix match)
 const SKIP_SUFFIXES: &[&str] = &[
     ".min.js",
     ".min.css",
@@ -72,16 +72,16 @@ const SKIP_SUFFIXES: &[&str] = &[
     ".lock",
 ];
 
-/// Auto-scanner configuration
+// Auto-scanner configuration
 #[derive(Debug, Clone)]
 pub struct AutoScannerConfig {
-    /// Global enable/disable
+    // Global enable/disable
     pub enabled: bool,
-    /// Default scan interval in minutes
+    // Default scan interval in minutes
     pub default_interval_minutes: u64,
-    /// Maximum concurrent scans
+    // Maximum concurrent scans
     pub max_concurrent_scans: usize,
-    /// Per-scan cost budget in dollars (0.0 = unlimited)
+    // Per-scan cost budget in dollars (0.0 = unlimited)
     pub scan_cost_budget: f64,
 }
 
@@ -96,7 +96,7 @@ impl Default for AutoScannerConfig {
     }
 }
 
-/// Git status for a file
+// Git status for a file
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileStatus {
     Unmodified,
@@ -107,7 +107,7 @@ pub enum FileStatus {
     Untracked,
 }
 
-/// Result of analyzing a single file
+// Result of analyzing a single file
 struct FileAnalysisResult {
     issues_found: i64,
     cost_usd: f64,
@@ -116,7 +116,7 @@ struct FileAnalysisResult {
     was_cache_hit: bool,
 }
 
-/// Repository scan state
+// Repository scan state
 #[derive(Debug, Clone)]
 pub struct RepoScanState {
     pub repo_id: String,
@@ -126,25 +126,25 @@ pub struct RepoScanState {
     pub modified_files: Vec<PathBuf>,
 }
 
-/// Background repository scanner
+// Background repository scanner
 pub struct AutoScanner {
     config: AutoScannerConfig,
     pool: sqlx::PgPool,
     repos_dir: PathBuf,
     scan_states: Arc<RwLock<HashMap<String, RepoScanState>>>,
     repo_manager: Arc<RepoManager>,
-    /// Static analyzer for pre-filtering files before LLM analysis
+    // Static analyzer for pre-filtering files before LLM analysis
     static_analyzer: Arc<StaticAnalyzer>,
-    /// Prompt router for tier-based prompt selection (Minimal/Standard/DeepDive)
+    // Prompt router for tier-based prompt selection (Minimal/Standard/DeepDive)
     prompt_router: Arc<PromptRouter>,
-    /// TodoScanner for richer TODO/FIXME priority classification
+    // TodoScanner for richer TODO/FIXME priority classification
     todo_scanner: Arc<TodoScanner>,
-    /// Cost tracker for logging static analysis decisions and savings
+    // Cost tracker for logging static analysis decisions and savings
     cost_tracker: Option<Arc<CostTracker>>,
 }
 
 impl AutoScanner {
-    /// Create a new auto-scanner
+    // Create a new auto-scanner
     pub fn new(config: AutoScannerConfig, pool: sqlx::PgPool, repos_dir: PathBuf) -> Self {
         // Get GitHub token from environment for private repos
         let github_token = std::env::var("GITHUB_TOKEN").ok();
@@ -170,14 +170,14 @@ impl AutoScanner {
         }
     }
 
-    /// Attach a cost tracker for savings reporting.
-    /// When set, every file decision (skip/minimal/standard/deep) is logged.
+    // Attach a cost tracker for savings reporting.
+    // When set, every file decision (skip/minimal/standard/deep) is logged.
     pub fn with_cost_tracker(mut self, tracker: Arc<CostTracker>) -> Self {
         self.cost_tracker = Some(tracker);
         self
     }
 
-    /// Start the background scanner
+    // Start the background scanner
     pub async fn start(self: Arc<Self>) -> Result<()> {
         if !self.config.enabled {
             info!("Auto-scanner is disabled");
@@ -200,7 +200,7 @@ impl AutoScanner {
         }
     }
 
-    /// Scan all enabled repositories
+    // Scan all enabled repositories
     async fn scan_enabled_repos(&self) -> Result<()> {
         let repos = self.get_enabled_repos().await?;
 
@@ -239,7 +239,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Get all repositories with auto_scan_enabled = 1
+    // Get all repositories with auto_scan_enabled = 1
     async fn get_enabled_repos(&self) -> Result<Vec<Repository>> {
         let repos = sqlx::query_as::<_, Repository>(
             r#"
@@ -254,7 +254,7 @@ impl AutoScanner {
         Ok(repos)
     }
 
-    /// Check if repo needs scanning and scan if necessary
+    // Check if repo needs scanning and scan if necessary
     async fn check_and_scan_repo(&self, repo: &Repository) -> Result<()> {
         let repo_name = &repo.name;
         let now = chrono::Utc::now().timestamp();
@@ -633,7 +633,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Clone or update a repository from a git URL into the repos directory
+    // Clone or update a repository from a git URL into the repos directory
     fn clone_or_update_repo(&self, git_url: &str, name: &str) -> Result<PathBuf> {
         self.repo_manager
             .clone_or_update(git_url, name)
@@ -643,7 +643,7 @@ impl AutoScanner {
             ))
     }
 
-    /// Update the stored path for a repository in the database
+    // Update the stored path for a repository in the database
     async fn update_repo_path(&self, repo_id: &str, new_path: &str) -> Result<()> {
         sqlx::query(
             r#"
@@ -661,7 +661,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Get the current HEAD commit hash for a repository
+    // Get the current HEAD commit hash for a repository
     fn get_head_hash(&self, repo_path: &Path) -> Result<Option<String>> {
         use std::process::Command;
 
@@ -684,7 +684,7 @@ impl AutoScanner {
         }
     }
 
-    /// Get list of modified files from both committed and uncommitted changes
+    // Get list of modified files from both committed and uncommitted changes
     async fn get_changed_files(
         &self,
         repo_path: &Path,
@@ -799,7 +799,7 @@ impl AutoScanner {
         Ok(changed_set.into_iter().collect())
     }
 
-    /// Get changed files from recent commits (used for first scan or fallback)
+    // Get changed files from recent commits (used for first scan or fallback)
     fn get_files_from_recent_commits(
         &self,
         repo_path: &Path,
@@ -895,7 +895,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Check if a file extension is one we should analyze
+    // Check if a file extension is one we should analyze
     fn is_analyzable_file(file_path: &str) -> bool {
         file_path.ends_with(".rs")
             || file_path.ends_with(".py")
@@ -909,8 +909,8 @@ impl AutoScanner {
             || file_path.ends_with(".rb")
     }
 
-    /// Check if a file should be skipped based on path patterns.
-    /// This catches generated/bundled/vendored code that wastes API budget.
+    // Check if a file should be skipped based on path patterns.
+    // This catches generated/bundled/vendored code that wastes API budget.
     fn should_skip_path(file_path: &str) -> bool {
         // Normalize to forward slashes for consistent matching
         let normalized = file_path.replace('\\', "/");
@@ -938,13 +938,13 @@ impl AutoScanner {
         false
     }
 
-    /// Combined filter: is it a code file AND not in a skip path?
+    // Combined filter: is it a code file AND not in a skip path?
     fn should_analyze_file(file_path: &str) -> bool {
         Self::is_analyzable_file(file_path) && !Self::should_skip_path(file_path)
     }
 
-    /// Analyze changed files with progress tracking and cost budget enforcement.
-    /// Returns (files_analyzed, issues_found)
+    // Analyze changed files with progress tracking and cost budget enforcement.
+    // Returns (files_analyzed, issues_found)
     async fn analyze_changed_files_with_progress(
         &self,
         repo_id: &str,
@@ -1146,8 +1146,8 @@ impl AutoScanner {
         Ok((files_analyzed, issues_found, budget_halted))
     }
 
-    /// Create tasks from file analysis results if critical/high severity issues are found.
-    /// This provides incremental task creation during scans, not just at the final review.
+    // Create tasks from file analysis results if critical/high severity issues are found.
+    // This provides incremental task creation during scans, not just at the final review.
     async fn create_tasks_from_file_analysis(
         &self,
         repo_id: &str,
@@ -1271,8 +1271,8 @@ impl AutoScanner {
         Ok(task_count)
     }
 
-    /// Analyze a single file with progress-aware logging.
-    /// Returns `FileAnalysisResult` with issues, cost, tokens, and cache-hit flag.
+    // Analyze a single file with progress-aware logging.
+    // Returns `FileAnalysisResult` with issues, cost, tokens, and cache-hit flag.
     #[allow(clippy::too_many_arguments)]
     async fn analyze_file(
         &self,
@@ -1596,7 +1596,7 @@ impl AutoScanner {
         })
     }
 
-    /// Update last_scan_check timestamp
+    // Update last_scan_check timestamp
     async fn update_last_scan_check(&self, repo_id: &str, timestamp: i64) -> Result<()> {
         sqlx::query(
             r#"
@@ -1613,7 +1613,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Update last_analyzed timestamp
+    // Update last_analyzed timestamp
     async fn update_last_analyzed(&self, repo_id: &str, timestamp: i64) -> Result<()> {
         sqlx::query(
             r#"
@@ -1630,7 +1630,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Update last_commit_hash for a repository
+    // Update last_commit_hash for a repository
     async fn update_last_commit_hash(&self, repo_id: &str, hash: &str) -> Result<()> {
         sqlx::query(
             r#"
@@ -1647,7 +1647,7 @@ impl AutoScanner {
         Ok(())
     }
 
-    /// Clone scanner for async tasks
+    // Clone scanner for async tasks
     fn clone_scanner(&self) -> Self {
         Self {
             config: self.config.clone(),
@@ -1666,9 +1666,9 @@ impl AutoScanner {
     // Final Project Review
     // ========================================================================
 
-    /// After all files have been individually analyzed, collect all cached
-    /// analyses and send them as one context to Grok to generate a prioritized,
-    /// grouped task list for the queue. Returns the number of tasks created.
+    // After all files have been individually analyzed, collect all cached
+    // analyses and send them as one context to Grok to generate a prioritized,
+    // grouped task list for the queue. Returns the number of tasks created.
     async fn generate_project_review(
         &self,
         repo_id: &str,
@@ -1854,8 +1854,8 @@ Respond in ONLY valid JSON (no markdown fences):
         }
     }
 
-    /// Retry the project review with a reduced set of files (top 30 by issue count).
-    /// Called when the full-context review produces unparseable JSON.
+    // Retry the project review with a reduced set of files (top 30 by issue count).
+    // Called when the full-context review produces unparseable JSON.
     async fn retry_project_review_with_reduced_context(
         &self,
         repo_id: &str,
@@ -1975,8 +1975,8 @@ The response must be a single JSON object with this exact structure:
             .await
     }
 
-    /// Parse the Grok project review JSON response and insert tasks into the DB queue.
-    /// Returns the number of tasks inserted.
+    // Parse the Grok project review JSON response and insert tasks into the DB queue.
+    // Returns the number of tasks inserted.
     async fn parse_review_into_tasks(
         &self,
         response: &str,
@@ -2169,10 +2169,10 @@ The response must be a single JSON object with this exact structure:
         Ok(task_count)
     }
 
-    /// Extract JSON from a response that might be wrapped in markdown code fences.
-    ///
-    /// Handles: ```json fences, generic ``` fences (with or without closing fence
-    /// for truncated responses), preamble/postamble text, and raw JSON objects.
+    // Extract JSON from a response that might be wrapped in markdown code fences.
+    //
+    // Handles: ```json fences, generic ``` fences (with or without closing fence
+    // for truncated responses), preamble/postamble text, and raw JSON objects.
     fn extract_json_from_response(response: &str) -> &str {
         let trimmed = response.trim();
 
@@ -2227,11 +2227,11 @@ The response must be a single JSON object with this exact structure:
         trimmed
     }
 
-    /// Attempt to repair truncated JSON by closing unclosed braces, brackets, and strings.
-    ///
-    /// This handles the common case where Grok hits its output token limit mid-response,
-    /// leaving the JSON structurally incomplete. We walk the string tracking nesting depth
-    /// and append the necessary closing delimiters.
+    // Attempt to repair truncated JSON by closing unclosed braces, brackets, and strings.
+    //
+    // This handles the common case where Grok hits its output token limit mid-response,
+    // leaving the JSON structurally incomplete. We walk the string tracking nesting depth
+    // and append the necessary closing delimiters.
     fn repair_truncated_json(json_str: &str) -> Option<String> {
         // Quick sanity check: must start with '{' or '['
         let first_meaningful = json_str.trim_start().chars().next()?;
@@ -2306,9 +2306,9 @@ The response must be a single JSON object with this exact structure:
     // Scan Checkpoint Persistence
     // ========================================================================
 
-    /// Load the most recent scan checkpoint for a repo.
-    /// Returns `None` if no checkpoint exists or if the file count has changed
-    /// (indicating the file list was modified since the last run).
+    // Load the most recent scan checkpoint for a repo.
+    // Returns `None` if no checkpoint exists or if the file count has changed
+    // (indicating the file list was modified since the last run).
     async fn load_scan_checkpoint(
         &self,
         repo_id: &str,
@@ -2351,7 +2351,7 @@ The response must be a single JSON object with this exact structure:
         }
     }
 
-    /// Persist a scan checkpoint after each successfully analyzed file.
+    // Persist a scan checkpoint after each successfully analyzed file.
     #[allow(clippy::too_many_arguments)]
     async fn save_scan_checkpoint(
         &self,
@@ -2395,7 +2395,7 @@ The response must be a single JSON object with this exact structure:
         Ok(())
     }
 
-    /// Clear the scan checkpoint for a repo (called on successful completion).
+    // Clear the scan checkpoint for a repo (called on successful completion).
     async fn clear_scan_checkpoint(&self, repo_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM scan_checkpoints WHERE repo_id = $1")
             .bind(repo_id)
@@ -2407,7 +2407,7 @@ The response must be a single JSON object with this exact structure:
     }
 }
 
-/// Checkpoint data loaded from the database
+// Checkpoint data loaded from the database
 struct ScanCheckpoint {
     last_completed_index: usize,
     #[allow(dead_code)]
@@ -2418,7 +2418,7 @@ struct ScanCheckpoint {
     total_files: usize,
 }
 
-/// Enable auto-scan for a repository
+// Enable auto-scan for a repository
 pub async fn enable_auto_scan(
     pool: &sqlx::PgPool,
     repo_id: &str,
@@ -2446,7 +2446,7 @@ pub async fn enable_auto_scan(
     Ok(())
 }
 
-/// Disable auto-scan for a repository
+// Disable auto-scan for a repository
 pub async fn disable_auto_scan(pool: &sqlx::PgPool, repo_id: &str) -> Result<()> {
     sqlx::query(
         r#"
@@ -2464,7 +2464,7 @@ pub async fn disable_auto_scan(pool: &sqlx::PgPool, repo_id: &str) -> Result<()>
     Ok(())
 }
 
-/// Force a full rescan for a repository (reset both timing AND commit hash)
+// Force a full rescan for a repository (reset both timing AND commit hash)
 pub async fn force_scan(pool: &sqlx::PgPool, repo_id: &str) -> Result<()> {
     sqlx::query(
         r#"

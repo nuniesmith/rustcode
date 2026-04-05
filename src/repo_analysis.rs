@@ -1,31 +1,31 @@
-//! # Repository Analysis Module
-//!
-//! Provides directory tree caching and file metadata extraction for tracked repositories.
-//!
-//! ## Features
-//!
-//! - Directory tree caching with git-aware filtering
-//! - File metadata extraction (size, language, modified date)
-//! - Incremental updates (only scan changed files)
-//! - Language detection based on file extensions
-//! - Repository statistics and metrics
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::repo_analysis::RepoAnalyzer;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let analyzer = RepoAnalyzer::new("/path/to/repo");
-//!     let tree = analyzer.build_tree().await?;
-//!
-//!     println!("Total files: {}", tree.total_files);
-//!     println!("Total size: {} bytes", tree.total_size);
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Repository Analysis Module
+//
+// Provides directory tree caching and file metadata extraction for tracked repositories.
+//
+// ## Features
+//
+// - Directory tree caching with git-aware filtering
+// - File metadata extraction (size, language, modified date)
+// - Incremental updates (only scan changed files)
+// - Language detection based on file extensions
+// - Repository statistics and metrics
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::repo_analysis::RepoAnalyzer;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let analyzer = RepoAnalyzer::new("/path/to/repo");
+//     let tree = analyzer.build_tree().await?;
+//
+//     println!("Total files: {}", tree.total_files);
+//     println!("Total size: {} bytes", tree.total_size);
+//
+//     Ok(())
+// }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -34,83 +34,83 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Repository analyzer for building directory trees and extracting metadata
+// Repository analyzer for building directory trees and extracting metadata
 pub struct RepoAnalyzer {
-    /// Repository root path
+    // Repository root path
     root: PathBuf,
-    /// Exclude patterns (defaults to common build/cache dirs)
+    // Exclude patterns (defaults to common build/cache dirs)
     exclude_patterns: Vec<String>,
 }
 
-/// A node in the directory tree
+// A node in the directory tree
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeNode {
-    /// Node name (file or directory name)
+    // Node name (file or directory name)
     pub name: String,
-    /// Full path
+    // Full path
     pub path: PathBuf,
-    /// Node type
+    // Node type
     pub node_type: RepoNodeType,
-    /// File metadata (if file)
+    // File metadata (if file)
     pub metadata: Option<FileMetadata>,
-    /// Child nodes (if directory)
+    // Child nodes (if directory)
     pub children: Vec<TreeNode>,
 }
 
-/// Node type in the tree
+// Node type in the tree
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepoNodeType {
     File,
     Directory,
 }
 
-/// File metadata
+// File metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
-    /// File size in bytes
+    // File size in bytes
     pub size: u64,
-    /// Detected programming language
+    // Detected programming language
     pub language: Option<String>,
-    /// Last modified timestamp
+    // Last modified timestamp
     pub modified: DateTime<Utc>,
-    /// Number of lines (for text files)
+    // Number of lines (for text files)
     pub lines: Option<usize>,
-    /// Is binary file
+    // Is binary file
     pub is_binary: bool,
 }
 
-/// Repository tree summary
+// Repository tree summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoTree {
-    /// Repository path
+    // Repository path
     pub repo_path: PathBuf,
-    /// Root node
+    // Root node
     pub root: TreeNode,
-    /// Total number of files
+    // Total number of files
     pub total_files: usize,
-    /// Total number of directories
+    // Total number of directories
     pub total_dirs: usize,
-    /// Total size in bytes
+    // Total size in bytes
     pub total_size: u64,
-    /// Language breakdown
+    // Language breakdown
     pub languages: HashMap<String, LanguageStats>,
-    /// Generated timestamp
+    // Generated timestamp
     pub generated_at: DateTime<Utc>,
 }
 
-/// Statistics for a programming language
+// Statistics for a programming language
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageStats {
-    /// Number of files
+    // Number of files
     pub file_count: usize,
-    /// Total size in bytes
+    // Total size in bytes
     pub total_size: u64,
-    /// Total lines of code
+    // Total lines of code
     pub total_lines: usize,
 }
 
 impl RepoAnalyzer {
-    /// Create a new repository analyzer
+    // Create a new repository analyzer
     pub fn new<P: Into<PathBuf>>(root: P) -> Self {
         Self {
             root: root.into(),
@@ -131,13 +131,13 @@ impl RepoAnalyzer {
         }
     }
 
-    /// Add custom exclude patterns
+    // Add custom exclude patterns
     pub fn with_exclude_patterns(mut self, patterns: Vec<String>) -> Self {
         self.exclude_patterns.extend(patterns);
         self
     }
 
-    /// Build the directory tree asynchronously
+    // Build the directory tree asynchronously
     pub async fn build_tree(&self) -> Result<RepoTree> {
         let root = self.root.clone();
         let exclude_patterns = self.exclude_patterns.clone();
@@ -151,7 +151,7 @@ impl RepoAnalyzer {
         Ok(result)
     }
 
-    /// Build the directory tree synchronously
+    // Build the directory tree synchronously
     fn build_tree_sync(root: &Path, exclude_patterns: &[String]) -> Result<RepoTree> {
         let root_node = Self::build_node_sync(root, exclude_patterns)?;
 
@@ -179,7 +179,7 @@ impl RepoAnalyzer {
         })
     }
 
-    /// Build a tree node synchronously
+    // Build a tree node synchronously
     fn build_node_sync(path: &Path, exclude_patterns: &[String]) -> Result<TreeNode> {
         let name = path
             .file_name()
@@ -240,7 +240,7 @@ impl RepoAnalyzer {
         }
     }
 
-    /// Extract file metadata
+    // Extract file metadata
     fn extract_file_metadata(path: &Path) -> Result<FileMetadata> {
         let metadata = fs::metadata(path)
             .context(format!("Failed to read metadata for {}", path.display()))?;
@@ -271,7 +271,7 @@ impl RepoAnalyzer {
         })
     }
 
-    /// Detect programming language from file extension
+    // Detect programming language from file extension
     fn detect_language(path: &Path) -> Option<String> {
         let extension = path.extension()?.to_str()?;
 
@@ -313,7 +313,7 @@ impl RepoAnalyzer {
         Some(language.to_string())
     }
 
-    /// Check if a file is binary
+    // Check if a file is binary
     fn is_binary_file(path: &Path) -> bool {
         // Check by extension first
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -340,7 +340,7 @@ impl RepoAnalyzer {
         false
     }
 
-    /// Count lines in a text file
+    // Count lines in a text file
     fn count_lines(path: &Path) -> Result<usize> {
         let content = fs::read_to_string(path).context(format!(
             "Failed to read file for line counting: {}",
@@ -349,7 +349,7 @@ impl RepoAnalyzer {
         Ok(content.lines().count())
     }
 
-    /// Check if a dotfile is important and should be included
+    // Check if a dotfile is important and should be included
     fn is_important_dotfile(name: &str) -> bool {
         matches!(
             name,
@@ -357,7 +357,7 @@ impl RepoAnalyzer {
         )
     }
 
-    /// Collect statistics from the tree
+    // Collect statistics from the tree
     fn collect_stats(
         node: &TreeNode,
         total_files: &mut usize,
@@ -394,14 +394,14 @@ impl RepoAnalyzer {
         }
     }
 
-    /// Get a flat list of all files in the tree
+    // Get a flat list of all files in the tree
     pub fn get_all_files(tree: &RepoTree) -> Vec<&TreeNode> {
         let mut files = Vec::new();
         Self::collect_files(&tree.root, &mut files);
         files
     }
 
-    /// Recursively collect all file nodes
+    // Recursively collect all file nodes
     fn collect_files<'a>(node: &'a TreeNode, files: &mut Vec<&'a TreeNode>) {
         match node.node_type {
             RepoNodeType::File => files.push(node),
@@ -413,7 +413,7 @@ impl RepoAnalyzer {
         }
     }
 
-    /// Get files filtered by language
+    // Get files filtered by language
     pub fn get_files_by_language<'a>(tree: &'a RepoTree, language: &str) -> Vec<&'a TreeNode> {
         Self::get_all_files(tree)
             .into_iter()
@@ -427,7 +427,7 @@ impl RepoAnalyzer {
             .collect()
     }
 
-    /// Get largest files in the repository
+    // Get largest files in the repository
     pub fn get_largest_files(tree: &RepoTree, limit: usize) -> Vec<&TreeNode> {
         let mut files = Self::get_all_files(tree);
         files.sort_by(|a, b| {
@@ -439,7 +439,7 @@ impl RepoAnalyzer {
         files
     }
 
-    /// Get recently modified files
+    // Get recently modified files
     pub fn get_recently_modified(tree: &RepoTree, limit: usize) -> Vec<&TreeNode> {
         let mut files = Self::get_all_files(tree);
         files.sort_by(|a, b| {
@@ -461,7 +461,7 @@ impl RepoAnalyzer {
 }
 
 impl RepoTree {
-    /// Print a tree view to stdout
+    // Print a tree view to stdout
     pub fn print_tree(&self, max_depth: Option<usize>) {
         println!("Repository: {}", self.repo_path.display());
         println!(
@@ -474,7 +474,7 @@ impl RepoTree {
         self.print_summary();
     }
 
-    /// Print a single node
+    // Print a single node
     fn print_node(
         &self,
         node: &TreeNode,
@@ -524,7 +524,7 @@ impl RepoTree {
         }
     }
 
-    /// Print summary statistics
+    // Print summary statistics
     fn print_summary(&self) {
         println!("Summary:");
         println!("  Files: {}", self.total_files);
@@ -549,7 +549,7 @@ impl RepoTree {
         }
     }
 
-    /// Format bytes as human-readable size
+    // Format bytes as human-readable size
     fn format_size(bytes: u64) -> String {
         if bytes > 1024 * 1024 * 1024 {
             format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
@@ -562,12 +562,12 @@ impl RepoTree {
         }
     }
 
-    /// Export tree to JSON
+    // Export tree to JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string_pretty(self).context("Failed to serialize tree to JSON")
     }
 
-    /// Save tree to a file
+    // Save tree to a file
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let json = self.to_json()?;
         fs::write(path.as_ref(), json).context(format!(
@@ -577,7 +577,7 @@ impl RepoTree {
         Ok(())
     }
 
-    /// Load tree from a file
+    // Load tree from a file
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let json = fs::read_to_string(path.as_ref()).context(format!(
             "Failed to read tree from {}",

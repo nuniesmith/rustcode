@@ -1,7 +1,7 @@
-//! Document database operations for RAG system
-//!
-//! Provides CRUD operations for documents, chunks, and embeddings.
-//! All queries use Postgres syntax ($1, $2, ... placeholders).
+// Document database operations for RAG system
+//
+// Provides CRUD operations for documents, chunks, and embeddings.
+// All queries use Postgres syntax ($1, $2, ... placeholders).
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -14,7 +14,7 @@ use sqlx::FromRow;
 // Document CRUD Operations
 // ============================================================================
 
-/// Create a new document
+// Create a new document
 #[allow(clippy::too_many_arguments)]
 pub async fn create_document(
     pool: &PgPool,
@@ -78,7 +78,7 @@ pub async fn create_document(
     get_document(pool, &id).await
 }
 
-/// Get a document by ID
+// Get a document by ID
 pub async fn get_document(pool: &PgPool, id: &str) -> DbResult<Document> {
     let row = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
@@ -120,7 +120,7 @@ pub async fn get_document(pool: &PgPool, id: &str) -> DbResult<Document> {
     })
 }
 
-/// Update a document's title, content, and doc_type
+// Update a document's title, content, and doc_type
 pub async fn update_document(
     pool: &PgPool,
     id: &str,
@@ -163,7 +163,7 @@ pub async fn update_document(
     get_document(pool, id).await
 }
 
-/// Delete a document by ID
+// Delete a document by ID
 pub async fn delete_document(pool: &PgPool, id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM documents WHERE id = $1")
         .bind(id)
@@ -173,7 +173,7 @@ pub async fn delete_document(pool: &PgPool, id: &str) -> DbResult<()> {
     Ok(())
 }
 
-/// Delete all chunks for a document
+// Delete all chunks for a document
 pub async fn delete_document_chunks(pool: &PgPool, document_id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM document_chunks WHERE document_id = $1")
         .bind(document_id)
@@ -183,7 +183,7 @@ pub async fn delete_document_chunks(pool: &PgPool, document_id: &str) -> DbResul
     Ok(())
 }
 
-/// Delete all embeddings for a document (via its chunks)
+// Delete all embeddings for a document (via its chunks)
 pub async fn delete_document_embeddings(pool: &PgPool, document_id: &str) -> DbResult<()> {
     sqlx::query(
         "DELETE FROM document_embeddings
@@ -198,7 +198,7 @@ pub async fn delete_document_embeddings(pool: &PgPool, document_id: &str) -> DbR
     Ok(())
 }
 
-/// List documents with optional filters
+// List documents with optional filters
 pub async fn list_documents(
     pool: &PgPool,
     doc_type: Option<String>,
@@ -283,7 +283,7 @@ pub async fn list_documents(
         .collect())
 }
 
-/// Count total documents
+// Count total documents
 pub async fn count_documents(pool: &PgPool) -> DbResult<i64> {
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents")
         .fetch_one(pool)
@@ -292,7 +292,7 @@ pub async fn count_documents(pool: &PgPool) -> DbResult<i64> {
     Ok(count)
 }
 
-/// Count documents by type
+// Count documents by type
 pub async fn count_documents_by_type(pool: &PgPool, doc_type: &str) -> DbResult<i64> {
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents WHERE doc_type = $1")
         .bind(doc_type)
@@ -302,7 +302,7 @@ pub async fn count_documents_by_type(pool: &PgPool, doc_type: &str) -> DbResult<
     Ok(count)
 }
 
-/// Get documents that have not yet been indexed (or need re-indexing)
+// Get documents that have not yet been indexed (or need re-indexing)
 pub async fn get_unindexed_documents(pool: &PgPool, limit: i64) -> DbResult<Vec<Document>> {
     let rows = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
@@ -347,9 +347,9 @@ pub async fn get_unindexed_documents(pool: &PgPool, limit: i64) -> DbResult<Vec<
         .collect())
 }
 
-/// Toggle the `pinned` state of a document.
-///
-/// Returns the new pinned value (`true` = now pinned, `false` = now unpinned).
+// Toggle the `pinned` state of a document.
+//
+// Returns the new pinned value (`true` = now pinned, `false` = now unpinned).
 pub async fn set_document_pinned(pool: &PgPool, id: &str, pinned: bool) -> DbResult<bool> {
     let rows_affected =
         sqlx::query("UPDATE documents SET pinned = $1, updated_at = $2 WHERE id = $3")
@@ -367,7 +367,7 @@ pub async fn set_document_pinned(pool: &PgPool, id: &str, pinned: bool) -> DbRes
     Ok(pinned)
 }
 
-/// Mark a document as indexed at the current time
+// Mark a document as indexed at the current time
 pub async fn mark_document_indexed(pool: &PgPool, document_id: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
     sqlx::query("UPDATE documents SET indexed_at = $1 WHERE id = $2")
@@ -379,7 +379,7 @@ pub async fn mark_document_indexed(pool: &PgPool, document_id: &str) -> DbResult
     Ok(())
 }
 
-/// Get tags for a document
+// Get tags for a document
 pub async fn get_document_tags(pool: &PgPool, document_id: &str) -> DbResult<Vec<String>> {
     let rows = sqlx::query("SELECT tag FROM document_tags WHERE document_id = $1 ORDER BY tag")
         .bind(document_id)
@@ -393,7 +393,7 @@ pub async fn get_document_tags(pool: &PgPool, document_id: &str) -> DbResult<Vec
         .collect())
 }
 
-/// Search documents by title (case-insensitive substring)
+// Search documents by title (case-insensitive substring)
 pub async fn search_documents_by_title(
     pool: &PgPool,
     query: &str,
@@ -446,7 +446,7 @@ pub async fn search_documents_by_title(
         .collect())
 }
 
-/// Search documents by tag
+// Search documents by tag
 pub async fn search_documents_by_tags(
     pool: &PgPool,
     tag: &str,
@@ -504,7 +504,7 @@ pub async fn search_documents_by_tags(
 // Document Chunk Operations
 // ============================================================================
 
-/// Create document chunks
+// Create document chunks
 pub async fn create_chunks(
     pool: &PgPool,
     document_id: String,
@@ -551,7 +551,7 @@ pub async fn create_chunks(
     Ok(created_chunks)
 }
 
-/// Get chunks for a document
+// Get chunks for a document
 pub async fn get_document_chunks(pool: &PgPool, document_id: &str) -> DbResult<Vec<DocumentChunk>> {
     let rows = sqlx::query(
         "SELECT id, document_id, chunk_index, content, char_start, char_end, word_count, heading, created_at
@@ -584,7 +584,7 @@ pub async fn get_document_chunks(pool: &PgPool, document_id: &str) -> DbResult<V
 // Embedding Operations
 // ============================================================================
 
-/// Store an embedding for a chunk
+// Store an embedding for a chunk
 pub async fn store_embedding(
     pool: &PgPool,
     chunk_id: String,
@@ -624,7 +624,7 @@ pub async fn store_embedding(
     })
 }
 
-/// Get embeddings for a document's chunks
+// Get embeddings for a document's chunks
 pub async fn get_document_embeddings(
     pool: &PgPool,
     document_id: &str,
@@ -654,7 +654,7 @@ pub async fn get_document_embeddings(
         .collect())
 }
 
-/// Get all embeddings (for building the HNSW index on startup)
+// Get all embeddings (for building the HNSW index on startup)
 pub async fn get_all_embeddings(pool: &PgPool) -> DbResult<Vec<DocumentEmbedding>> {
     let rows = sqlx::query(
         "SELECT id, chunk_id, embedding, model, dimension, created_at
@@ -682,7 +682,7 @@ pub async fn get_all_embeddings(pool: &PgPool) -> DbResult<Vec<DocumentEmbedding
 // Ideas — Quick thought capture with tagging
 // ============================================================================
 
-/// Idea model matching the database schema
+// Idea model matching the database schema
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Idea {
     pub id: String,
@@ -699,7 +699,7 @@ pub struct Idea {
     pub updated_at: i64,
 }
 
-/// Create a new idea
+// Create a new idea
 #[allow(clippy::too_many_arguments)]
 pub async fn create_idea(
     pool: &PgPool,
@@ -735,7 +735,7 @@ pub async fn create_idea(
     Ok(id)
 }
 
-/// List ideas with optional filters
+// List ideas with optional filters
 pub async fn list_ideas(
     pool: &PgPool,
     limit: i64,
@@ -798,7 +798,7 @@ pub async fn list_ideas(
     q.fetch_all(pool).await.map_err(DbError::Sqlx)
 }
 
-/// Update idea status
+// Update idea status
 pub async fn update_idea_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -813,7 +813,7 @@ pub async fn update_idea_status(pool: &PgPool, id: &str, status: &str) -> DbResu
     Ok(())
 }
 
-/// Delete an idea
+// Delete an idea
 pub async fn delete_idea(pool: &PgPool, id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM ideas WHERE id = $1")
         .bind(id)
@@ -823,7 +823,7 @@ pub async fn delete_idea(pool: &PgPool, id: &str) -> DbResult<()> {
     Ok(())
 }
 
-/// Count total ideas
+// Count total ideas
 pub async fn count_ideas(pool: &PgPool) -> DbResult<i64> {
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ideas")
         .fetch_one(pool)
@@ -836,7 +836,7 @@ pub async fn count_ideas(pool: &PgPool) -> DbResult<i64> {
 // Tags — Tag registry and search
 // ============================================================================
 
-/// Tag model for tag registry
+// Tag model for tag registry
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Tag {
     pub name: String,
@@ -847,7 +847,7 @@ pub struct Tag {
     pub updated_at: i64,
 }
 
-/// List tags ordered by usage count
+// List tags ordered by usage count
 pub async fn list_tags(pool: &PgPool, limit: i64) -> DbResult<Vec<Tag>> {
     sqlx::query_as::<_, Tag>(
         "SELECT name, color, description, usage_count, created_at, updated_at
@@ -861,7 +861,7 @@ pub async fn list_tags(pool: &PgPool, limit: i64) -> DbResult<Vec<Tag>> {
     .map_err(DbError::Sqlx)
 }
 
-/// Search tags by name
+// Search tags by name
 pub async fn search_tags(pool: &PgPool, query: &str) -> DbResult<Vec<Tag>> {
     let pattern = format!("%{}%", query);
     sqlx::query_as::<_, Tag>(
@@ -881,8 +881,8 @@ pub async fn search_tags(pool: &PgPool, query: &str) -> DbResult<Vec<Tag>> {
 // Document Full-Text Search
 // ============================================================================
 
-/// Search documents using Postgres full-text search (tsvector/tsquery)
-/// Falls back to ILIKE if the FTS index is not available.
+// Search documents using Postgres full-text search (tsvector/tsquery)
+// Falls back to ILIKE if the FTS index is not available.
 pub async fn search_documents(pool: &PgPool, query: &str) -> DbResult<Vec<Document>> {
     let pattern = format!("%{}%", query);
 

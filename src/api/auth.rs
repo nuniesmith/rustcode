@@ -1,4 +1,4 @@
-//! Authentication and authorization middleware for RAG API
+// Authentication and authorization middleware for RAG API
 
 use axum::{
     extract::{Request, State},
@@ -15,14 +15,14 @@ use std::sync::{Arc, OnceLock};
 // Types
 // ============================================================================
 
-/// Authentication configuration
+// Authentication configuration
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// API keys (hashed with SHA256)
+    // API keys (hashed with SHA256)
     pub api_keys: Vec<String>,
-    /// Whether authentication is required
+    // Whether authentication is required
     pub require_auth: bool,
-    /// Whether to allow anonymous read-only access
+    // Whether to allow anonymous read-only access
     pub allow_anonymous_read: bool,
 }
 
@@ -37,7 +37,7 @@ impl Default for AuthConfig {
 }
 
 impl AuthConfig {
-    /// Create new auth config with API keys
+    // Create new auth config with API keys
     pub fn new(api_keys: Vec<String>) -> Self {
         let require_auth = !api_keys.is_empty();
         Self {
@@ -47,13 +47,13 @@ impl AuthConfig {
         }
     }
 
-    /// Add an API key
+    // Add an API key
     pub fn add_key(&mut self, key: &str) {
         self.api_keys.push(hash_api_key(key));
         self.require_auth = true;
     }
 
-    /// Validate an API key
+    // Validate an API key
     pub fn validate_key(&self, key: &str) -> bool {
         if !self.require_auth {
             return true;
@@ -62,12 +62,12 @@ impl AuthConfig {
         self.api_keys.contains(&hashed)
     }
 
-    /// Check if method is read-only
+    // Check if method is read-only
     fn is_read_only_method(method: &str) -> bool {
         matches!(method, "GET" | "HEAD" | "OPTIONS")
     }
 
-    /// Validate request based on config
+    // Validate request based on config
     pub fn validate_request(&self, key: Option<&str>, method: &str) -> AuthResult {
         // No auth required
         if !self.require_auth {
@@ -88,7 +88,7 @@ impl AuthConfig {
     }
 }
 
-/// Authentication result
+// Authentication result
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthResult {
     Allowed,
@@ -96,7 +96,7 @@ pub enum AuthResult {
     InvalidKey,
 }
 
-/// Hash an API key using SHA256
+// Hash an API key using SHA256
 pub fn hash_api_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
@@ -107,12 +107,12 @@ pub fn hash_api_key(key: &str) -> String {
 // Env-based middleware (no State required)
 // ============================================================================
 
-/// Cached `AuthConfig` built from the `RUSTCODE_PROXY_API_KEYS` env var.
-///
-/// Auth states:
-/// - `RUSTCODE_PROXY_API_KEYS` set → auth **enabled**, keys validated on every request.
-/// - `RUSTCODE_PROXY_API_KEYS` unset + `RUSTCODE_AUTH_DISABLED=true` → auth disabled (explicit opt-out, WARN logged once).
-/// - `RUSTCODE_PROXY_API_KEYS` unset + `RUSTCODE_AUTH_DISABLED` not `true` → auth disabled (implicit, loud WARN logged).
+// Cached `AuthConfig` built from the `RUSTCODE_PROXY_API_KEYS` env var.
+//
+// Auth states:
+// - `RUSTCODE_PROXY_API_KEYS` set → auth **enabled**, keys validated on every request.
+// - `RUSTCODE_PROXY_API_KEYS` unset + `RUSTCODE_AUTH_DISABLED=true` → auth disabled (explicit opt-out, WARN logged once).
+// - `RUSTCODE_PROXY_API_KEYS` unset + `RUSTCODE_AUTH_DISABLED` not `true` → auth disabled (implicit, loud WARN logged).
 fn env_auth_config() -> &'static AuthConfig {
     static CONFIG: OnceLock<AuthConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
@@ -156,24 +156,24 @@ fn env_auth_config() -> &'static AuthConfig {
     })
 }
 
-/// Returns `true` when no API keys are configured (auth disabled).
+// Returns `true` when no API keys are configured (auth disabled).
 pub fn auth_disabled() -> bool {
     !env_auth_config().require_auth
 }
 
-/// Axum `from_fn` middleware that validates `Authorization: Bearer <key>`
-/// (or `X-API-Key`) against keys in `RUSTCODE_PROXY_API_KEYS`.
-///
-/// When no keys are configured the middleware is a no-op (dev mode).
-///
-/// ```rust,ignore
-/// use axum::{Router, middleware, routing::get};
-/// use crate::api::auth::require_api_key;
-///
-/// let protected = Router::new()
-///     .route("/api/things", get(handler))
-///     .layer(middleware::from_fn(require_api_key));
-/// ```
+// Axum `from_fn` middleware that validates `Authorization: Bearer <key>`
+// (or `X-API-Key`) against keys in `RUSTCODE_PROXY_API_KEYS`.
+//
+// When no keys are configured the middleware is a no-op (dev mode).
+//
+// ```rust,ignore
+// use axum::{Router, middleware, routing::get};
+// use crate::api::auth::require_api_key;
+//
+// let protected = Router::new()
+//     .route("/api/things", get(handler))
+//     .layer(middleware::from_fn(require_api_key));
+// ```
 pub async fn require_api_key(request: Request, next: Next) -> Response {
     let config = env_auth_config();
 
@@ -201,7 +201,7 @@ pub async fn require_api_key(request: Request, next: Next) -> Response {
 // State-based middleware (legacy)
 // ============================================================================
 
-/// Authentication middleware (state-based variant — use `require_api_key` for simpler wiring)
+// Authentication middleware (state-based variant — use `require_api_key` for simpler wiring)
 pub async fn auth_middleware(
     State(config): State<Arc<AuthConfig>>,
     headers: HeaderMap,
@@ -237,9 +237,9 @@ pub async fn auth_middleware(
 // API Key Management
 // ============================================================================
 
-/// Generate a new API key
+// Generate a new API key
 pub fn generate_api_key() -> String {
-    use rand::RngExt;
+    use rand::Rng;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const KEY_LEN: usize = 32;
 
@@ -252,7 +252,7 @@ pub fn generate_api_key() -> String {
         .collect()
 }
 
-/// API Key metadata
+// API Key metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyInfo {
     pub id: String,

@@ -1,11 +1,11 @@
-//! Context builder for LLM analysis with 2M context window support
-//!
-//! This module implements multi-layered context injection for deep codebase understanding:
-//! - Signature Map: All function/struct/trait definitions
-//! - Dependency Graph: Cross-file imports and relationships
-//! - Architectural Invariants: Project rules and constraints
-//! - Diff Context: Recent changes
-//! - Test Coverage: Test results and metrics
+// Context builder for LLM analysis with 2M context window support
+//
+// This module implements multi-layered context injection for deep codebase understanding:
+// - Signature Map: All function/struct/trait definitions
+// - Dependency Graph: Cross-file imports and relationships
+// - Architectural Invariants: Project rules and constraints
+// - Diff Context: Recent changes
+// - Test Coverage: Test results and metrics
 
 use crate::error::{AuditError, Result};
 use crate::tests_runner::{TestResults, TestRunner};
@@ -15,106 +15,106 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Global context bundle for 2M window LLM analysis
+// Global context bundle for 2M window LLM analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalContextBundle {
-    /// Project metadata
+    // Project metadata
     pub metadata: ProjectMetadata,
-    /// Signature map of all code symbols
+    // Signature map of all code symbols
     pub signature_map: SignatureMap,
-    /// Dependency graph
+    // Dependency graph
     pub dependency_graph: DependencyGraph,
-    /// Architectural rules and invariants
+    // Architectural rules and invariants
     pub architectural_rules: ArchitecturalRules,
-    /// Recent changes (git diff)
+    // Recent changes (git diff)
     pub diff_context: Option<DiffContext>,
-    /// Test coverage data
+    // Test coverage data
     pub test_coverage: Option<TestCoverageData>,
-    /// System architecture map
+    // System architecture map
     pub system_map: SystemMap,
-    /// Full source code bundle
+    // Full source code bundle
     pub source_bundle: SourceBundle,
 }
 
-/// Project metadata
+// Project metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectMetadata {
-    /// Project name
+    // Project name
     pub name: String,
-    /// Repository URL
+    // Repository URL
     pub repository: Option<String>,
-    /// Current branch
+    // Current branch
     pub branch: String,
-    /// Total files
+    // Total files
     pub total_files: usize,
-    /// Total lines of code
+    // Total lines of code
     pub total_lines: usize,
-    /// Languages detected
+    // Languages detected
     pub languages: Vec<String>,
-    /// Build timestamp
+    // Build timestamp
     pub built_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Signature map containing all code symbols
+// Signature map containing all code symbols
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignatureMap {
-    /// Functions by file
+    // Functions by file
     pub functions: HashMap<String, Vec<FunctionSignature>>,
-    /// Structs/Classes by file
+    // Structs/Classes by file
     pub types: HashMap<String, Vec<TypeSignature>>,
-    /// Traits/Interfaces by file
+    // Traits/Interfaces by file
     pub traits: HashMap<String, Vec<TraitSignature>>,
-    /// Constants by file
+    // Constants by file
     pub constants: HashMap<String, Vec<ConstantSignature>>,
-    /// Total symbols
+    // Total symbols
     pub total_symbols: usize,
 }
 
-/// Function signature
+// Function signature
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionSignature {
-    /// Function name
+    // Function name
     pub name: String,
-    /// File path
+    // File path
     pub file: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Is public
+    // Is public
     pub is_public: bool,
-    /// Is async
+    // Is async
     pub is_async: bool,
-    /// Is test
+    // Is test
     pub is_test: bool,
-    /// Parameters
+    // Parameters
     pub params: Vec<String>,
-    /// Return type
+    // Return type
     pub return_type: Option<String>,
-    /// Documentation
+    // Documentation
     pub docs: Option<String>,
 }
 
-/// Type signature (struct, class, enum)
+// Type signature (struct, class, enum)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeSignature {
-    /// Type name
+    // Type name
     pub name: String,
-    /// File path
+    // File path
     pub file: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Type kind
+    // Type kind
     pub kind: TypeKind,
-    /// Is public
+    // Is public
     pub is_public: bool,
-    /// Fields
+    // Fields
     pub fields: Vec<String>,
-    /// Methods
+    // Methods
     pub methods: Vec<String>,
-    /// Documentation
+    // Documentation
     pub docs: Option<String>,
 }
 
-/// Type kind
+// Type kind
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TypeKind {
     Struct,
@@ -124,162 +124,162 @@ pub enum TypeKind {
     Trait,
 }
 
-/// Trait/Interface signature
+// Trait/Interface signature
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraitSignature {
-    /// Trait name
+    // Trait name
     pub name: String,
-    /// File path
+    // File path
     pub file: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Is public
+    // Is public
     pub is_public: bool,
-    /// Required methods
+    // Required methods
     pub methods: Vec<String>,
-    /// Documentation
+    // Documentation
     pub docs: Option<String>,
 }
 
-/// Constant signature
+// Constant signature
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConstantSignature {
-    /// Constant name
+    // Constant name
     pub name: String,
-    /// File path
+    // File path
     pub file: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Is public
+    // Is public
     pub is_public: bool,
-    /// Type
+    // Type
     pub const_type: Option<String>,
-    /// Value (if literal)
+    // Value (if literal)
     pub value: Option<String>,
 }
 
-/// Dependency graph
+// Dependency graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyGraph {
-    /// Import relationships (file -> imported files)
+    // Import relationships (file -> imported files)
     pub imports: HashMap<String, Vec<String>>,
-    /// Reverse dependencies (file -> files that import it)
+    // Reverse dependencies (file -> files that import it)
     pub imported_by: HashMap<String, Vec<String>>,
-    /// Dead code candidates (files with no incoming edges)
+    // Dead code candidates (files with no incoming edges)
     pub dead_code_candidates: Vec<String>,
-    /// Hub files (high fan-out)
+    // Hub files (high fan-out)
     pub hub_files: Vec<String>,
-    /// Orphan files (no imports or exports)
+    // Orphan files (no imports or exports)
     pub orphan_files: Vec<String>,
 }
 
-/// Architectural rules from llms.txt and risk_rules.json
+// Architectural rules from llms.txt and risk_rules.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchitecturalRules {
-    /// Project-wide rules
+    // Project-wide rules
     pub global_rules: Vec<Rule>,
-    /// Category-specific rules
+    // Category-specific rules
     pub category_rules: HashMap<Category, Vec<Rule>>,
-    /// Risk management rules
+    // Risk management rules
     pub risk_rules: Vec<RiskRule>,
-    /// Performance constraints
+    // Performance constraints
     pub performance_constraints: Vec<String>,
 }
 
-/// A single rule
+// A single rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rule {
-    /// Rule ID
+    // Rule ID
     pub id: String,
-    /// Rule description
+    // Rule description
     pub description: String,
-    /// Severity if violated
+    // Severity if violated
     pub severity: String,
-    /// Pattern to detect (regex)
+    // Pattern to detect (regex)
     pub pattern: Option<String>,
 }
 
-/// Risk management rule
+// Risk management rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskRule {
-    /// Rule name
+    // Rule name
     pub name: String,
-    /// Risk level
+    // Risk level
     pub level: String,
-    /// Condition
+    // Condition
     pub condition: String,
-    /// Action required
+    // Action required
     pub action: String,
 }
 
-/// Diff context for recent changes
+// Diff context for recent changes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffContext {
-    /// Time range (hours)
+    // Time range (hours)
     pub hours: u32,
-    /// Files changed
+    // Files changed
     pub files_changed: Vec<String>,
-    /// Lines added
+    // Lines added
     pub lines_added: usize,
-    /// Lines removed
+    // Lines removed
     pub lines_removed: usize,
-    /// Commits
+    // Commits
     pub commits: Vec<CommitInfo>,
-    /// Full diff
+    // Full diff
     pub diff: String,
 }
 
-/// Commit information
+// Commit information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitInfo {
-    /// Commit hash
+    // Commit hash
     pub hash: String,
-    /// Author
+    // Author
     pub author: String,
-    /// Timestamp
+    // Timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    /// Message
+    // Message
     pub message: String,
 }
 
-/// Test coverage data
+// Test coverage data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestCoverageData {
-    /// All test results
+    // All test results
     pub test_results: Vec<TestResults>,
-    /// Total coverage percentage
+    // Total coverage percentage
     pub total_coverage: Option<f64>,
-    /// Uncovered files
+    // Uncovered files
     pub uncovered_files: Vec<String>,
-    /// Files with failing tests
+    // Files with failing tests
     pub files_with_failures: Vec<String>,
 }
 
-/// Source code bundle
+// Source code bundle
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceBundle {
-    /// Files included
+    // Files included
     pub files: Vec<SourceFile>,
-    /// Total size in bytes
+    // Total size in bytes
     pub total_size: usize,
-    /// Concatenated content for LLM
+    // Concatenated content for LLM
     pub content: String,
 }
 
-/// Single source file
+// Single source file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceFile {
-    /// Relative path
+    // Relative path
     pub path: String,
-    /// Category
+    // Category
     pub category: Category,
-    /// Lines of code
+    // Lines of code
     pub lines: usize,
-    /// File content
+    // File content
     pub content: String,
 }
 
-/// Context builder
+// Context builder
 #[derive(Clone)]
 pub struct ContextBuilder {
     root: PathBuf,
@@ -288,7 +288,7 @@ pub struct ContextBuilder {
 }
 
 impl ContextBuilder {
-    /// Create a new context builder
+    // Create a new context builder
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
@@ -297,19 +297,19 @@ impl ContextBuilder {
         }
     }
 
-    /// Set whether to include tests
+    // Set whether to include tests
     pub fn with_tests(mut self, include: bool) -> Self {
         self.include_tests = include;
         self
     }
 
-    /// Set max file size
+    // Set max file size
     pub fn with_max_file_size(mut self, size: usize) -> Self {
         self.max_file_size = size;
         self
     }
 
-    /// Build the complete global context bundle
+    // Build the complete global context bundle
     pub fn build(&self, system_map: SystemMap) -> Result<GlobalContextBundle> {
         tracing::info!("Building global context bundle for 2M window");
 
@@ -333,7 +333,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Build project metadata
+    // Build project metadata
     fn build_metadata(&self) -> Result<ProjectMetadata> {
         let mut total_files = 0;
         let mut total_lines = 0;
@@ -379,7 +379,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Build signature map by parsing source files
+    // Build signature map by parsing source files
     fn build_signature_map(&self) -> Result<SignatureMap> {
         let mut functions: HashMap<String, Vec<FunctionSignature>> = HashMap::new();
         let mut types: HashMap<String, Vec<TypeSignature>> = HashMap::new();
@@ -444,7 +444,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Parse Rust file for signatures (basic regex-based parsing)
+    // Parse Rust file for signatures (basic regex-based parsing)
     #[allow(clippy::type_complexity)]
     fn parse_rust_file(
         &self,
@@ -565,7 +565,7 @@ impl ContextBuilder {
         Ok((functions, types, traits, constants))
     }
 
-    /// Parse Python file for signatures
+    // Parse Python file for signatures
     fn parse_python_file(
         &self,
         path: &Path,
@@ -629,7 +629,7 @@ impl ContextBuilder {
         Ok((functions, types))
     }
 
-    /// Build dependency graph from imports
+    // Build dependency graph from imports
     fn build_dependency_graph(&self, signature_map: &SignatureMap) -> Result<DependencyGraph> {
         let mut imports: HashMap<String, Vec<String>> = HashMap::new();
         let mut imported_by: HashMap<String, Vec<String>> = HashMap::new();
@@ -699,7 +699,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Extract imports from file content
+    // Extract imports from file content
     fn extract_imports(&self, content: &str, path: &Path) -> Vec<String> {
         let mut imports = Vec::new();
 
@@ -735,7 +735,7 @@ impl ContextBuilder {
         imports
     }
 
-    /// Load architectural rules from llms.txt and risk_rules.json
+    // Load architectural rules from llms.txt and risk_rules.json
     fn load_architectural_rules(&self) -> Result<ArchitecturalRules> {
         let mut global_rules = Vec::new();
         let category_rules = HashMap::new();
@@ -791,7 +791,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Build diff context from git
+    // Build diff context from git
     fn build_diff_context(&self) -> Result<DiffContext> {
         use std::process::Command;
 
@@ -849,7 +849,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Build test coverage data
+    // Build test coverage data
     fn build_test_coverage(&self) -> Result<TestCoverageData> {
         let test_runner = TestRunner::new(&self.root);
         let test_results = test_runner.run_all_tests()?;
@@ -871,7 +871,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Build source code bundle
+    // Build source code bundle
     fn build_source_bundle(&self) -> Result<SourceBundle> {
         let mut files = Vec::new();
         let mut total_size = 0;
@@ -925,7 +925,7 @@ impl ContextBuilder {
         })
     }
 
-    /// Generate formatted context for LLM prompt
+    // Generate formatted context for LLM prompt
     pub fn format_for_llm(bundle: &GlobalContextBundle) -> String {
         let mut prompt = String::new();
 

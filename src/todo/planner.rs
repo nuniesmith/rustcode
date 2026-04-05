@@ -1,38 +1,38 @@
-//! Todo planner — generate a batched GAMEPLAN from `todo.md` using xAI LLM
-//!
-//! This module is the backend for `rustcode todo-plan <todo-md>`.
-//! It reads `todo.md`, optionally collects source context from the repo,
-//! sends everything to the xAI (Grok) API, and returns a structured
-//! `GamePlan` containing ordered `GamePlanBatch` work items ready to be
-//! executed by `todo-work`.
-//!
-//! # Output shape
-//!
-//! ```json
-//! {
-//!   "generated_at": "2024-01-01T00:00:00Z",
-//!   "todo_path": "todo.md",
-//!   "model": "grok-4-turbo",
-//!   "batches": [
-//!     {
-//!       "id": "batch-001",
-//!       "title": "Fix admin module ApiState fields",
-//!       "priority": "high",
-//!       "estimated_effort": "small",
-//!       "items": [
-//!         {
-//!           "todo_id": "a1b2c3d4",
-//!           "description": "Uncomment pub mod admin and fix ApiState field references",
-//!           "files": ["src/api/mod.rs", "src/api/admin.rs", "src/api/handlers.rs"],
-//!           "approach": "Align AdminState fields with the current ApiState definition"
-//!         }
-//!       ],
-//!       "rationale": "Blocking — admin routes are completely disabled",
-//!       "dependencies": []
-//!     }
-//!   ]
-//! }
-//! ```
+// Todo planner — generate a batched GAMEPLAN from `todo.md` using xAI LLM
+//
+// This module is the backend for `rustcode todo-plan <todo-md>`.
+// It reads `todo.md`, optionally collects source context from the repo,
+// sends everything to the xAI (Grok) API, and returns a structured
+// `GamePlan` containing ordered `GamePlanBatch` work items ready to be
+// executed by `todo-work`.
+//
+// # Output shape
+//
+// ```json
+// {
+//   "generated_at": "2024-01-01T00:00:00Z",
+//   "todo_path": "todo.md",
+//   "model": "grok-4-turbo",
+//   "batches": [
+//     {
+//       "id": "batch-001",
+//       "title": "Fix admin module ApiState fields",
+//       "priority": "high",
+//       "estimated_effort": "small",
+//       "items": [
+//         {
+//           "todo_id": "a1b2c3d4",
+//           "description": "Uncomment pub mod admin and fix ApiState field references",
+//           "files": ["src/api/mod.rs", "src/api/admin.rs", "src/api/handlers.rs"],
+//           "approach": "Align AdminState fields with the current ApiState definition"
+//         }
+//       ],
+//       "rationale": "Blocking — admin routes are completely disabled",
+//       "dependencies": []
+//     }
+//   ]
+// }
+// ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -46,24 +46,24 @@ use crate::todo::todo_file::{Priority, TodoFile, TodoItem};
 // Configuration
 // ============================================================================
 
-/// Configuration for the planner
+// Configuration for the planner
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerConfig {
-    /// Maximum number of batches to generate
+    // Maximum number of batches to generate
     pub max_batches: usize,
-    /// Maximum number of work items per batch
+    // Maximum number of work items per batch
     pub max_items_per_batch: usize,
-    /// Maximum number of source context snippets to include in the LLM prompt
+    // Maximum number of source context snippets to include in the LLM prompt
     pub max_context_snippets: usize,
-    /// Maximum characters of source context to include per snippet
+    // Maximum characters of source context to include per snippet
     pub max_snippet_chars: usize,
-    /// Whether to include completed (✅) items in the prompt for context
+    // Whether to include completed (✅) items in the prompt for context
     pub include_done_items: bool,
-    /// LLM temperature (0.0–1.0); lower = more deterministic plans
+    // LLM temperature (0.0–1.0); lower = more deterministic plans
     pub temperature: f32,
-    /// Override the model name (defaults to `grok-4-turbo`)
+    // Override the model name (defaults to `grok-4-turbo`)
     pub model: Option<String>,
-    /// Additional freeform instructions appended to the system prompt
+    // Additional freeform instructions appended to the system prompt
     pub extra_instructions: Option<String>,
 }
 
@@ -86,17 +86,17 @@ impl Default for PlannerConfig {
 // GamePlan output types
 // ============================================================================
 
-/// Estimated effort for a batch
+// Estimated effort for a batch
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EffortEstimate {
-    /// < 30 min — single function / config tweak
+    // < 30 min — single function / config tweak
     Trivial,
-    /// 30 min – 2 h — single file change
+    // 30 min – 2 h — single file change
     Small,
-    /// 2 h – 1 day — multi-file change
+    // 2 h – 1 day — multi-file change
     Medium,
-    /// 1 day+ — architectural / cross-cutting concern
+    // 1 day+ — architectural / cross-cutting concern
     Large,
 }
 
@@ -130,89 +130,89 @@ impl std::str::FromStr for EffortEstimate {
     }
 }
 
-/// A single actionable work item within a batch
+// A single actionable work item within a batch
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchWorkItem {
-    /// Stable ID of the corresponding `TodoItem` (from `TodoFile`)
+    // Stable ID of the corresponding `TodoItem` (from `TodoFile`)
     pub todo_id: String,
-    /// Short description of what to do
+    // Short description of what to do
     pub description: String,
-    /// Source files likely to be touched
+    // Source files likely to be touched
     pub files: Vec<String>,
-    /// Suggested approach / strategy
+    // Suggested approach / strategy
     pub approach: String,
-    /// Optional acceptance criteria
+    // Optional acceptance criteria
     pub acceptance_criteria: Option<String>,
 }
 
-/// A batch of related work items that should be done together
+// A batch of related work items that should be done together
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GamePlanBatch {
-    /// Unique batch identifier (e.g. `"batch-001"`)
+    // Unique batch identifier (e.g. `"batch-001"`)
     pub id: String,
-    /// Human-readable title
+    // Human-readable title
     pub title: String,
-    /// Priority level (mirrors `todo_file::Priority`)
+    // Priority level (mirrors `todo_file::Priority`)
     pub priority: String,
-    /// Effort estimate
+    // Effort estimate
     pub estimated_effort: EffortEstimate,
-    /// Work items in this batch
+    // Work items in this batch
     pub items: Vec<BatchWorkItem>,
-    /// LLM rationale for grouping these items
+    // LLM rationale for grouping these items
     pub rationale: String,
-    /// Batch IDs that should be completed before this one
+    // Batch IDs that should be completed before this one
     pub dependencies: Vec<String>,
 }
 
 impl GamePlanBatch {
-    /// Check whether this batch has no unresolved dependencies
+    // Check whether this batch has no unresolved dependencies
     pub fn is_ready(&self, completed: &[String]) -> bool {
         self.dependencies.iter().all(|d| completed.contains(d))
     }
 }
 
-/// The full game plan returned by the planner
+// The full game plan returned by the planner
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GamePlan {
     pub generated_at: DateTime<Utc>,
     pub todo_path: PathBuf,
     pub model: String,
     pub batches: Vec<GamePlanBatch>,
-    /// Total pending items captured in this plan
+    // Total pending items captured in this plan
     pub total_items_planned: usize,
-    /// Items that were skipped (e.g. too vague, already done)
+    // Items that were skipped (e.g. too vague, already done)
     pub skipped_items: Vec<String>,
-    /// Raw LLM response (kept for debugging / re-parse)
+    // Raw LLM response (kept for debugging / re-parse)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_llm_response: Option<String>,
 }
 
 impl GamePlan {
-    /// Serialise to pretty-printed JSON
+    // Serialise to pretty-printed JSON
     pub fn to_json_pretty(&self) -> Result<String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Serialise to compact JSON
+    // Serialise to compact JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Deserialise from a JSON string
+    // Deserialise from a JSON string
     pub fn from_json(json: &str) -> Result<Self> {
         serde_json::from_str(json)
             .map_err(|e| AuditError::other(format!("GamePlan JSON parse error: {}", e)))
     }
 
-    /// Load a GamePlan from a `.json` file on disk
+    // Load a GamePlan from a `.json` file on disk
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref()).map_err(AuditError::Io)?;
         Self::from_json(&content)
     }
 
-    /// Return batches ordered: ready (no unresolved deps) first, then by priority string
+    // Return batches ordered: ready (no unresolved deps) first, then by priority string
     pub fn ordered_batches(&self) -> Vec<&GamePlanBatch> {
         let completed: Vec<String> = Vec::new();
         let mut ready: Vec<&GamePlanBatch> = self
@@ -248,14 +248,14 @@ fn priority_rank(p: &str) -> u8 {
 // Planner
 // ============================================================================
 
-/// Generates a `GamePlan` from a `todo.md` file using the xAI LLM
+// Generates a `GamePlan` from a `todo.md` file using the xAI LLM
 pub struct TodoPlanner {
     config: PlannerConfig,
     client: GrokClient,
 }
 
 impl TodoPlanner {
-    /// Create a planner from environment — reads `XAI_API_KEY` automatically
+    // Create a planner from environment — reads `XAI_API_KEY` automatically
     pub async fn from_env(config: PlannerConfig, db: crate::db::Database) -> Result<Self> {
         let client = GrokClient::from_env(db)
             .await
@@ -263,7 +263,7 @@ impl TodoPlanner {
         Ok(Self { config, client })
     }
 
-    /// Create a planner with an explicit `GrokClient`
+    // Create a planner with an explicit `GrokClient`
     pub fn new(config: PlannerConfig, client: GrokClient) -> Self {
         Self { config, client }
     }
@@ -272,10 +272,10 @@ impl TodoPlanner {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Generate a `GamePlan` from a `todo.md` file.
-    ///
-    /// `source_root` (optional) is the repo root — used to collect relevant
-    /// source snippets that are referenced in the TODO items.
+    // Generate a `GamePlan` from a `todo.md` file.
+    //
+    // `source_root` (optional) is the repo root — used to collect relevant
+    // source snippets that are referenced in the TODO items.
     pub async fn plan(
         &self,
         todo_path: impl AsRef<Path>,
@@ -470,10 +470,10 @@ low-risk items first. Each batch should be completable in a single focused work 
     // Response parsing
     // -----------------------------------------------------------------------
 
-    /// Extract batches from the raw LLM response text.
-    ///
-    /// The LLM is instructed to return pure JSON, but may occasionally wrap it
-    /// in markdown fences. We try several strategies to extract valid JSON.
+    // Extract batches from the raw LLM response text.
+    //
+    // The LLM is instructed to return pure JSON, but may occasionally wrap it
+    // in markdown fences. We try several strategies to extract valid JSON.
     fn parse_batches_from_response(
         &self,
         raw: &str,
@@ -524,10 +524,10 @@ low-risk items first. Each batch should be completable in a single focused work 
         Ok(Vec::new())
     }
 
-    /// Walk `raw` and extract every complete JSON object that looks like a
-    /// `GamePlanBatch` (i.e. contains an `"id"` field).  This is used as a
-    /// last-resort recovery path when the LLM response was cut off by
-    /// `max_tokens` before the outer wrapper was closed.
+    // Walk `raw` and extract every complete JSON object that looks like a
+    // `GamePlanBatch` (i.e. contains an `"id"` field).  This is used as a
+    // last-resort recovery path when the LLM response was cut off by
+    // `max_tokens` before the outer wrapper was closed.
     fn recover_partial_batches(&self, raw: &str) -> Vec<GamePlanBatch> {
         let mut batches = Vec::new();
         let bytes = raw.as_bytes();
@@ -600,8 +600,8 @@ low-risk items first. Each batch should be completable in a single focused work 
     // Source context collection
     // -----------------------------------------------------------------------
 
-    /// Walk the todo items looking for file references (e.g. `src/api/handlers.rs:132`)
-    /// and return a condensed snippet of relevant source code for the LLM.
+    // Walk the todo items looking for file references (e.g. `src/api/handlers.rs:132`)
+    // and return a condensed snippet of relevant source code for the LLM.
     fn collect_source_context(&self, pending: &[&TodoItem], repo_root: &Path) -> String {
         use std::collections::HashMap;
 
@@ -686,7 +686,7 @@ low-risk items first. Each batch should be completable in a single focused work 
 // Helpers
 // ============================================================================
 
-/// Remove ` ```json `, ` ``` `, and similar markdown fences from LLM output
+// Remove ` ```json `, ` ``` `, and similar markdown fences from LLM output
 fn strip_markdown_fences(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_fence = false;

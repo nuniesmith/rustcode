@@ -1,33 +1,33 @@
-//! # Code Review Module
-//!
-//! Automated code review with AI-powered analysis and structured feedback.
-//!
-//! ## Features
-//!
-//! - Git diff integration
-//! - Batch analysis of changed files
-//! - Structured review feedback
-//! - GitHub/GitLab compatible output
-//! - Security and quality focus
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::code_review::CodeReviewer;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustcode.db").await?;
-//!     let reviewer = CodeReviewer::new(db).await?;
-//!
-//!     // Review git diff
-//!     let review = reviewer.review_diff(".", None).await?;
-//!     println!("{}", review.format_markdown());
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Code Review Module
+//
+// Automated code review with AI-powered analysis and structured feedback.
+//
+// ## Features
+//
+// - Git diff integration
+// - Batch analysis of changed files
+// - Structured review feedback
+// - GitHub/GitLab compatible output
+// - Security and quality focus
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::code_review::CodeReviewer;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("data/rustcode.db").await?;
+//     let reviewer = CodeReviewer::new(db).await?;
+//
+//     // Review git diff
+//     let review = reviewer.review_diff(".", None).await?;
+//     println!("{}", review.format_markdown());
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::grok_client::{FileScoreResult, GrokClient};
@@ -36,104 +36,104 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Code reviewer with AI-powered analysis
+// Code reviewer with AI-powered analysis
 pub struct CodeReviewer {
     grok_client: GrokClient,
 }
 
-/// Review result for a single file
+// Review result for a single file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileReview {
-    /// File path
+    // File path
     pub path: String,
-    /// Overall quality score (0-100)
+    // Overall quality score (0-100)
     pub score: f64,
-    /// Security score (0-100)
+    // Security score (0-100)
     pub security_score: f64,
-    /// Issues found
+    // Issues found
     pub issues: Vec<ReviewIssue>,
-    /// Suggestions for improvement
+    // Suggestions for improvement
     pub suggestions: Vec<String>,
-    /// Lines changed
+    // Lines changed
     pub lines_changed: usize,
 }
 
-/// Review issue with severity
+// Review issue with severity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewIssue {
-    /// Issue severity
+    // Issue severity
     pub severity: IssueSeverity,
-    /// Issue description
+    // Issue description
     pub description: String,
-    /// Optional line number
+    // Optional line number
     pub line: Option<usize>,
 }
 
-/// Issue severity levels
+// Issue severity levels
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IssueSeverity {
-    /// Critical security or correctness issue
+    // Critical security or correctness issue
     Critical,
-    /// High priority issue
+    // High priority issue
     High,
-    /// Medium priority issue
+    // Medium priority issue
     Medium,
-    /// Low priority issue
+    // Low priority issue
     Low,
-    /// Informational note
+    // Informational note
     Info,
 }
 
-/// Complete code review result
+// Complete code review result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeReview {
-    /// Repository path
+    // Repository path
     pub repo_path: String,
-    /// Base branch (if comparing)
+    // Base branch (if comparing)
     pub base_branch: Option<String>,
-    /// Files reviewed
+    // Files reviewed
     pub files: Vec<FileReview>,
-    /// Overall statistics
+    // Overall statistics
     pub stats: ReviewStats,
-    /// High-level summary
+    // High-level summary
     pub summary: String,
-    /// Timestamp
+    // Timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-/// Review statistics
+// Review statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewStats {
-    /// Total files reviewed
+    // Total files reviewed
     pub total_files: usize,
-    /// Files with issues
+    // Files with issues
     pub files_with_issues: usize,
-    /// Total issues found
+    // Total issues found
     pub total_issues: usize,
-    /// Critical issues
+    // Critical issues
     pub critical_issues: usize,
-    /// High priority issues
+    // High priority issues
     pub high_issues: usize,
-    /// Medium priority issues
+    // Medium priority issues
     pub medium_issues: usize,
-    /// Low priority issues
+    // Low priority issues
     pub low_issues: usize,
-    /// Average quality score
+    // Average quality score
     pub avg_quality: f64,
-    /// Average security score
+    // Average security score
     pub avg_security: f64,
-    /// Total lines changed
+    // Total lines changed
     pub total_lines_changed: usize,
 }
 
 impl CodeReviewer {
-    /// Create a new code reviewer
+    // Create a new code reviewer
     pub async fn new(db: Database) -> Result<Self> {
         let grok_client = GrokClient::from_env(db).await?;
         Ok(Self { grok_client })
     }
 
-    /// Review changes in git diff
+    // Review changes in git diff
     pub async fn review_diff(
         &self,
         repo_path: impl AsRef<Path>,
@@ -174,7 +174,7 @@ impl CodeReviewer {
         })
     }
 
-    /// Review specific files
+    // Review specific files
     pub async fn review_files(&self, files: Vec<PathBuf>) -> Result<CodeReview> {
         let mut file_reviews = Vec::new();
 
@@ -197,7 +197,7 @@ impl CodeReviewer {
         })
     }
 
-    /// Review a single file
+    // Review a single file
     async fn review_file(&self, path: &Path, lines_changed: usize) -> Result<FileReview> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -228,7 +228,7 @@ impl CodeReviewer {
         Ok(self.convert_to_file_review(path, score_result, lines_changed))
     }
 
-    /// Convert FileScoreResult to FileReview
+    // Convert FileScoreResult to FileReview
     fn convert_to_file_review(
         &self,
         path: &Path,
@@ -257,7 +257,7 @@ impl CodeReviewer {
         }
     }
 
-    /// Determine issue severity based on content and security score
+    // Determine issue severity based on content and security score
     fn determine_severity(&self, issue: &str, security_score: f64) -> IssueSeverity {
         let issue_lower = issue.to_lowercase();
 
@@ -308,7 +308,7 @@ impl CodeReviewer {
         }
     }
 
-    /// Get list of changed files from git
+    // Get list of changed files from git
     fn get_changed_files(
         &self,
         repo_path: &Path,
@@ -357,7 +357,7 @@ impl CodeReviewer {
         Ok(files)
     }
 
-    /// Check if file should be reviewed
+    // Check if file should be reviewed
     fn is_reviewable_file(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             matches!(
@@ -369,7 +369,7 @@ impl CodeReviewer {
         }
     }
 
-    /// Count changed lines for a file
+    // Count changed lines for a file
     fn count_changed_lines(
         &self,
         repo_path: &Path,
@@ -403,7 +403,7 @@ impl CodeReviewer {
         Ok(0)
     }
 
-    /// Calculate review statistics
+    // Calculate review statistics
     fn calculate_stats(&self, reviews: &[FileReview]) -> ReviewStats {
         if reviews.is_empty() {
             return ReviewStats::default();
@@ -450,7 +450,7 @@ impl CodeReviewer {
         }
     }
 
-    /// Generate high-level summary
+    // Generate high-level summary
     fn generate_summary(&self, stats: &ReviewStats) -> String {
         let mut summary = String::new();
 
@@ -487,7 +487,7 @@ impl CodeReviewer {
         summary
     }
 
-    /// Get quality rating label
+    // Get quality rating label
     fn quality_rating(&self, score: f64) -> &'static str {
         if score >= 90.0 {
             "Excellent"
@@ -504,7 +504,7 @@ impl CodeReviewer {
 }
 
 impl CodeReview {
-    /// Format review as markdown
+    // Format review as markdown
     pub fn format_markdown(&self) -> String {
         let mut output = String::new();
 
@@ -614,7 +614,7 @@ impl CodeReview {
         output
     }
 
-    /// Format as GitHub PR comment
+    // Format as GitHub PR comment
     pub fn format_github_comment(&self) -> String {
         let mut output = String::new();
 

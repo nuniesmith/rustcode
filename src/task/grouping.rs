@@ -1,7 +1,7 @@
-//! Task Grouping Logic
-//!
-//! Groups related tasks for efficient batch processing and IDE handoff.
-//! Tasks can be grouped by: file, category, repository, or similarity.
+// Task Grouping Logic
+//
+// Groups related tasks for efficient batch processing and IDE handoff.
+// Tasks can be grouped by: file, category, repository, or similarity.
 
 use crate::task::{Task, TaskGroup};
 use std::collections::HashMap;
@@ -12,13 +12,13 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GroupingStrategy {
-    /// Group by source file (default for code tasks)
+    // Group by source file (default for code tasks)
     ByFile,
-    /// Group by category (bug, refactor, etc.)
+    // Group by category (bug, refactor, etc.)
     ByCategory,
-    /// Group by repository
+    // Group by repository
     ByRepo,
-    /// Smart grouping: file first, then category
+    // Smart grouping: file first, then category
     Smart,
 }
 
@@ -26,7 +26,7 @@ pub enum GroupingStrategy {
 // Core Grouping Functions
 // ============================================================================
 
-/// Group tasks using the specified strategy
+// Group tasks using the specified strategy
 pub fn group_tasks(tasks: Vec<Task>, strategy: GroupingStrategy) -> Vec<TaskGroup> {
     match strategy {
         GroupingStrategy::ByFile => group_by_file(tasks),
@@ -36,7 +36,7 @@ pub fn group_tasks(tasks: Vec<Task>, strategy: GroupingStrategy) -> Vec<TaskGrou
     }
 }
 
-/// Group tasks by source file
+// Group tasks by source file
 pub fn group_by_file(tasks: Vec<Task>) -> Vec<TaskGroup> {
     let mut groups: HashMap<String, Vec<Task>> = HashMap::new();
 
@@ -58,7 +58,7 @@ pub fn group_by_file(tasks: Vec<Task>) -> Vec<TaskGroup> {
     result
 }
 
-/// Group tasks by category
+// Group tasks by category
 pub fn group_by_category(tasks: Vec<Task>) -> Vec<TaskGroup> {
     let mut groups: HashMap<String, Vec<Task>> = HashMap::new();
 
@@ -79,7 +79,7 @@ pub fn group_by_category(tasks: Vec<Task>) -> Vec<TaskGroup> {
     result
 }
 
-/// Group tasks by repository
+// Group tasks by repository
 pub fn group_by_repo(tasks: Vec<Task>) -> Vec<TaskGroup> {
     let mut groups: HashMap<String, Vec<Task>> = HashMap::new();
 
@@ -100,8 +100,8 @@ pub fn group_by_repo(tasks: Vec<Task>) -> Vec<TaskGroup> {
     result
 }
 
-/// Smart grouping: prioritizes file-based groups, then falls back to category
-/// Also identifies cross-cutting concerns that span multiple files
+// Smart grouping: prioritizes file-based groups, then falls back to category
+// Also identifies cross-cutting concerns that span multiple files
 pub fn smart_grouping(tasks: Vec<Task>) -> Vec<TaskGroup> {
     let mut file_groups: HashMap<String, Vec<Task>> = HashMap::new();
     let mut no_file_tasks: Vec<Task> = Vec::new();
@@ -143,7 +143,7 @@ pub fn smart_grouping(tasks: Vec<Task>) -> Vec<TaskGroup> {
 // Filtering Helpers
 // ============================================================================
 
-/// Filter groups by minimum priority
+// Filter groups by minimum priority
 pub fn filter_by_priority(groups: Vec<TaskGroup>, min_priority: i32) -> Vec<TaskGroup> {
     groups
         .into_iter()
@@ -151,7 +151,7 @@ pub fn filter_by_priority(groups: Vec<TaskGroup>, min_priority: i32) -> Vec<Task
         .collect()
 }
 
-/// Get only groups that are ready for IDE export
+// Get only groups that are ready for IDE export
 pub fn filter_ready_groups(groups: Vec<TaskGroup>) -> Vec<TaskGroup> {
     groups
         .into_iter()
@@ -164,12 +164,12 @@ pub fn filter_ready_groups(groups: Vec<TaskGroup>) -> Vec<TaskGroup> {
         .collect()
 }
 
-/// Get the next group to work on (highest priority)
+// Get the next group to work on (highest priority)
 pub fn get_next_group(groups: &[TaskGroup]) -> Option<&TaskGroup> {
     groups.first()
 }
 
-/// Get top N groups by priority
+// Get top N groups by priority
 pub fn get_top_groups(groups: &[TaskGroup], n: usize) -> Vec<&TaskGroup> {
     groups.iter().take(n).collect()
 }
@@ -178,7 +178,7 @@ pub fn get_top_groups(groups: &[TaskGroup], n: usize) -> Vec<&TaskGroup> {
 // Similarity Detection (for smarter grouping)
 // ============================================================================
 
-/// Check if two tasks are likely related based on content similarity
+// Check if two tasks are likely related based on content similarity
 pub fn tasks_are_similar(task1: &Task, task2: &Task) -> bool {
     // Same file = definitely related
     if task1.source_file.is_some() && task1.source_file == task2.source_file {
@@ -214,7 +214,7 @@ pub fn tasks_are_similar(task1: &Task, task2: &Task) -> bool {
     false
 }
 
-/// Find all tasks similar to a given task
+// Find all tasks similar to a given task
 pub fn find_similar_tasks<'a>(target: &Task, candidates: &'a [Task]) -> Vec<&'a Task> {
     candidates
         .iter()
@@ -226,12 +226,12 @@ pub fn find_similar_tasks<'a>(target: &Task, candidates: &'a [Task]) -> Vec<&'a 
 // Group Enhancement
 // ============================================================================
 
-/// Add LLM-generated description to a group
+// Add LLM-generated description to a group
 pub fn enhance_group_description(group: &mut TaskGroup, description: String) {
     group.description = Some(description);
 }
 
-/// Merge two groups if they're related
+// Merge two groups if they're related
 pub fn merge_groups(group1: TaskGroup, group2: TaskGroup) -> TaskGroup {
     let combined_tasks: Vec<Task> = group1.tasks.into_iter().chain(group2.tasks).collect();
 

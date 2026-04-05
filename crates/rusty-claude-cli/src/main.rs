@@ -147,12 +147,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-//! `claw` — Rusty Claude CLI
-//!
-//! Thin binary entry-point.  All substantive logic lives in the sibling
-//! modules (`app`, `args`, `init`, `input`, `render`) so that the integration
-//! test harness can import and exercise them directly without going through
-//! a subprocess.
+// `claw` — Rusty Claude CLI
+//
+// Thin binary entry-point.  All substantive logic lives in the sibling
+// modules (`app`, `args`, `init`, `input`, `render`) so that the integration
+// test harness can import and exercise them directly without going through
+// a subprocess.
 
 use clap::Parser as _;
 

@@ -1,4 +1,4 @@
-//! Axum API server for the audit service + RustCode dashboard
+// Axum API server for the audit service + RustCode dashboard
 
 use crate::api::auth::require_api_key;
 use crate::api::proxy::{ProxyState, proxy_router};
@@ -39,7 +39,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-/// Application state shared across handlers
+// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     config: Arc<Config>,
@@ -50,7 +50,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Create new application state
+    // Create new application state
     pub async fn new(config: Config) -> Result<Self> {
         let git_manager = Arc::new(GitManager::new(
             config.git.workspace_dir.clone(),
@@ -88,9 +88,9 @@ impl AppState {
     }
 }
 
-/// Run the audit server
-/// Combined state for the GitHub webhook handler (requires both `AppState` and
-/// the `RepoSyncService` so it can trigger a repo sync on push events).
+// Run the audit server
+// Combined state for the GitHub webhook handler (requires both `AppState` and
+// the `RepoSyncService` so it can trigger a repo sync on push events).
 #[derive(Clone)]
 struct WebhookState {
     sync_service: Arc<tokio::sync::RwLock<RepoSyncService>>,
@@ -337,10 +337,10 @@ pub async fn run_server(config: Config) -> Result<()> {
     Ok(())
 }
 
-/// Build a restrictive CORS layer
-///
-/// SECURITY: This replaces the previous `CorsLayer::permissive()` which allowed
-/// any origin to make requests, exposing the API to CSRF/XSS attacks.
+// Build a restrictive CORS layer
+//
+// SECURITY: This replaces the previous `CorsLayer::permissive()` which allowed
+// any origin to make requests, exposing the API to CSRF/XSS attacks.
 fn build_cors_layer() -> CorsLayer {
     // Get allowed origins from environment or use defaults
     let allowed_origins: Vec<String> = std::env::var("CORS_ALLOWED_ORIGINS")
@@ -381,14 +381,14 @@ fn build_cors_layer() -> CorsLayer {
 // GitHub Webhook → Repo Sync
 // ============================================================================
 
-/// `POST /api/github/webhook`
-///
-/// Receives GitHub push (and other) webhook events and triggers a
-/// `RepoSyncService::sync` for any registered repo whose `remote_url`
-/// matches the repository in the event payload.
-///
-/// The endpoint always returns **200 OK** quickly — the sync itself runs in a
-/// background `tokio::spawn` so GitHub doesn't time out waiting for us.
+// `POST /api/github/webhook`
+//
+// Receives GitHub push (and other) webhook events and triggers a
+// `RepoSyncService::sync` for any registered repo whose `remote_url`
+// matches the repository in the event payload.
+//
+// The endpoint always returns **200 OK** quickly — the sync itself runs in a
+// background `tokio::spawn` so GitHub doesn't time out waiting for us.
 async fn handle_github_webhook(
     State(wh_state): State<WebhookState>,
     headers: HeaderMap,
@@ -527,7 +527,7 @@ async fn handle_github_webhook(
         .into_response()
 }
 
-/// Health check endpoint
+// Health check endpoint
 async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "healthy".to_string(),
@@ -535,7 +535,7 @@ async fn health_check() -> impl IntoResponse {
     })
 }
 
-/// Clone a repository endpoint
+// Clone a repository endpoint
 async fn clone_repository(
     State(state): State<AppState>,
     Json(request): Json<CloneRequest>,
@@ -567,7 +567,7 @@ async fn clone_repository(
     }))
 }
 
-/// Scan for tags only
+// Scan for tags only
 async fn scan_tags(
     State(_state): State<AppState>,
     Json(request): Json<ScanRequest>,
@@ -591,7 +591,7 @@ async fn scan_tags(
     }))
 }
 
-/// Perform static analysis only
+// Perform static analysis only
 async fn scan_static(
     State(state): State<AppState>,
     Json(request): Json<ScanRequest>,
@@ -698,7 +698,7 @@ struct ErrorResponse {
 // Repository Management Endpoints
 // ============================================================================
 
-/// List all tracked repositories
+// List all tracked repositories
 async fn list_repos(State(state): State<AppState>) -> Result<Json<Vec<Repository>>> {
     let repos = db::list_repositories(&state.db_pool)
         .await
@@ -718,7 +718,7 @@ struct ScanReposResponse {
     repositories: Vec<Repository>,
 }
 
-/// Scan and sync repositories from GitHub
+// Scan and sync repositories from GitHub
 async fn scan_repos(
     State(state): State<AppState>,
     Json(req): Json<ScanReposRequest>,
@@ -743,7 +743,7 @@ async fn scan_repos(
 // Queue Management Endpoints
 // ============================================================================
 
-/// Get queue status
+// Get queue status
 async fn queue_status(State(state): State<AppState>) -> Result<Json<QueueStats>> {
     let stats = get_queue_stats(&state.db_pool)
         .await
@@ -813,7 +813,7 @@ struct GitHubSyncRequest {
     repo: Option<String>,
 }
 
-/// Get GitHub integration statistics
+// Get GitHub integration statistics
 async fn github_stats(State(state): State<AppState>) -> Result<Json<GitHubStatsResponse>> {
     let stats: (i64, i64, i64, i64, i64) = sqlx::query_as(
         r#"
@@ -858,7 +858,7 @@ async fn github_stats(State(state): State<AppState>) -> Result<Json<GitHubStatsR
     }))
 }
 
-/// Search GitHub repositories
+// Search GitHub repositories
 async fn github_repos(
     State(state): State<AppState>,
     Query(params): Query<GitHubReposQuery>,
@@ -882,7 +882,7 @@ async fn github_repos(
     Ok(Json(results))
 }
 
-/// Get GitHub issues
+// Get GitHub issues
 async fn github_issues(
     State(state): State<AppState>,
     Query(params): Query<GitHubIssuesQuery>,
@@ -913,7 +913,7 @@ async fn github_issues(
     Ok(Json(results))
 }
 
-/// Get GitHub pull requests
+// Get GitHub pull requests
 async fn github_prs(
     State(state): State<AppState>,
     Query(params): Query<GitHubPrsQuery>,
@@ -944,7 +944,7 @@ async fn github_prs(
     Ok(Json(results))
 }
 
-/// Search GitHub data
+// Search GitHub data
 async fn github_search(
     State(state): State<AppState>,
     Query(params): Query<GitHubSearchQuery>,
@@ -985,7 +985,7 @@ async fn github_search(
     })))
 }
 
-/// Trigger GitHub sync
+// Trigger GitHub sync
 async fn github_sync(
     State(state): State<AppState>,
     Json(params): Json<GitHubSyncRequest>,
@@ -1044,7 +1044,7 @@ struct UpdateStatusRequest {
     status: String,
 }
 
-/// `GET /api/tasks` — list tasks with optional filters
+// `GET /api/tasks` — list tasks with optional filters
 async fn list_tasks_handler(
     State(state): State<AppState>,
     Query(query): Query<ListTasksQuery>,
@@ -1062,7 +1062,7 @@ async fn list_tasks_handler(
     Ok(Json(tasks))
 }
 
-/// `GET /api/tasks/next` — get the highest-priority pending task
+// `GET /api/tasks/next` — get the highest-priority pending task
 async fn get_next_task_handler(State(state): State<AppState>) -> Result<Json<serde_json::Value>> {
     match db::get_next_task(&state.db_pool).await {
         Ok(Some(task)) => Ok(Json(serde_json::json!(task))),
@@ -1071,7 +1071,7 @@ async fn get_next_task_handler(State(state): State<AppState>) -> Result<Json<ser
     }
 }
 
-/// `PUT /api/tasks/{id}` — update a task's status
+// `PUT /api/tasks/{id}` — update a task's status
 async fn update_task_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1083,7 +1083,7 @@ async fn update_task_handler(
     Ok(Json(serde_json::json!({"updated": true})))
 }
 
-/// `GET /api/stats` — get database statistics
+// `GET /api/stats` — get database statistics
 async fn get_statistics(State(state): State<AppState>) -> Result<Json<db::DbStats>> {
     let stats = db::get_stats(&state.db_pool)
         .await

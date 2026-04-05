@@ -1,64 +1,64 @@
-//! # SQLite-based Repository Cache
-//!
-//! Provides a robust, queryable cache for LLM analysis results using SQLite.
-//!
-//! ## Features
-//!
-//! - SQLite storage with indices for fast queries
-//! - Compressed JSON storage using zstd
-//! - Multi-factor cache keys (file hash + model + prompt + schema)
-//! - Token usage tracking and cost estimation
-//! - Advanced queries (by repo, model, prompt, date range)
-//! - Cache eviction policies (LRU, size-based, cost-aware)
-//! - Migration from JSON file-based cache
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::repo_cache_sql::{RepoCacheSql, CacheSetParams};
-//! use rustcode::repo_cache::CacheType;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let cache = RepoCacheSql::new_for_repo("/path/to/repo").await?;
-//!
-//!     // Check cache
-//!     let content = "fn main() {}";
-//!     if let Some(entry) = cache.get(
-//!         CacheType::Refactor,
-//!         "src/main.rs",
-//!         content,
-//!         "xai",
-//!         "grok-beta",
-//!         None,
-//!         None
-//!     ).await? {
-//!         println!("Cache hit!");
-//!         return Ok(());
-//!     }
-//!
-//!     // Store result
-//!     let result = serde_json::json!({"score": 95});
-//!     cache.set(CacheSetParams {
-//!         cache_type: CacheType::Refactor,
-//!         repo_path: "/path/to/repo",
-//!         file_path: "src/main.rs",
-//!         content,
-//!         provider: "xai",
-//!         model: "grok-beta",
-//!         result,
-//!         tokens_used: Some(150),
-//!         prompt_hash: None,
-//!         schema_version: None,
-//!     }).await?;
-//!
-//!     // Get statistics
-//!     let stats = cache.stats().await?;
-//!     println!("Total tokens: {}", stats.total_tokens);
-//!
-//!     Ok(())
-//! }
-//! ```
+// # SQLite-based Repository Cache
+//
+// Provides a robust, queryable cache for LLM analysis results using SQLite.
+//
+// ## Features
+//
+// - SQLite storage with indices for fast queries
+// - Compressed JSON storage using zstd
+// - Multi-factor cache keys (file hash + model + prompt + schema)
+// - Token usage tracking and cost estimation
+// - Advanced queries (by repo, model, prompt, date range)
+// - Cache eviction policies (LRU, size-based, cost-aware)
+// - Migration from JSON file-based cache
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::repo_cache_sql::{RepoCacheSql, CacheSetParams};
+// use rustcode::repo_cache::CacheType;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let cache = RepoCacheSql::new_for_repo("/path/to/repo").await?;
+//
+//     // Check cache
+//     let content = "fn main() {}";
+//     if let Some(entry) = cache.get(
+//         CacheType::Refactor,
+//         "src/main.rs",
+//         content,
+//         "xai",
+//         "grok-beta",
+//         None,
+//         None
+//     ).await? {
+//         println!("Cache hit!");
+//         return Ok(());
+//     }
+//
+//     // Store result
+//     let result = serde_json::json!({"score": 95});
+//     cache.set(CacheSetParams {
+//         cache_type: CacheType::Refactor,
+//         repo_path: "/path/to/repo",
+//         file_path: "src/main.rs",
+//         content,
+//         provider: "xai",
+//         model: "grok-beta",
+//         result,
+//         tokens_used: Some(150),
+//         prompt_hash: None,
+//         schema_version: None,
+//     }).await?;
+//
+//     // Get statistics
+//     let stats = cache.stats().await?;
+//     println!("Total tokens: {}", stats.total_tokens);
+//
+//     Ok(())
+// }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -71,7 +71,7 @@ use tracing::{debug, info};
 // Re-export CacheType from repo_cache
 pub use crate::repo_cache::CacheType;
 
-/// Parameters for setting cache entries
+// Parameters for setting cache entries
 #[derive(Debug)]
 pub struct CacheSetParams<'a> {
     pub cache_type: crate::repo_cache::CacheType,
@@ -86,7 +86,7 @@ pub struct CacheSetParams<'a> {
     pub schema_version: Option<i32>,
 }
 
-/// Cache entry stored in database
+// Cache entry stored in database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
     pub id: i64,
@@ -107,7 +107,7 @@ pub struct CacheEntry {
     pub access_count: i64,
 }
 
-/// Cache statistics
+// Cache statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStats {
     pub total_entries: i64,
@@ -122,7 +122,7 @@ pub struct CacheStats {
     pub by_model: Vec<ModelStats>,
 }
 
-/// Statistics per cache type
+// Statistics per cache type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheTypeStats {
     pub cache_type: String,
@@ -131,7 +131,7 @@ pub struct CacheTypeStats {
     pub cost: f64,
 }
 
-/// Statistics per model
+// Statistics per model
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelStats {
     pub model: String,
@@ -140,28 +140,28 @@ pub struct ModelStats {
     pub cost: f64,
 }
 
-/// Eviction policy for cache cleanup
+// Eviction policy for cache cleanup
 #[derive(Debug, Clone, Copy)]
 pub enum EvictionPolicy {
-    /// Least Recently Used
+    // Least Recently Used
     LRU,
-    /// Oldest entries first
+    // Oldest entries first
     OldestFirst,
-    /// Largest entries first (by result size)
+    // Largest entries first (by result size)
     LargestFirst,
-    /// Most expensive to recreate (highest token count)
+    // Most expensive to recreate (highest token count)
     MostExpensive,
 }
 
-/// SQLite-based repository cache
+// SQLite-based repository cache
 pub struct RepoCacheSql {
     pub pool: SqlitePool,
 }
 
 impl RepoCacheSql {
-    /// Compute the cache hash for a repository path without opening the database.
-    /// This is the same hash used to locate the cache DB directory.
-    /// Returns the 8-character hex hash.
+    // Compute the cache hash for a repository path without opening the database.
+    // This is the same hash used to locate the cache DB directory.
+    // Returns the 8-character hex hash.
     pub fn compute_repo_hash(repo_path: impl AsRef<Path>) -> String {
         use sha2::{Digest, Sha256};
 
@@ -179,7 +179,7 @@ impl RepoCacheSql {
         format!("{:x}", hash)[..8].to_string()
     }
 
-    /// Create a new SQLite cache for a repository using path-based hashing
+    // Create a new SQLite cache for a repository using path-based hashing
     pub async fn new_for_repo(repo_path: impl AsRef<Path>) -> Result<Self> {
         let repo_path = repo_path.as_ref();
         let repo_hash = Self::compute_repo_hash(repo_path);
@@ -202,9 +202,9 @@ impl RepoCacheSql {
         Self::new(&db_path).await
     }
 
-    /// Create a new SQLite cache using a precomputed cache hash.
-    /// This is useful when the web server doesn't have access to the repo path
-    /// but has the hash stored in the database.
+    // Create a new SQLite cache using a precomputed cache hash.
+    // This is useful when the web server doesn't have access to the repo path
+    // but has the hash stored in the database.
     pub async fn new_with_hash(cache_hash: &str) -> Result<Self> {
         // Get XDG cache directory
         let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
@@ -224,7 +224,7 @@ impl RepoCacheSql {
         Self::new(&db_path).await
     }
 
-    /// Create a new SQLite cache
+    // Create a new SQLite cache
     pub async fn new(database_path: impl AsRef<Path>) -> Result<Self> {
         let path = database_path.as_ref();
 
@@ -247,7 +247,7 @@ impl RepoCacheSql {
         Ok(cache)
     }
 
-    /// Initialize database schema
+    // Initialize database schema
     async fn initialize_schema(&self) -> Result<()> {
         // Main cache table
         sqlx::query(
@@ -317,14 +317,14 @@ impl RepoCacheSql {
         Ok(())
     }
 
-    /// Compute SHA-256 hash of content
+    // Compute SHA-256 hash of content
     fn hash_content(content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
-    /// Compute multi-factor cache key
+    // Compute multi-factor cache key
     fn compute_cache_key(
         file_hash: &str,
         model: &str,
@@ -337,14 +337,14 @@ impl RepoCacheSql {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Compress JSON data using zstd
+    // Compress JSON data using zstd
     fn compress_json(json: &serde_json::Value) -> Result<Vec<u8>> {
         let json_str = serde_json::to_string(json)?;
         let compressed = zstd::encode_all(json_str.as_bytes(), 3)?;
         Ok(compressed)
     }
 
-    /// Decompress JSON data
+    // Decompress JSON data
     fn decompress_json(compressed: &[u8]) -> Result<serde_json::Value> {
         let decompressed = zstd::decode_all(compressed)?;
         let json_str = String::from_utf8(decompressed)?;
@@ -352,7 +352,7 @@ impl RepoCacheSql {
         Ok(value)
     }
 
-    /// Get cached entry
+    // Get cached entry
     #[allow(clippy::too_many_arguments)]
     pub async fn get(
         &self,
@@ -422,7 +422,7 @@ impl RepoCacheSql {
         }
     }
 
-    /// Set cache entry
+    // Set cache entry
     pub async fn set(&self, params: CacheSetParams<'_>) -> Result<()> {
         let file_hash = Self::hash_content(params.content);
         let prompt_hash = params
@@ -478,7 +478,7 @@ impl RepoCacheSql {
         Ok(())
     }
 
-    /// Set cache entry with pre-computed cache key (for migration)
+    // Set cache entry with pre-computed cache key (for migration)
     #[allow(clippy::too_many_arguments)]
     pub async fn set_with_cache_key(
         &self,
@@ -540,7 +540,7 @@ impl RepoCacheSql {
         Ok(())
     }
 
-    /// Clear all entries of a specific type
+    // Clear all entries of a specific type
     pub async fn clear_type(&self, cache_type: crate::repo_cache::CacheType) -> Result<u64> {
         let result = sqlx::query(
             r#"
@@ -554,7 +554,7 @@ impl RepoCacheSql {
         Ok(result.rows_affected())
     }
 
-    /// Clear all cache entries
+    // Clear all cache entries
     pub async fn clear_all(&self) -> Result<u64> {
         let result = sqlx::query("DELETE FROM cache_entries")
             .execute(&self.pool)
@@ -573,7 +573,7 @@ impl RepoCacheSql {
         Ok(result.rows_affected())
     }
 
-    /// Get cache statistics
+    // Get cache statistics
     pub async fn stats(&self) -> Result<CacheStats> {
         use crate::token_budget::TokenPricing;
 
@@ -677,7 +677,7 @@ impl RepoCacheSql {
         })
     }
 
-    /// Evict entries based on policy until target size is reached
+    // Evict entries based on policy until target size is reached
     pub async fn evict(&self, policy: EvictionPolicy, target_size: i64) -> Result<u64> {
         let current_size: (i64,) = sqlx::query_as(
             r#"
@@ -742,7 +742,7 @@ impl RepoCacheSql {
         Ok(deleted)
     }
 
-    /// Get entries for a specific repository
+    // Get entries for a specific repository
     pub async fn entries_for_repo(&self, repo_path: &str) -> Result<Vec<CacheEntry>> {
         let rows = sqlx::query_as::<
             _,
@@ -810,8 +810,8 @@ impl RepoCacheSql {
         Ok(entries)
     }
 
-    /// Get all cache entries (across all repos) for project-wide review.
-    /// Returns entries ordered by file_path for deterministic iteration.
+    // Get all cache entries (across all repos) for project-wide review.
+    // Returns entries ordered by file_path for deterministic iteration.
     pub async fn get_all_entries(&self) -> Result<Vec<CacheEntry>> {
         let rows = sqlx::query_as::<
             _,

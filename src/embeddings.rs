@@ -1,31 +1,31 @@
-//! Document Embedding Module
-//!
-//! This module provides embedding generation for the RAG system using fastembed.
-//! It handles model initialization, caching, and batch embedding generation.
-//!
-//! # Features
-//!
-//! - **Multiple models**: Support for various embedding models
-//! - **Batch processing**: Efficient batch embedding generation
-//! - **Model caching**: Lazy initialization and reuse
-//! - **Error handling**: Comprehensive error types
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::embeddings::{EmbeddingGenerator, EmbeddingConfig};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let config = EmbeddingConfig::default();
-//! let generator = EmbeddingGenerator::new(config)?;
-//!
-//! let texts = vec!["Hello world", "Rust is awesome"];
-//! let embeddings = generator.embed_batch(&texts).await?;
-//!
-//! println!("Generated {} embeddings", embeddings.len());
-//! # Ok(())
-//! # }
-//! ```
+// Document Embedding Module
+//
+// This module provides embedding generation for the RAG system using fastembed.
+// It handles model initialization, caching, and batch embedding generation.
+//
+// # Features
+//
+// - **Multiple models**: Support for various embedding models
+// - **Batch processing**: Efficient batch embedding generation
+// - **Model caching**: Lazy initialization and reuse
+// - **Error handling**: Comprehensive error types
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::embeddings::{EmbeddingGenerator, EmbeddingConfig};
+//
+// # async fn example() -> anyhow::Result<()> {
+// let config = EmbeddingConfig::default();
+// let generator = EmbeddingGenerator::new(config)?;
+//
+// let texts = vec!["Hello world", "Rust is awesome"];
+// let embeddings = generator.embed_batch(&texts).await?;
+//
+// println!("Generated {} embeddings", embeddings.len());
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
@@ -37,19 +37,19 @@ use tokio::sync::RwLock;
 // Configuration
 // ============================================================================
 
-/// Configuration for the embedding generator
+// Configuration for the embedding generator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
-    /// The embedding model to use
+    // The embedding model to use
     pub model_name: EmbeddingModelType,
 
-    /// Maximum batch size for embedding generation
+    // Maximum batch size for embedding generation
     pub batch_size: usize,
 
-    /// Whether to show download progress
+    // Whether to show download progress
     pub show_download_progress: bool,
 
-    /// Cache directory for models (None = use default)
+    // Cache directory for models (None = use default)
     pub cache_dir: Option<String>,
 }
 
@@ -64,19 +64,19 @@ impl Default for EmbeddingConfig {
     }
 }
 
-/// Supported embedding models
+// Supported embedding models
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum EmbeddingModelType {
-    /// BGE Small EN v1.5 - Fast, 384 dimensions
+    // BGE Small EN v1.5 - Fast, 384 dimensions
     BGESmallENV15,
-    /// BGE Base EN v1.5 - Balanced, 768 dimensions
+    // BGE Base EN v1.5 - Balanced, 768 dimensions
     BGEBaseENV15,
-    /// All-MiniLM-L6-v2 - Very fast, 384 dimensions
+    // All-MiniLM-L6-v2 - Very fast, 384 dimensions
     AllMiniLML6V2,
 }
 
 impl EmbeddingModelType {
-    /// Get the fastembed model enum
+    // Get the fastembed model enum
     pub fn to_fastembed_model(&self) -> EmbeddingModel {
         match self {
             Self::BGESmallENV15 => EmbeddingModel::BGESmallENV15,
@@ -85,7 +85,7 @@ impl EmbeddingModelType {
         }
     }
 
-    /// Get the embedding dimension for this model
+    // Get the embedding dimension for this model
     pub fn dimension(&self) -> usize {
         match self {
             Self::BGESmallENV15 => 384,
@@ -94,7 +94,7 @@ impl EmbeddingModelType {
         }
     }
 
-    /// Get a human-readable name for this model
+    // Get a human-readable name for this model
     pub fn name(&self) -> &'static str {
         match self {
             Self::BGESmallENV15 => "BGE-small-en-v1.5",
@@ -108,21 +108,21 @@ impl EmbeddingModelType {
 // Embedding Data Types
 // ============================================================================
 
-/// A single embedding vector
+// A single embedding vector
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
-    /// The embedding vector
+    // The embedding vector
     pub vector: Vec<f32>,
 
-    /// The model used to generate this embedding
+    // The model used to generate this embedding
     pub model: String,
 
-    /// The dimension of the embedding
+    // The dimension of the embedding
     pub dimension: usize,
 }
 
 impl Embedding {
-    /// Create a new embedding
+    // Create a new embedding
     pub fn new(vector: Vec<f32>, model: String, dimension: usize) -> Self {
         Self {
             vector,
@@ -131,7 +131,7 @@ impl Embedding {
         }
     }
 
-    /// Serialize the embedding vector to bytes (for database storage)
+    // Serialize the embedding vector to bytes (for database storage)
     pub fn to_bytes(&self) -> Vec<u8> {
         // Convert f32 vector to byte vector
         let mut bytes = Vec::with_capacity(self.vector.len() * 4);
@@ -141,7 +141,7 @@ impl Embedding {
         bytes
     }
 
-    /// Deserialize an embedding vector from bytes
+    // Deserialize an embedding vector from bytes
     pub fn from_bytes(bytes: &[u8], model: String, dimension: usize) -> Result<Self> {
         if !bytes.len().is_multiple_of(4) {
             anyhow::bail!("Invalid embedding bytes: length must be multiple of 4");
@@ -168,7 +168,7 @@ impl Embedding {
         })
     }
 
-    /// Calculate cosine similarity with another embedding
+    // Calculate cosine similarity with another embedding
     pub fn cosine_similarity(&self, other: &Embedding) -> Result<f32> {
         if self.vector.len() != other.vector.len() {
             anyhow::bail!("Cannot compare embeddings with different dimensions");
@@ -196,14 +196,14 @@ impl Embedding {
 // Embedding Generator
 // ============================================================================
 
-/// Main embedding generator that wraps the fastembed model
+// Main embedding generator that wraps the fastembed model
 pub struct EmbeddingGenerator {
     config: EmbeddingConfig,
     model: Arc<RwLock<Option<TextEmbedding>>>,
 }
 
 impl EmbeddingGenerator {
-    /// Create a new embedding generator with the given configuration
+    // Create a new embedding generator with the given configuration
     pub fn new(config: EmbeddingConfig) -> Result<Self> {
         Ok(Self {
             config,
@@ -211,7 +211,7 @@ impl EmbeddingGenerator {
         })
     }
 
-    /// Initialize the embedding model (lazy loading)
+    // Initialize the embedding model (lazy loading)
     async fn ensure_model_loaded(&self) -> Result<()> {
         // Check if model is already loaded
         {
@@ -252,7 +252,7 @@ impl EmbeddingGenerator {
         Ok(())
     }
 
-    /// Generate embeddings for a batch of texts
+    // Generate embeddings for a batch of texts
     pub async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Embedding>> {
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -284,23 +284,23 @@ impl EmbeddingGenerator {
         Ok(embeddings)
     }
 
-    /// Generate a single embedding
+    // Generate a single embedding
     pub async fn embed(&self, text: &str) -> Result<Embedding> {
         let mut embeddings = self.embed_batch(&[text]).await?;
         embeddings.pop().context("Failed to generate embedding")
     }
 
-    /// Get the model configuration
+    // Get the model configuration
     pub fn config(&self) -> &EmbeddingConfig {
         &self.config
     }
 
-    /// Get the embedding dimension for the current model
+    // Get the embedding dimension for the current model
     pub fn dimension(&self) -> usize {
         self.config.model_name.dimension()
     }
 
-    /// Get the model name
+    // Get the model name
     pub fn model_name(&self) -> &str {
         self.config.model_name.name()
     }
@@ -310,27 +310,27 @@ impl EmbeddingGenerator {
 // Statistics
 // ============================================================================
 
-/// Statistics about embedding operations
+// Statistics about embedding operations
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmbeddingStats {
-    /// Total number of embeddings generated
+    // Total number of embeddings generated
     pub total_embeddings: usize,
 
-    /// Total number of texts processed
+    // Total number of texts processed
     pub total_texts: usize,
 
-    /// Average batch size
+    // Average batch size
     pub avg_batch_size: f64,
 
-    /// Model name used
+    // Model name used
     pub model_name: String,
 
-    /// Embedding dimension
+    // Embedding dimension
     pub dimension: usize,
 }
 
 impl EmbeddingStats {
-    /// Create new stats for a model
+    // Create new stats for a model
     pub fn new(model_name: String, dimension: usize) -> Self {
         Self {
             total_embeddings: 0,
@@ -341,7 +341,7 @@ impl EmbeddingStats {
         }
     }
 
-    /// Record a batch of embeddings
+    // Record a batch of embeddings
     pub fn record_batch(&mut self, batch_size: usize) {
         self.total_texts += batch_size;
         self.total_embeddings += batch_size;

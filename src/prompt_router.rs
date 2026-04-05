@@ -1,23 +1,23 @@
-//! # Prompt Router Module
-//!
-//! Routes files to appropriate LLM prompt templates based on static analysis
-//! recommendations. This enables significant cost savings by using shorter,
-//! targeted prompts for clean/small files and reserving full deep-dive prompts
-//! for files with red flags.
-//!
-//! ## Prompt Tiers
-//!
-//! - **Minimal**: ~200 tokens prompt for small, clean files. Asks only 3 targeted questions.
-//! - **Standard**: ~500 tokens prompt for normal files. Full refactoring questionnaire.
-//! - **DeepDive**: ~800 tokens prompt for files with red flags. Adds security, unsafe,
-//!   and complexity-specific questions plus asks for severity ratings.
-//!
-//! ## Cost Impact
-//!
-//! Based on observed scan data:
-//! - Minimal prompts reduce input tokens by ~60% and output tokens by ~50%
-//! - DeepDive prompts add ~30% input tokens but surface 2-3x more actionable issues
-//! - Net savings of 30-50% on LLM spend when combined with static pre-filter Skip
+// # Prompt Router Module
+//
+// Routes files to appropriate LLM prompt templates based on static analysis
+// recommendations. This enables significant cost savings by using shorter,
+// targeted prompts for clean/small files and reserving full deep-dive prompts
+// for files with red flags.
+//
+// ## Prompt Tiers
+//
+// - **Minimal**: ~200 tokens prompt for small, clean files. Asks only 3 targeted questions.
+// - **Standard**: ~500 tokens prompt for normal files. Full refactoring questionnaire.
+// - **DeepDive**: ~800 tokens prompt for files with red flags. Adds security, unsafe,
+//   and complexity-specific questions plus asks for severity ratings.
+//
+// ## Cost Impact
+//
+// Based on observed scan data:
+// - Minimal prompts reduce input tokens by ~60% and output tokens by ~50%
+// - DeepDive prompts add ~30% input tokens but surface 2-3x more actionable issues
+// - Net savings of 30-50% on LLM spend when combined with static pre-filter Skip
 
 use crate::static_analysis::{
     AnalysisRecommendation, FileLanguage, QualitySignals, StaticAnalysisResult,
@@ -29,34 +29,34 @@ use std::fmt;
 // Prompt tier configuration
 // ---------------------------------------------------------------------------
 
-/// Configuration for prompt routing behavior
+// Configuration for prompt routing behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptRouterConfig {
-    /// Whether to use tiered prompts (false = always use Standard)
+    // Whether to use tiered prompts (false = always use Standard)
     pub enabled: bool,
 
-    /// Maximum output tokens to request for Minimal tier
+    // Maximum output tokens to request for Minimal tier
     pub minimal_max_tokens: u32,
 
-    /// Maximum output tokens to request for Standard tier
+    // Maximum output tokens to request for Standard tier
     pub standard_max_tokens: u32,
 
-    /// Maximum output tokens to request for DeepDive tier
+    // Maximum output tokens to request for DeepDive tier
     pub deep_dive_max_tokens: u32,
 
-    /// Temperature for Minimal tier (lower = more deterministic)
+    // Temperature for Minimal tier (lower = more deterministic)
     pub minimal_temperature: f32,
 
-    /// Temperature for Standard tier
+    // Temperature for Standard tier
     pub standard_temperature: f32,
 
-    /// Temperature for DeepDive tier
+    // Temperature for DeepDive tier
     pub deep_dive_temperature: f32,
 
-    /// Whether to include static analysis context in the prompt
+    // Whether to include static analysis context in the prompt
     pub include_static_context: bool,
 
-    /// Whether to strip comments from content before sending (saves tokens)
+    // Whether to strip comments from content before sending (saves tokens)
     pub strip_comments_for_minimal: bool,
 }
 
@@ -80,32 +80,32 @@ impl Default for PromptRouterConfig {
 // Prompt tier
 // ---------------------------------------------------------------------------
 
-/// The selected prompt tier, carrying the rendered prompt and parameters
+// The selected prompt tier, carrying the rendered prompt and parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptTier {
-    /// Which tier was selected
+    // Which tier was selected
     pub tier: TierKind,
 
-    /// The rendered system prompt
+    // The rendered system prompt
     pub system_prompt: String,
 
-    /// The rendered user prompt (contains the code)
+    // The rendered user prompt (contains the code)
     pub user_prompt: String,
 
-    /// Maximum output tokens the LLM should produce
+    // Maximum output tokens the LLM should produce
     pub max_tokens: u32,
 
-    /// Temperature setting
+    // Temperature setting
     pub temperature: f32,
 
-    /// Estimated input token count (rough, for cost tracking)
+    // Estimated input token count (rough, for cost tracking)
     pub estimated_input_tokens: u32,
 
-    /// Static analysis summary included in prompt (if any)
+    // Static analysis summary included in prompt (if any)
     pub static_context: Option<String>,
 }
 
-/// The kind of prompt tier
+// The kind of prompt tier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TierKind {
     Minimal,
@@ -138,28 +138,28 @@ impl From<&AnalysisRecommendation> for TierKind {
 // Prompt router
 // ---------------------------------------------------------------------------
 
-/// Routes files to the appropriate prompt tier based on static analysis results
+// Routes files to the appropriate prompt tier based on static analysis results
 pub struct PromptRouter {
     config: PromptRouterConfig,
 }
 
 impl PromptRouter {
-    /// Create a new prompt router with default configuration
+    // Create a new prompt router with default configuration
     pub fn new() -> Self {
         Self {
             config: PromptRouterConfig::default(),
         }
     }
 
-    /// Create a new prompt router with custom configuration
+    // Create a new prompt router with custom configuration
     pub fn with_config(config: PromptRouterConfig) -> Self {
         Self { config }
     }
 
-    /// Route a file to the appropriate prompt tier
-    ///
-    /// Takes the static analysis result and the file content, and returns
-    /// a fully rendered `PromptTier` ready to send to the LLM.
+    // Route a file to the appropriate prompt tier
+    //
+    // Takes the static analysis result and the file content, and returns
+    // a fully rendered `PromptTier` ready to send to the LLM.
     pub fn route(
         &self,
         file_path: &str,
@@ -179,7 +179,7 @@ impl PromptRouter {
         }
     }
 
-    /// Get the configuration
+    // Get the configuration
     pub fn config(&self) -> &PromptRouterConfig {
         &self.config
     }
@@ -679,7 +679,7 @@ fn summarize_red_flags(signals: &QualitySignals) -> String {
 // Token estimation
 // ---------------------------------------------------------------------------
 
-/// Rough token estimate: ~4 chars per token for English/code
+// Rough token estimate: ~4 chars per token for English/code
 fn estimate_tokens(system_prompt: &str, user_prompt: &str) -> u32 {
     let total_chars = system_prompt.len() + user_prompt.len();
     // Add ~10% overhead for message framing
@@ -690,36 +690,36 @@ fn estimate_tokens(system_prompt: &str, user_prompt: &str) -> u32 {
 // Prompt routing stats (for telemetry/reporting)
 // ---------------------------------------------------------------------------
 
-/// Statistics about prompt routing decisions across a scan
+// Statistics about prompt routing decisions across a scan
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromptRoutingStats {
-    /// Number of files routed to Minimal tier
+    // Number of files routed to Minimal tier
     pub minimal_count: u32,
 
-    /// Number of files routed to Standard tier
+    // Number of files routed to Standard tier
     pub standard_count: u32,
 
-    /// Number of files routed to DeepDive tier
+    // Number of files routed to DeepDive tier
     pub deep_dive_count: u32,
 
-    /// Total estimated input tokens for Minimal files
+    // Total estimated input tokens for Minimal files
     pub minimal_estimated_tokens: u64,
 
-    /// Total estimated input tokens for Standard files
+    // Total estimated input tokens for Standard files
     pub standard_estimated_tokens: u64,
 
-    /// Total estimated input tokens for DeepDive files
+    // Total estimated input tokens for DeepDive files
     pub deep_dive_estimated_tokens: u64,
 
-    /// Estimated tokens if all files used Standard tier
+    // Estimated tokens if all files used Standard tier
     pub baseline_estimated_tokens: u64,
 
-    /// Estimated token savings from tiered routing
+    // Estimated token savings from tiered routing
     pub estimated_token_savings: i64,
 }
 
 impl PromptRoutingStats {
-    /// Record a routing decision
+    // Record a routing decision
     pub fn record(&mut self, tier: &PromptTier, baseline_standard_tokens: u32) {
         let tokens = tier.estimated_input_tokens as u64;
         let baseline = baseline_standard_tokens as u64;
@@ -746,12 +746,12 @@ impl PromptRoutingStats {
         self.estimated_token_savings = self.baseline_estimated_tokens as i64 - actual_total as i64;
     }
 
-    /// Total files routed
+    // Total files routed
     pub fn total_files(&self) -> u32 {
         self.minimal_count + self.standard_count + self.deep_dive_count
     }
 
-    /// Estimated savings percentage
+    // Estimated savings percentage
     pub fn savings_percent(&self) -> f64 {
         if self.baseline_estimated_tokens == 0 {
             return 0.0;
@@ -759,7 +759,7 @@ impl PromptRoutingStats {
         (self.estimated_token_savings as f64 / self.baseline_estimated_tokens as f64) * 100.0
     }
 
-    /// Format as a summary string
+    // Format as a summary string
     pub fn format_summary(&self) -> String {
         format!(
             "Prompt routing: {} minimal, {} standard, {} deep-dive | \

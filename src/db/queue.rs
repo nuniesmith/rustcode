@@ -1,17 +1,17 @@
-//! Task Queue and Analysis Pipeline Database Schema (Legacy)
-//!
-//! Handles staged processing of content from raw input through
-//! LLM analysis to tagged, searchable knowledge.
-//!
-//! **DEPRECATED:** The primary task system is now the `tasks` table
-//! (managed by `db::core::create_task` / `db::core::list_tasks`).
-//! The auto-scanner writes project review tasks directly to `tasks`,
-//! and the web UI dashboard + `/queue` page read from `tasks`.
-//!
-//! This module defines the `queue_items` table schema and types used
-//! by the legacy staged pipeline in `queue/processor.rs`. It is still
-//! active for note/thought/TODO capture but should eventually be
-//! consolidated into the `tasks` table.
+// Task Queue and Analysis Pipeline Database Schema (Legacy)
+//
+// Handles staged processing of content from raw input through
+// LLM analysis to tagged, searchable knowledge.
+//
+// **DEPRECATED:** The primary task system is now the `tasks` table
+// (managed by `db::core::create_task` / `db::core::list_tasks`).
+// The auto-scanner writes project review tasks directly to `tasks`,
+// and the web UI dashboard + `/queue` page read from `tasks`.
+//
+// This module defines the `queue_items` table schema and types used
+// by the legacy staged pipeline in `queue/processor.rs`. It is still
+// active for note/thought/TODO capture but should eventually be
+// consolidated into the `tasks` table.
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
@@ -20,54 +20,54 @@ use sqlx::{FromRow, PgPool};
 // Configuration
 // ============================================================================
 
-/// GitHub username for repo scanning
+// GitHub username for repo scanning
 pub const GITHUB_USERNAME: &str = "nuniesmith";
 
 // ============================================================================
 // Queue Item Stages
 // ============================================================================
 
-/// Processing stages for queue items
+// Processing stages for queue items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[derive(Default)]
 pub enum QueueStage {
-    /// Just captured, no processing yet
+    // Just captured, no processing yet
     #[default]
     Inbox,
-    /// Waiting for LLM analysis
+    // Waiting for LLM analysis
     PendingAnalysis,
-    /// Currently being analyzed
+    // Currently being analyzed
     Analyzing,
-    /// Analysis complete, waiting for tagging
+    // Analysis complete, waiting for tagging
     PendingTagging,
-    /// Fully processed and ready for use
+    // Fully processed and ready for use
     Ready,
-    /// Processing failed (with retry count)
+    // Processing failed (with retry count)
     Failed,
-    /// Archived/inactive
+    // Archived/inactive
     Archived,
 }
 
-/// Source type for queue items
+// Source type for queue items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 pub enum QueueSource {
-    /// Manual note input
+    // Manual note input
     Note,
-    /// TODO comment from code
+    // TODO comment from code
     TodoComment,
-    /// File from repository
+    // File from repository
     RepoFile,
-    /// Random thought/idea capture
+    // Random thought/idea capture
     RawThought,
-    /// Research snippet
+    // Research snippet
     Research,
-    /// External document (PDF, etc)
+    // External document (PDF, etc)
     Document,
 }
 
-/// Priority levels for processing
+// Priority levels for processing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "INTEGER")]
 #[derive(Default)]
@@ -84,51 +84,51 @@ pub enum QueuePriority {
 // Queue Item Model
 // ============================================================================
 
-/// A single item in the processing queue
+// A single item in the processing queue
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct QueueItem {
     pub id: String,
 
-    /// The raw content to process
+    // The raw content to process
     pub content: String,
 
-    /// Current processing stage
+    // Current processing stage
     pub stage: String, // QueueStage as string for SQLite
 
-    /// Where this item came from
+    // Where this item came from
     pub source: String, // QueueSource as string
 
-    /// Processing priority
+    // Processing priority
     pub priority: i32,
 
-    /// Associated repository (if from code)
+    // Associated repository (if from code)
     pub repo_id: Option<String>,
 
-    /// File path within repo (if applicable)
+    // File path within repo (if applicable)
     pub file_path: Option<String>,
 
-    /// Line number (for TODOs)
+    // Line number (for TODOs)
     pub line_number: Option<i32>,
 
-    /// LLM-generated analysis (JSON blob)
+    // LLM-generated analysis (JSON blob)
     pub analysis: Option<String>,
 
-    /// LLM-generated tags (comma-separated)
+    // LLM-generated tags (comma-separated)
     pub tags: Option<String>,
 
-    /// LLM-assigned category
+    // LLM-assigned category
     pub category: Option<String>,
 
-    /// Quality/importance score (1-10)
+    // Quality/importance score (1-10)
     pub score: Option<i32>,
 
-    /// Number of processing attempts
+    // Number of processing attempts
     pub retry_count: i32,
 
-    /// Last error message if failed
+    // Last error message if failed
     pub last_error: Option<String>,
 
-    /// Content hash for deduplication
+    // Content hash for deduplication
     pub content_hash: String,
 
     pub created_at: i64,
@@ -140,63 +140,63 @@ pub struct QueueItem {
 // File Analysis Cache (Per-Repo)
 // ============================================================================
 
-/// Cached analysis for a single file
+// Cached analysis for a single file
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct FileAnalysis {
     pub id: String,
 
-    /// Repository this file belongs to
+    // Repository this file belongs to
     pub repo_id: String,
 
-    /// Full path within repo
+    // Full path within repo
     pub file_path: String,
 
-    /// File extension
+    // File extension
     pub extension: Option<String>,
 
-    /// Content hash (to detect changes)
+    // Content hash (to detect changes)
     pub content_hash: String,
 
-    /// File size in bytes
+    // File size in bytes
     pub size_bytes: i64,
 
-    /// Number of lines
+    // Number of lines
     pub line_count: i32,
 
-    /// LLM-generated summary
+    // LLM-generated summary
     pub summary: Option<String>,
 
-    /// LLM-assigned purpose/role
+    // LLM-assigned purpose/role
     pub purpose: Option<String>,
 
-    /// Detected language
+    // Detected language
     pub language: Option<String>,
 
-    /// Complexity score (1-10)
+    // Complexity score (1-10)
     pub complexity_score: Option<i32>,
 
-    /// Quality score (1-10)
+    // Quality score (1-10)
     pub quality_score: Option<i32>,
 
-    /// Security concerns found
+    // Security concerns found
     pub security_notes: Option<String>,
 
-    /// Suggested improvements (JSON array)
+    // Suggested improvements (JSON array)
     pub improvements: Option<String>,
 
-    /// Dependencies detected (JSON array)
+    // Dependencies detected (JSON array)
     pub dependencies: Option<String>,
 
-    /// Exports/public API (JSON array)
+    // Exports/public API (JSON array)
     pub exports: Option<String>,
 
-    /// Tags for categorization
+    // Tags for categorization
     pub tags: Option<String>,
 
-    /// Whether this file needs attention
+    // Whether this file needs attention
     pub needs_attention: bool,
 
-    /// Last analyzed timestamp
+    // Last analyzed timestamp
     pub analyzed_at: Option<i64>,
 
     pub created_at: i64,
@@ -207,45 +207,45 @@ pub struct FileAnalysis {
 // Repository Cache Metadata
 // ============================================================================
 
-/// Per-repository cache metadata
+// Per-repository cache metadata
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct RepoCache {
     pub id: String,
 
-    /// Repository ID (foreign key)
+    // Repository ID (foreign key)
     pub repo_id: String,
 
-    /// Directory tree (JSON structure)
+    // Directory tree (JSON structure)
     pub dir_tree: Option<String>,
 
-    /// Total files in repo
+    // Total files in repo
     pub total_files: i32,
 
-    /// Files analyzed so far
+    // Files analyzed so far
     pub analyzed_files: i32,
 
-    /// Total TODOs found
+    // Total TODOs found
     pub total_todos: i32,
 
-    /// Open/active TODOs
+    // Open/active TODOs
     pub active_todos: i32,
 
-    /// Overall repo health score (1-10)
+    // Overall repo health score (1-10)
     pub health_score: Option<i32>,
 
-    /// Primary languages (JSON array)
+    // Primary languages (JSON array)
     pub languages: Option<String>,
 
-    /// Key patterns detected
+    // Key patterns detected
     pub patterns: Option<String>,
 
-    /// Standardization issues found
+    // Standardization issues found
     pub standardization_issues: Option<String>,
 
-    /// Last full scan timestamp
+    // Last full scan timestamp
     pub last_scan_at: Option<i64>,
 
-    /// Last tree update timestamp
+    // Last tree update timestamp
     pub tree_updated_at: Option<i64>,
 
     pub created_at: i64,

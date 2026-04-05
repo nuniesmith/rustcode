@@ -1,12 +1,12 @@
-//! Prompt template hashing for cache invalidation
-//!
-//! This module computes stable hashes of prompt templates to ensure cache
-//! invalidation when prompts change. Each prompt template is hashed using
-//! SHA-256 and the first 16 characters are used as a cache key component.
+// Prompt template hashing for cache invalidation
+//
+// This module computes stable hashes of prompt templates to ensure cache
+// invalidation when prompts change. Each prompt template is hashed using
+// SHA-256 and the first 16 characters are used as a cache key component.
 
 use sha2::{Digest, Sha256};
 
-/// Compute SHA-256 hash of a string and return first 16 characters
+// Compute SHA-256 hash of a string and return first 16 characters
 fn hash_str(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
@@ -17,7 +17,7 @@ fn hash_str(s: &str) -> String {
 // Refactor Prompts
 // ============================================================================
 
-/// Prompt template for refactoring analysis
+// Prompt template for refactoring analysis
 pub const REFACTOR_PROMPT: &str = r#"
 Analyze this Rust code for refactoring opportunities. Focus on:
 
@@ -54,7 +54,7 @@ Respond in JSON format:
 }
 "#;
 
-/// Hash of refactor prompt template (first 16 chars of SHA-256)
+// Hash of refactor prompt template (first 16 chars of SHA-256)
 pub fn refactor_prompt_hash() -> String {
     hash_str(REFACTOR_PROMPT)
 }
@@ -63,7 +63,7 @@ pub fn refactor_prompt_hash() -> String {
 // Documentation Prompts
 // ============================================================================
 
-/// Prompt template for module documentation generation
+// Prompt template for module documentation generation
 pub const DOCS_MODULE_PROMPT: &str = r#"
 Generate comprehensive documentation for this Rust module. Include:
 
@@ -93,12 +93,12 @@ Respond in JSON format:
 }
 "#;
 
-/// Hash of docs module prompt template
+// Hash of docs module prompt template
 pub fn docs_module_prompt_hash() -> String {
     hash_str(DOCS_MODULE_PROMPT)
 }
 
-/// Prompt template for README generation
+// Prompt template for README generation
 pub const DOCS_README_PROMPT: &str = r#"
 Generate a comprehensive README.md for this project. Include:
 
@@ -124,7 +124,7 @@ Respond in JSON format:
 }
 "#;
 
-/// Hash of docs readme prompt template
+// Hash of docs readme prompt template
 pub fn docs_readme_prompt_hash() -> String {
     hash_str(DOCS_README_PROMPT)
 }
@@ -133,7 +133,7 @@ pub fn docs_readme_prompt_hash() -> String {
 // Analysis Prompts
 // ============================================================================
 
-/// Prompt template for general code analysis
+// Prompt template for general code analysis
 pub const ANALYSIS_PROMPT: &str = r#"
 Perform a comprehensive analysis of this Rust code. Evaluate:
 
@@ -163,7 +163,7 @@ Respond in JSON format:
 }
 "#;
 
-/// Hash of analysis prompt template
+// Hash of analysis prompt template
 pub fn analysis_prompt_hash() -> String {
     hash_str(ANALYSIS_PROMPT)
 }
@@ -172,7 +172,7 @@ pub fn analysis_prompt_hash() -> String {
 // Helper Functions
 // ============================================================================
 
-/// Get prompt hash for a given cache type
+// Get prompt hash for a given cache type
 pub fn get_prompt_hash(cache_type: &str) -> String {
     match cache_type {
         "refactor" => refactor_prompt_hash(),
@@ -183,7 +183,7 @@ pub fn get_prompt_hash(cache_type: &str) -> String {
     }
 }
 
-/// Get prompt hash for cache type enum
+// Get prompt hash for cache type enum
 pub fn get_prompt_hash_for_type(cache_type: crate::repo_cache::CacheType) -> String {
     use crate::repo_cache::CacheType;
 

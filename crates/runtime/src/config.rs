@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use crate::json::JsonValue;
 use crate::sandbox::{FilesystemIsolationMode, SandboxConfig};
 
-/// Schema name advertised by generated settings files.
+// Schema name advertised by generated settings files.
 pub const CLAW_SETTINGS_SCHEMA_NAME: &str = "SettingsSchema";
 
-/// Origin of a loaded settings file in the configuration precedence chain.
+// Origin of a loaded settings file in the configuration precedence chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfigSource {
     User,
@@ -17,7 +17,7 @@ pub enum ConfigSource {
     Local,
 }
 
-/// Effective permission mode after decoding config values.
+// Effective permission mode after decoding config values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedPermissionMode {
     ReadOnly,
@@ -25,14 +25,14 @@ pub enum ResolvedPermissionMode {
     DangerFullAccess,
 }
 
-/// A discovered config file and the scope it contributes to.
+// A discovered config file and the scope it contributes to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigEntry {
     pub source: ConfigSource,
     pub path: PathBuf,
 }
 
-/// Fully merged runtime configuration plus parsed feature-specific views.
+// Fully merged runtime configuration plus parsed feature-specific views.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeConfig {
     merged: BTreeMap<String, JsonValue>,
@@ -40,7 +40,7 @@ pub struct RuntimeConfig {
     feature_config: RuntimeFeatureConfig,
 }
 
-/// Parsed plugin-related settings extracted from runtime config.
+// Parsed plugin-related settings extracted from runtime config.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimePluginConfig {
     enabled_plugins: BTreeMap<String, bool>,
@@ -50,7 +50,7 @@ pub struct RuntimePluginConfig {
     bundled_root: Option<String>,
 }
 
-/// Structured feature configuration consumed by runtime subsystems.
+// Structured feature configuration consumed by runtime subsystems.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimeFeatureConfig {
     hooks: RuntimeHookConfig,
@@ -63,7 +63,7 @@ pub struct RuntimeFeatureConfig {
     sandbox: SandboxConfig,
 }
 
-/// Hook command lists grouped by lifecycle stage.
+// Hook command lists grouped by lifecycle stage.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimeHookConfig {
     pre_tool_use: Vec<String>,
@@ -71,7 +71,7 @@ pub struct RuntimeHookConfig {
     post_tool_use_failure: Vec<String>,
 }
 
-/// Raw permission rule lists grouped by allow, deny, and ask behavior.
+// Raw permission rule lists grouped by allow, deny, and ask behavior.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimePermissionRuleConfig {
     allow: Vec<String>,
@@ -79,20 +79,20 @@ pub struct RuntimePermissionRuleConfig {
     ask: Vec<String>,
 }
 
-/// Collection of configured MCP servers after scope-aware merging.
+// Collection of configured MCP servers after scope-aware merging.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct McpConfigCollection {
     servers: BTreeMap<String, ScopedMcpServerConfig>,
 }
 
-/// MCP server config paired with the scope that defined it.
+// MCP server config paired with the scope that defined it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedMcpServerConfig {
     pub scope: ConfigSource,
     pub config: McpServerConfig,
 }
 
-/// Transport families supported by configured MCP servers.
+// Transport families supported by configured MCP servers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpTransport {
     Stdio,
@@ -103,7 +103,7 @@ pub enum McpTransport {
     ManagedProxy,
 }
 
-/// Scope-normalized MCP server configuration variants.
+// Scope-normalized MCP server configuration variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpServerConfig {
     Stdio(McpStdioServerConfig),
@@ -114,7 +114,7 @@ pub enum McpServerConfig {
     ManagedProxy(McpManagedProxyServerConfig),
 }
 
-/// Configuration for an MCP server launched as a local stdio process.
+// Configuration for an MCP server launched as a local stdio process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpStdioServerConfig {
     pub command: String,
@@ -123,7 +123,7 @@ pub struct McpStdioServerConfig {
     pub tool_call_timeout_ms: Option<u64>,
 }
 
-/// Configuration for an MCP server reached over HTTP or SSE.
+// Configuration for an MCP server reached over HTTP or SSE.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpRemoteServerConfig {
     pub url: String,
@@ -132,7 +132,7 @@ pub struct McpRemoteServerConfig {
     pub oauth: Option<McpOAuthConfig>,
 }
 
-/// Configuration for an MCP server reached over WebSocket.
+// Configuration for an MCP server reached over WebSocket.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpWebSocketServerConfig {
     pub url: String,
@@ -140,20 +140,20 @@ pub struct McpWebSocketServerConfig {
     pub headers_helper: Option<String>,
 }
 
-/// Configuration for an MCP server addressed through an SDK name.
+// Configuration for an MCP server addressed through an SDK name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpSdkServerConfig {
     pub name: String,
 }
 
-/// Configuration for an MCP managed-proxy endpoint.
+// Configuration for an MCP managed-proxy endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpManagedProxyServerConfig {
     pub url: String,
     pub id: String,
 }
 
-/// OAuth overrides associated with a remote MCP server.
+// OAuth overrides associated with a remote MCP server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpOAuthConfig {
     pub client_id: Option<String>,
@@ -162,7 +162,7 @@ pub struct McpOAuthConfig {
     pub xaa: Option<bool>,
 }
 
-/// OAuth client configuration used by the main Claw runtime.
+// OAuth client configuration used by the main Claw runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
@@ -173,7 +173,7 @@ pub struct OAuthConfig {
     pub scopes: Vec<String>,
 }
 
-/// Errors raised while reading or parsing runtime configuration files.
+// Errors raised while reading or parsing runtime configuration files.
 #[derive(Debug)]
 pub enum ConfigError {
     Io(std::io::Error),
@@ -197,7 +197,7 @@ impl From<std::io::Error> for ConfigError {
     }
 }
 
-/// Discovers config files and merges them into a [`RuntimeConfig`].
+// Discovers config files and merges them into a [`RuntimeConfig`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigLoader {
     cwd: PathBuf,
@@ -463,7 +463,7 @@ impl RuntimePluginConfig {
 }
 
 #[must_use]
-/// Returns the default per-user config directory used by the runtime.
+// Returns the default per-user config directory used by the runtime.
 pub fn default_config_home() -> PathBuf {
     std::env::var_os("CLAW_CONFIG_HOME")
         .map(PathBuf::from)

@@ -1,23 +1,23 @@
-//! Token budget tracking and cost estimation
-//!
-//! This module provides utilities for tracking token usage across LLM API calls,
-//! estimating costs, and managing budget constraints.
+// Token budget tracking and cost estimation
+//
+// This module provides utilities for tracking token usage across LLM API calls,
+// estimating costs, and managing budget constraints.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Token pricing per million tokens (in USD)
+// Token pricing per million tokens (in USD)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPricing {
-    /// Cost per million input tokens
+    // Cost per million input tokens
     pub input_per_million: f64,
-    /// Cost per million output tokens
+    // Cost per million output tokens
     pub output_per_million: f64,
 }
 
 impl TokenPricing {
-    /// xAI Grok pricing (as of 2024)
+    // xAI Grok pricing (as of 2024)
     pub fn grok() -> Self {
         Self {
             input_per_million: 5.0,   // $5 per 1M input tokens
@@ -25,7 +25,7 @@ impl TokenPricing {
         }
     }
 
-    /// OpenAI GPT-4 pricing
+    // OpenAI GPT-4 pricing
     pub fn gpt4() -> Self {
         Self {
             input_per_million: 30.0,
@@ -33,7 +33,7 @@ impl TokenPricing {
         }
     }
 
-    /// OpenAI GPT-3.5 Turbo pricing
+    // OpenAI GPT-3.5 Turbo pricing
     pub fn gpt35_turbo() -> Self {
         Self {
             input_per_million: 0.5,
@@ -41,7 +41,7 @@ impl TokenPricing {
         }
     }
 
-    /// Anthropic Claude 3.5 Sonnet pricing
+    // Anthropic Claude 3.5 Sonnet pricing
     pub fn claude_sonnet() -> Self {
         Self {
             input_per_million: 3.0,
@@ -49,7 +49,7 @@ impl TokenPricing {
         }
     }
 
-    /// Google Gemini Pro pricing
+    // Google Gemini Pro pricing
     pub fn gemini_pro() -> Self {
         Self {
             input_per_million: 0.5,
@@ -57,7 +57,7 @@ impl TokenPricing {
         }
     }
 
-    /// Get pricing for a provider/model
+    // Get pricing for a provider/model
     pub fn for_provider(provider: &str, model: &str) -> Self {
         let model_lower = model.to_lowercase();
 
@@ -87,7 +87,7 @@ impl TokenPricing {
         }
     }
 
-    /// Calculate cost for token count (assuming average 50/50 split input/output)
+    // Calculate cost for token count (assuming average 50/50 split input/output)
     pub fn estimate_cost(&self, total_tokens: usize) -> f64 {
         let tokens = total_tokens as f64;
         let input_tokens = tokens * 0.5;
@@ -97,39 +97,39 @@ impl TokenPricing {
             + (output_tokens / 1_000_000.0) * self.output_per_million
     }
 
-    /// Calculate cost with explicit input/output token counts
+    // Calculate cost with explicit input/output token counts
     pub fn calculate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64 {
         (input_tokens as f64 / 1_000_000.0) * self.input_per_million
             + (output_tokens as f64 / 1_000_000.0) * self.output_per_million
     }
 }
 
-/// Token usage statistics
+// Token usage statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenStats {
-    /// Total tokens used
+    // Total tokens used
     pub total_tokens: usize,
-    /// Estimated cost in USD
+    // Estimated cost in USD
     pub estimated_cost: f64,
-    /// Number of API calls
+    // Number of API calls
     pub api_calls: usize,
-    /// Breakdown by model
+    // Breakdown by model
     pub by_model: HashMap<String, ModelTokenStats>,
 }
 
-/// Token statistics per model
+// Token statistics per model
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelTokenStats {
-    /// Total tokens for this model
+    // Total tokens for this model
     pub tokens: usize,
-    /// Estimated cost for this model
+    // Estimated cost for this model
     pub cost: f64,
-    /// Number of calls
+    // Number of calls
     pub calls: usize,
 }
 
 impl TokenStats {
-    /// Create new empty stats
+    // Create new empty stats
     pub fn new() -> Self {
         Self {
             total_tokens: 0,
@@ -139,7 +139,7 @@ impl TokenStats {
         }
     }
 
-    /// Add token usage for a model
+    // Add token usage for a model
     pub fn add_usage(&mut self, provider: &str, model: &str, tokens: usize) {
         let pricing = TokenPricing::for_provider(provider, model);
         let cost = pricing.estimate_cost(tokens);
@@ -162,7 +162,7 @@ impl TokenStats {
         model_stats.calls += 1;
     }
 
-    /// Format statistics as a readable string
+    // Format statistics as a readable string
     pub fn format(&self) -> String {
         let mut output = String::new();
         output.push_str(&format!("Total tokens: {}\n", self.total_tokens));
@@ -189,14 +189,14 @@ impl Default for TokenStats {
     }
 }
 
-/// Budget configuration
+// Budget configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetConfig {
-    /// Monthly budget in USD
+    // Monthly budget in USD
     pub monthly_budget: f64,
-    /// Warning threshold (percentage)
+    // Warning threshold (percentage)
     pub warning_threshold: f64,
-    /// Alert threshold (percentage)
+    // Alert threshold (percentage)
     pub alert_threshold: f64,
 }
 
@@ -211,7 +211,7 @@ impl Default for BudgetConfig {
 }
 
 impl BudgetConfig {
-    /// Create a new budget configuration
+    // Create a new budget configuration
     pub fn new(monthly_budget: f64) -> Self {
         Self {
             monthly_budget,
@@ -219,7 +219,7 @@ impl BudgetConfig {
         }
     }
 
-    /// Check if spending is within budget
+    // Check if spending is within budget
     pub fn check_spending(&self, current_spending: f64) -> BudgetStatus {
         let percentage = current_spending / self.monthly_budget;
 
@@ -250,12 +250,12 @@ impl BudgetConfig {
         }
     }
 
-    /// Calculate remaining budget
+    // Calculate remaining budget
     pub fn remaining(&self, current_spending: f64) -> f64 {
         (self.monthly_budget - current_spending).max(0.0)
     }
 
-    /// Estimate tokens remaining in budget
+    // Estimate tokens remaining in budget
     pub fn tokens_remaining(&self, current_spending: f64, pricing: &TokenPricing) -> usize {
         let remaining = self.remaining(current_spending);
         // Assume average cost per token
@@ -264,28 +264,28 @@ impl BudgetConfig {
     }
 }
 
-/// Budget status
+// Budget status
 #[derive(Debug, Clone)]
 pub enum BudgetStatus {
-    /// Within budget
+    // Within budget
     Ok {
         spent: f64,
         budget: f64,
         percentage: f64,
     },
-    /// Warning threshold exceeded
+    // Warning threshold exceeded
     Warning {
         spent: f64,
         budget: f64,
         percentage: f64,
     },
-    /// Alert threshold exceeded
+    // Alert threshold exceeded
     Alert {
         spent: f64,
         budget: f64,
         percentage: f64,
     },
-    /// Budget exceeded
+    // Budget exceeded
     Exceeded {
         spent: f64,
         budget: f64,
@@ -294,7 +294,7 @@ pub enum BudgetStatus {
 }
 
 impl BudgetStatus {
-    /// Get a colored emoji indicator
+    // Get a colored emoji indicator
     pub fn emoji(&self) -> &str {
         match self {
             Self::Ok { .. } => "✅",
@@ -304,7 +304,7 @@ impl BudgetStatus {
         }
     }
 
-    /// Get a status message
+    // Get a status message
     pub fn message(&self) -> String {
         match self {
             Self::Ok {
@@ -359,19 +359,19 @@ impl BudgetStatus {
     }
 }
 
-/// Monthly spending tracker
+// Monthly spending tracker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyTracker {
-    /// Current month (YYYY-MM format)
+    // Current month (YYYY-MM format)
     pub month: String,
-    /// Token statistics for the month
+    // Token statistics for the month
     pub stats: TokenStats,
-    /// When the tracking started
+    // When the tracking started
     pub started_at: DateTime<Utc>,
 }
 
 impl MonthlyTracker {
-    /// Create a new monthly tracker
+    // Create a new monthly tracker
     pub fn new() -> Self {
         Self {
             month: Utc::now().format("%Y-%m").to_string(),
@@ -380,12 +380,12 @@ impl MonthlyTracker {
         }
     }
 
-    /// Check if this tracker is for the current month
+    // Check if this tracker is for the current month
     pub fn is_current_month(&self) -> bool {
         self.month == Utc::now().format("%Y-%m").to_string()
     }
 
-    /// Add usage to the tracker (creates new tracker if month changed)
+    // Add usage to the tracker (creates new tracker if month changed)
     pub fn add_usage(&mut self, provider: &str, model: &str, tokens: usize) {
         // Reset if month changed
         if !self.is_current_month() {
@@ -395,7 +395,7 @@ impl MonthlyTracker {
         self.stats.add_usage(provider, model, tokens);
     }
 
-    /// Get spending for the current month
+    // Get spending for the current month
     pub fn current_spending(&self) -> f64 {
         if self.is_current_month() {
             self.stats.estimated_cost

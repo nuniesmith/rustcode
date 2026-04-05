@@ -1,127 +1,127 @@
-//! # Query Router Module
-//!
-//! Routes user queries based on intent classification to optimize cost and performance.
-//!
-//! ## Features
-//!
-//! - Intent classification (greeting, search, analysis, etc.)
-//! - Semantic cache integration
-//! - Cost-aware routing decisions
-//! - Metrics tracking
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::query_router::{QueryRouter, Action, UserContext};
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     # let pool = todo!();
-//!     # let cache_path = "cache.db";
-//!     let mut router = QueryRouter::new(pool, cache_path).await?;
-//!     let user_context = UserContext::default();
-//!
-//!     let action = router.route("What should I work on next?", &user_context).await?;
-//!     match action {
-//!         Action::CallGrok(context) => {
-//!             // Make API call with context
-//!         }
-//!         Action::SearchDatabase(query) => {
-//!             // Search local database
-//!         }
-//!         Action::DirectResponse(response) => {
-//!             // Return canned response
-//!         }
-//!         _ => {}
-//!     }
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Query Router Module
+//
+// Routes user queries based on intent classification to optimize cost and performance.
+//
+// ## Features
+//
+// - Intent classification (greeting, search, analysis, etc.)
+// - Semantic cache integration
+// - Cost-aware routing decisions
+// - Metrics tracking
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::query_router::{QueryRouter, Action, UserContext};
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     # let pool = todo!();
+//     # let cache_path = "cache.db";
+//     let mut router = QueryRouter::new(pool, cache_path).await?;
+//     let user_context = UserContext::default();
+//
+//     let action = router.route("What should I work on next?", &user_context).await?;
+//     match action {
+//         Action::CallGrok(context) => {
+//             // Make API call with context
+//         }
+//         Action::SearchDatabase(query) => {
+//             // Search local database
+//         }
+//         Action::DirectResponse(response) => {
+//             // Return canned response
+//         }
+//         _ => {}
+//     }
+//
+//     Ok(())
+// }
+// ```
 
-use crate::context_builder::{Context, ContextBuilder};
+use crate::context_rag::{Context, ContextBuilder};
 use crate::response_cache::ResponseCache;
 use anyhow::{Context as AnyhowContext, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-/// Query intent classification
+// Query intent classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueryIntent {
-    /// Simple greeting or acknowledgment
+    // Simple greeting or acknowledgment
     Greeting,
 
-    /// Search for notes or tasks in database
+    // Search for notes or tasks in database
     NoteSearch,
 
-    /// Repository or file analysis request
+    // Repository or file analysis request
     RepoAnalysis,
 
-    /// Task generation or recommendation
+    // Task generation or recommendation
     TaskGeneration,
 
-    /// Code explanation or question
+    // Code explanation or question
     CodeQuestion,
 
-    /// Direct factual question (can be answered without LLM)
+    // Direct factual question (can be answered without LLM)
     DirectAnswer,
 
-    /// GitHub issues query
+    // GitHub issues query
     GitHubIssues,
 
-    /// GitHub pull requests query
+    // GitHub pull requests query
     GitHubPRs,
 
-    /// GitHub repositories query
+    // GitHub repositories query
     GitHubRepos,
 
-    /// GitHub commits query
+    // GitHub commits query
     GitHubCommits,
 
-    /// GitHub search query
+    // GitHub search query
     GitHubSearch,
 
-    /// Generic query requiring LLM
+    // Generic query requiring LLM
     Generic,
 }
 
-/// Action to take based on routing decision
+// Action to take based on routing decision
 #[derive(Debug)]
 pub enum Action {
-    /// Return cached response
+    // Return cached response
     CachedResponse(String),
 
-    /// Return direct response without LLM
+    // Return direct response without LLM
     DirectResponse(String),
 
-    /// Search database only
+    // Search database only
     SearchDatabase(String),
 
-    /// Call Grok with full context
+    // Call Grok with full context
     CallGrok(Context),
 
-    /// Call Grok with minimal context (for simple questions)
+    // Call Grok with minimal context (for simple questions)
     CallGrokMinimal(String),
 }
 
-/// User context for routing decisions
+// User context for routing decisions
 #[derive(Debug, Clone, Default)]
 pub struct UserContext {
-    /// Recent queries (for conversation context)
+    // Recent queries (for conversation context)
     pub recent_queries: Vec<String>,
 
-    /// Current repository being worked on
+    // Current repository being worked on
     pub current_repo: Option<String>,
 
-    /// Active project
+    // Active project
     pub current_project: Option<String>,
 
-    /// User preferences
+    // User preferences
     pub preferences: HashMap<String, String>,
 }
 
-/// Query routing statistics
+// Query routing statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingStats {
     pub total_queries: u64,
@@ -133,24 +133,24 @@ pub struct RoutingStats {
     pub cost_saved_usd: f64,
 }
 
-/// Query router with intelligent routing
+// Query router with intelligent routing
 pub struct QueryRouter {
-    /// Database connection pool
+    // Database connection pool
     #[allow(dead_code)]
     pool: Option<sqlx::PgPool>,
 
-    /// Response cache
+    // Response cache
     cache: Option<ResponseCache>,
 
-    /// Context builder
+    // Context builder
     context_builder: Option<ContextBuilder>,
 
-    /// Routing statistics
+    // Routing statistics
     stats: RoutingStats,
 }
 
 impl QueryRouter {
-    /// Create a new query router
+    // Create a new query router
     pub async fn new(pool: sqlx::PgPool, cache_path: &str) -> Result<Self> {
         let cache = ResponseCache::new(cache_path)
             .await
@@ -167,7 +167,7 @@ impl QueryRouter {
         })
     }
 
-    /// Route a query to the appropriate action
+    // Route a query to the appropriate action
     pub async fn route(&mut self, query: &str, user_context: &UserContext) -> Result<Action> {
         self.stats.total_queries += 1;
 
@@ -260,7 +260,7 @@ impl QueryRouter {
         }
     }
 
-    /// Classify query intent
+    // Classify query intent
     fn classify_intent(&self, query: &str, _context: &UserContext) -> QueryIntent {
         let lower = query.to_lowercase();
         let words: Vec<&str> = lower.split_whitespace().collect();
@@ -588,17 +588,17 @@ impl QueryRouter {
         input_cost + output_cost
     }
 
-    /// Get routing statistics
+    // Get routing statistics
     pub fn get_stats(&self) -> &RoutingStats {
         &self.stats
     }
 
-    /// Reset statistics
+    // Reset statistics
     pub fn reset_stats(&mut self) {
         self.stats = RoutingStats::default();
     }
 
-    /// Get cache hit rate
+    // Get cache hit rate
     pub fn cache_hit_rate(&self) -> f64 {
         if self.stats.total_queries == 0 {
             return 0.0;
@@ -606,7 +606,7 @@ impl QueryRouter {
         (self.stats.cache_hits as f64 / self.stats.total_queries as f64) * 100.0
     }
 
-    /// Get percentage of queries that avoided Grok
+    // Get percentage of queries that avoided Grok
     pub fn cost_avoidance_rate(&self) -> f64 {
         if self.stats.total_queries == 0 {
             return 0.0;

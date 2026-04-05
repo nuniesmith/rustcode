@@ -44,7 +44,7 @@ impl RegisteredRepo {
         }
     }
 
-    /// Path to this repo's .rustcode/ cache dir.
+    // Path to this repo's .rustcode/ cache dir.
     pub fn cache_dir(&self) -> PathBuf {
         self.local_path.join(".rustcode")
     }
@@ -167,13 +167,13 @@ pub struct SyncResult {
 
 #[derive(Debug)]
 pub struct RepoSyncService {
-    /// In-memory registry (always authoritative; SQLite is the persistence backing store).
+    // In-memory registry (always authoritative; SQLite is the persistence backing store).
     repos: HashMap<String, RegisteredRepo>,
-    /// Optional PostgreSQL pool for persistent repo registration.
+    // Optional PostgreSQL pool for persistent repo registration.
     db: Option<PgPool>,
-    /// File extensions to index (skip target/, .git/, node_modules/ etc.)
+    // File extensions to index (skip target/, .git/, node_modules/ etc.)
     include_extensions: Vec<String>,
-    /// Directories to always skip
+    // Directories to always skip
     skip_dirs: Vec<String>,
 }
 
@@ -204,15 +204,15 @@ impl Default for RepoSyncService {
 }
 
 impl RepoSyncService {
-    /// Create an in-memory-only service (no persistence across restarts).
+    // Create an in-memory-only service (no persistence across restarts).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create a service backed by an existing `PgPool`.
-    ///
-    /// Call [`load_from_db`] afterwards to populate the in-memory map from
-    /// any rows already in the `registered_repos` table.
+    // Create a service backed by an existing `PgPool`.
+    //
+    // Call [`load_from_db`] afterwards to populate the in-memory map from
+    // any rows already in the `registered_repos` table.
     pub fn with_db(pool: PgPool) -> Self {
         Self {
             db: Some(pool),
@@ -220,18 +220,18 @@ impl RepoSyncService {
         }
     }
 
-    /// Return a clone of the underlying `PgPool` if one is configured.
-    ///
-    /// Used by the RAG pipeline to query embeddings without holding a lock
-    /// on the sync service itself.
+    // Return a clone of the underlying `PgPool` if one is configured.
+    //
+    // Used by the RAG pipeline to query embeddings without holding a lock
+    // on the sync service itself.
     pub fn db_pool(&self) -> Option<PgPool> {
         self.db.clone()
     }
 
-    /// Load all active repos from `registered_repos` into the in-memory map.
-    ///
-    /// Safe to call at startup; silently skips rows whose `local_path` cannot
-    /// be parsed as a valid UTF-8 path.
+    // Load all active repos from `registered_repos` into the in-memory map.
+    //
+    // Safe to call at startup; silently skips rows whose `local_path` cannot
+    // be parsed as a valid UTF-8 path.
     pub async fn load_from_db(&mut self) -> anyhow::Result<usize> {
         let pool = match &self.db {
             Some(p) => p,
@@ -278,12 +278,12 @@ impl RepoSyncService {
     // Registration
     // -----------------------------------------------------------------------
 
-    /// Register a repo by local path. Creates `.rustcode/` dir if missing.
-    ///
-    /// Persists to PostgreSQL when a pool is configured (upsert semantics — re-registering
-    /// an existing path is safe and updates the name / branch). The upsert uses
-    /// `ON CONFLICT (local_path)` so that re-registering the same physical path
-    /// always refreshes the record rather than inserting a duplicate.
+    // Register a repo by local path. Creates `.rustcode/` dir if missing.
+    //
+    // Persists to PostgreSQL when a pool is configured (upsert semantics — re-registering
+    // an existing path is safe and updates the name / branch). The upsert uses
+    // `ON CONFLICT (local_path)` so that re-registering the same physical path
+    // always refreshes the record rather than inserting a duplicate.
     pub async fn register(&mut self, repo: RegisteredRepo) -> anyhow::Result<String> {
         let id = repo.id.clone();
         info!(repo = %id, path = ?repo.local_path, "Registering repo");
@@ -350,12 +350,12 @@ impl RepoSyncService {
         self.repos.values().filter(|r| r.active).collect()
     }
 
-    /// Remove a repo from the in-memory map (synchronous, no DB write).
+    // Remove a repo from the in-memory map (synchronous, no DB write).
     pub fn remove_repo(&mut self, id: &str) -> bool {
         self.repos.remove(id).is_some()
     }
 
-    /// Async version of `remove_repo` that also soft-deletes in PostgreSQL.
+    // Async version of `remove_repo` that also soft-deletes in PostgreSQL.
     pub async fn remove_repo_async(&mut self, id: &str) -> bool {
         let existed = self.repos.remove(id).is_some();
         if existed {
@@ -377,7 +377,7 @@ impl RepoSyncService {
     // Full sync
     // -----------------------------------------------------------------------
 
-    /// Perform a full sync of a registered repo: tree + todos + symbols + manifest.
+    // Perform a full sync of a registered repo: tree + todos + symbols + manifest.
     pub async fn sync(&mut self, repo_id: &str) -> anyhow::Result<SyncResult> {
         let repo = self
             .repos
@@ -687,13 +687,13 @@ impl RepoSyncService {
     // Context builder for chat injection
     // -----------------------------------------------------------------------
 
-    /// Build a compact context string suitable for LLM prompt injection.
-    ///
-    /// Sections (kept under ~3000 chars total to avoid context bloat):
-    /// - Crate name from manifest
-    /// - Project tree (first 80 lines)
-    /// - Top 10 open TODOs
-    /// - Top 5 public symbols (functions + structs)
+    // Build a compact context string suitable for LLM prompt injection.
+    //
+    // Sections (kept under ~3000 chars total to avoid context bloat):
+    // - Crate name from manifest
+    // - Project tree (first 80 lines)
+    // - Top 10 open TODOs
+    // - Top 5 public symbols (functions + structs)
     pub async fn build_prompt_context(&self, repo_id: &str) -> anyhow::Result<String> {
         let repo = self
             .repos
@@ -779,22 +779,22 @@ impl RepoSyncService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Recursive async directory walker.
+// Recursive async directory walker.
 #[async_recursion::async_recursion]
 // ---------------------------------------------------------------------------
 // Background embedding helper
 // ---------------------------------------------------------------------------
 
-/// Chunk each `.rs` file into overlapping windows and upsert vector embeddings
-/// into the `document_embeddings` / `document_chunks` tables so the RAG index
-/// has fresh data after every sync.
-///
-/// Uses BGE-small-EN (384D) via `fastembed` — the same model used by the
-/// startup `refresh_rag_index` pass.  Each file becomes one "document" whose
-/// chunks are stored under a stable chunk_id derived from `<repo>/<rel_path>#<idx>`.
-///
-/// This is intentionally lenient: individual file failures are logged and
-/// skipped without aborting the rest of the batch.
+// Chunk each `.rs` file into overlapping windows and upsert vector embeddings
+// into the `document_embeddings` / `document_chunks` tables so the RAG index
+// has fresh data after every sync.
+//
+// Uses BGE-small-EN (384D) via `fastembed` — the same model used by the
+// startup `refresh_rag_index` pass.  Each file becomes one "document" whose
+// chunks are stored under a stable chunk_id derived from `<repo>/<rel_path>#<idx>`.
+//
+// This is intentionally lenient: individual file failures are logged and
+// skipped without aborting the rest of the batch.
 async fn embed_rust_files(pool: &sqlx::PgPool, files: &[PathBuf]) -> anyhow::Result<()> {
     if files.is_empty() {
         return Ok(());
@@ -939,10 +939,10 @@ fn parse_todo_line(line: &str, file: &str, line_num: usize) -> Option<TodoItem> 
 // syn-based symbol extractor
 // ---------------------------------------------------------------------------
 
-/// Extract symbols from a Rust source file using the `syn` AST parser.
-///
-/// Returns `None` when the file fails to parse (e.g. heavily macro-generated
-/// or non-standard syntax) so the caller can fall back to the line scanner.
+// Extract symbols from a Rust source file using the `syn` AST parser.
+//
+// Returns `None` when the file fails to parse (e.g. heavily macro-generated
+// or non-standard syntax) so the caller can fall back to the line scanner.
 fn extract_symbols_syn(content: &str, file: &str) -> Option<Vec<Symbol>> {
     use syn::{Item, Visibility};
 
@@ -1367,9 +1367,9 @@ mod tests {
         assert_eq!(slugify("rustcode"), "rustcode");
     }
 
-    /// Verify that `register()` writes `.rustcode/.gitignore` containing
-    /// `embeddings.bin` so that the binary embedding file is never accidentally
-    /// committed to the target repo.
+    // Verify that `register()` writes `.rustcode/.gitignore` containing
+    // `embeddings.bin` so that the binary embedding file is never accidentally
+    // committed to the target repo.
     #[tokio::test]
     async fn register_writes_gitignore_with_embeddings_bin() {
         let tmp = tempfile::tempdir().expect("failed to create tempdir");
@@ -1393,8 +1393,8 @@ mod tests {
         );
     }
 
-    /// Re-registering the same repo must not overwrite an existing `.gitignore`
-    /// (idempotency — users may add their own entries).
+    // Re-registering the same repo must not overwrite an existing `.gitignore`
+    // (idempotency — users may add their own entries).
     #[tokio::test]
     async fn register_does_not_overwrite_existing_gitignore() {
         let tmp = tempfile::tempdir().expect("failed to create tempdir");

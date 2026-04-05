@@ -1,6 +1,6 @@
-//! GitHub CLI commands
-//!
-//! Provides command-line interface for GitHub integration features.
+// GitHub CLI commands
+//
+// Provides command-line interface for GitHub integration features.
 
 use crate::github::search::{GitHubSearcher, SearchQuery, SearchType};
 use crate::github::{GitHubClient, SyncEngine, SyncOptions};
@@ -11,94 +11,94 @@ use std::env;
 
 #[derive(Debug, Subcommand)]
 pub enum GithubCommands {
-    /// Sync GitHub data to local database
+    // Sync GitHub data to local database
     Sync {
-        /// Perform a full sync (default: incremental)
+        // Perform a full sync (default: incremental)
         #[arg(long)]
         full: bool,
 
-        /// Sync specific repository (owner/repo format)
+        // Sync specific repository (owner/repo format)
         #[arg(short, long)]
         repo: Option<String>,
     },
 
-    /// Query cached GitHub data (ask questions about repos, issues, commits)
+    // Query cached GitHub data (ask questions about repos, issues, commits)
     Query {
-        /// The question to ask
+        // The question to ask
         question: String,
 
-        /// Specific repository to query (owner/repo format)
+        // Specific repository to query (owner/repo format)
         #[arg(short, long)]
         repo: Option<String>,
     },
 
-    /// Search across GitHub data
+    // Search across GitHub data
     Search {
-        /// Search query
+        // Search query
         query: String,
 
-        /// Type of content to search (repo, issue, pr, commit, all)
+        // Type of content to search (repo, issue, pr, commit, all)
         #[arg(short = 't', long, default_value = "all")]
         r#type: String,
 
-        /// Open first result in browser
+        // Open first result in browser
         #[arg(short, long)]
         open: bool,
 
-        /// Limit number of results
+        // Limit number of results
         #[arg(short, long, default_value = "10")]
         limit: i32,
     },
 
-    /// List issues
+    // List issues
     Issues {
-        /// Filter by repository (owner/repo format)
+        // Filter by repository (owner/repo format)
         #[arg(short, long)]
         repo: Option<String>,
 
-        /// Filter by state (open, closed, all)
+        // Filter by state (open, closed, all)
         #[arg(short, long, default_value = "open")]
         state: String,
 
-        /// Limit number of results
+        // Limit number of results
         #[arg(short, long, default_value = "20")]
         limit: i32,
     },
 
-    /// List pull requests
+    // List pull requests
     Prs {
-        /// Filter by repository (owner/repo format)
+        // Filter by repository (owner/repo format)
         #[arg(short, long)]
         repo: Option<String>,
 
-        /// Filter by state (open, closed, merged, all)
+        // Filter by state (open, closed, merged, all)
         #[arg(short, long, default_value = "open")]
         state: String,
 
-        /// Limit number of results
+        // Limit number of results
         #[arg(short, long, default_value = "20")]
         limit: i32,
     },
 
-    /// Show GitHub integration statistics
+    // Show GitHub integration statistics
     Stats,
 
-    /// Show repository information
+    // Show repository information
     Repos {
-        /// Filter by language
+        // Filter by language
         #[arg(short, long)]
         language: Option<String>,
 
-        /// Show only starred repositories
+        // Show only starred repositories
         #[arg(short, long)]
         starred: bool,
 
-        /// Limit number of results
+        // Limit number of results
         #[arg(short = 'n', long, default_value = "20")]
         limit: i32,
     },
 
-    /// Check GitHub API rate limits
+    // Check GitHub API rate limits
     RateLimit,
 }
 

@@ -1,38 +1,38 @@
-//! Todo comment scanner — walk source trees and extract TODO/FIXME/HACK/XXX comments
-//!
-//! This module is the backend for `rustcode todo-scan <repo-path>`.
-//! It walks a directory tree, finds all source files, and extracts inline
-//! comment annotations with surrounding context, then serialises them to JSON.
-//!
-//! # Output shape
-//!
-//! ```json
-//! {
-//!   "repo_path": "/path/to/repo",
-//!   "scanned_at": "2024-01-01T00:00:00Z",
-//!   "total_files_scanned": 42,
-//!   "items": [
-//!     {
-//!       "id": "a1b2c3d4",
-//!       "kind": "TODO",
-//!       "priority": "medium",
-//!       "file": "src/api/handlers.rs",
-//!       "line": 132,
-//!       "text": "Implement type counts",
-//!       "context_before": ["    let response = StatsResponse {"],
-//!       "context_after": ["        chunks: ChunkStats {"],
-//!       "raw_comment": "// TODO: Implement type counts"
-//!     }
-//!   ],
-//!   "summary": {
-//!     "total": 1,
-//!     "by_kind": { "TODO": 1 },
-//!     "by_priority": { "high": 0, "medium": 1, "low": 0 },
-//!     "by_extension": { "rs": 1 },
-//!     "files_with_todos": 1
-//!   }
-//! }
-//! ```
+// Todo comment scanner — walk source trees and extract TODO/FIXME/HACK/XXX comments
+//
+// This module is the backend for `rustcode todo-scan <repo-path>`.
+// It walks a directory tree, finds all source files, and extracts inline
+// comment annotations with surrounding context, then serialises them to JSON.
+//
+// # Output shape
+//
+// ```json
+// {
+//   "repo_path": "/path/to/repo",
+//   "scanned_at": "2024-01-01T00:00:00Z",
+//   "total_files_scanned": 42,
+//   "items": [
+//     {
+//       "id": "a1b2c3d4",
+//       "kind": "TODO",
+//       "priority": "medium",
+//       "file": "src/api/handlers.rs",
+//       "line": 132,
+//       "text": "Implement type counts",
+//       "context_before": ["    let response = StatsResponse {"],
+//       "context_after": ["        chunks: ChunkStats {"],
+//       "raw_comment": "// TODO: Implement type counts"
+//     }
+//   ],
+//   "summary": {
+//     "total": 1,
+//     "by_kind": { "TODO": 1 },
+//     "by_priority": { "high": 0, "medium": 1, "low": 0 },
+//     "by_extension": { "rs": 1 },
+//     "files_with_todos": 1
+//   }
+// }
+// ```
 
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -48,24 +48,24 @@ use crate::error::{AuditError, Result};
 // Configuration
 // ============================================================================
 
-/// Configuration for the todo comment scanner
+// Configuration for the todo comment scanner
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanConfig {
-    /// Number of lines of context to capture before the TODO line
+    // Number of lines of context to capture before the TODO line
     pub context_lines_before: usize,
-    /// Number of lines of context to capture after the TODO line
+    // Number of lines of context to capture after the TODO line
     pub context_lines_after: usize,
-    /// File extensions to scan (without leading dot)
+    // File extensions to scan (without leading dot)
     pub extensions: Vec<String>,
-    /// Directory/path fragments to skip entirely
+    // Directory/path fragments to skip entirely
     pub skip_paths: Vec<String>,
-    /// Minimum priority to include in output (`low` includes everything)
+    // Minimum priority to include in output (`low` includes everything)
     pub min_priority: CommentPriority,
-    /// Whether to include NOTE comments (low priority)
+    // Whether to include NOTE comments (low priority)
     pub include_notes: bool,
-    /// Whether paths in output should be relative to `repo_path`
+    // Whether paths in output should be relative to `repo_path`
     pub relative_paths: bool,
-    /// Maximum file size in bytes to attempt reading (default 1 MiB)
+    // Maximum file size in bytes to attempt reading (default 1 MiB)
     pub max_file_bytes: u64,
 }
 
@@ -121,7 +121,7 @@ impl Default for ScanConfig {
 // Comment kinds and priority
 // ============================================================================
 
-/// The annotation keyword found in the comment
+// The annotation keyword found in the comment
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum CommentKind {
@@ -137,7 +137,7 @@ pub enum CommentKind {
 }
 
 impl CommentKind {
-    /// Return the canonical uppercase string
+    // Return the canonical uppercase string
     pub fn as_str(self) -> &'static str {
         match self {
             CommentKind::Todo => "TODO",
@@ -152,7 +152,7 @@ impl CommentKind {
         }
     }
 
-    /// Infer default priority for this kind (may be overridden by content analysis)
+    // Infer default priority for this kind (may be overridden by content analysis)
     pub fn default_priority(self) -> CommentPriority {
         match self {
             CommentKind::Fixme | CommentKind::Xxx | CommentKind::Bug => CommentPriority::High,
@@ -181,7 +181,7 @@ impl CommentKind {
     }
 }
 
-/// Priority level derived from kind + content heuristics
+// Priority level derived from kind + content heuristics
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommentPriority {
@@ -210,34 +210,34 @@ impl std::fmt::Display for CommentPriority {
 // Output types
 // ============================================================================
 
-/// A single extracted TODO comment item
+// A single extracted TODO comment item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoCommentItem {
-    /// Stable 8-char hex ID derived from file+line
+    // Stable 8-char hex ID derived from file+line
     pub id: String,
-    /// The annotation keyword
+    // The annotation keyword
     pub kind: CommentKind,
-    /// Inferred priority
+    // Inferred priority
     pub priority: CommentPriority,
-    /// File path (relative or absolute depending on config)
+    // File path (relative or absolute depending on config)
     pub file: PathBuf,
-    /// 1-based line number
+    // 1-based line number
     pub line: usize,
-    /// The extracted comment text (stripped of comment markers and keyword)
+    // The extracted comment text (stripped of comment markers and keyword)
     pub text: String,
-    /// Lines of source code before the TODO line
+    // Lines of source code before the TODO line
     pub context_before: Vec<String>,
-    /// Lines of source code after the TODO line
+    // Lines of source code after the TODO line
     pub context_after: Vec<String>,
-    /// The raw, unmodified comment line as it appears in the file
+    // The raw, unmodified comment line as it appears in the file
     pub raw_comment: String,
-    /// File extension (language hint)
+    // File extension (language hint)
     pub extension: String,
-    /// Optional author/assignee extracted from `TODO(name):` syntax
+    // Optional author/assignee extracted from `TODO(name):` syntax
     pub assignee: Option<String>,
 }
 
-/// Summary statistics for a scan run
+// Summary statistics for a scan run
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScanSummary {
     pub total: usize,
@@ -274,7 +274,7 @@ impl ScanSummary {
     }
 }
 
-/// Complete output of a single scan run
+// Complete output of a single scan run
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanOutput {
     pub repo_path: PathBuf,
@@ -285,24 +285,24 @@ pub struct ScanOutput {
 }
 
 impl ScanOutput {
-    /// Serialise to pretty-printed JSON
+    // Serialise to pretty-printed JSON
     pub fn to_json_pretty(&self) -> Result<String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Serialise to compact JSON
+    // Serialise to compact JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Filter items by minimum priority
+    // Filter items by minimum priority
     pub fn filter_by_priority(&self, min: CommentPriority) -> Vec<&TodoCommentItem> {
         self.items.iter().filter(|i| i.priority >= min).collect()
     }
 
-    /// Filter items by kind
+    // Filter items by kind
     pub fn filter_by_kind(&self, kind: CommentKind) -> Vec<&TodoCommentItem> {
         self.items.iter().filter(|i| i.kind == kind).collect()
     }
@@ -312,12 +312,12 @@ impl ScanOutput {
 // Scanner
 // ============================================================================
 
-/// Compiled regex patterns used to detect TODO-style comments
+// Compiled regex patterns used to detect TODO-style comments
 struct CompiledPatterns {
-    /// Matches: `//`, `#`, `--`, `*` style single-line comments with keyword
-    /// Captures: (keyword, optional_assignee, text)
+    // Matches: `//`, `#`, `--`, `*` style single-line comments with keyword
+    // Captures: (keyword, optional_assignee, text)
     line_comment: Regex,
-    /// Matches block comment openers: `/* TODO: …`
+    // Matches block comment openers: `/* TODO: …`
     block_comment: Regex,
 }
 
@@ -368,14 +368,14 @@ impl CompiledPatterns {
     }
 }
 
-/// The main scanner struct
+// The main scanner struct
 pub struct TodoCommentScanner {
     config: ScanConfig,
     patterns: CompiledPatterns,
 }
 
 impl TodoCommentScanner {
-    /// Create a scanner with default configuration
+    // Create a scanner with default configuration
     pub fn new() -> Result<Self> {
         Ok(Self {
             config: ScanConfig::default(),
@@ -383,7 +383,7 @@ impl TodoCommentScanner {
         })
     }
 
-    /// Create a scanner with explicit configuration
+    // Create a scanner with explicit configuration
     pub fn with_config(config: ScanConfig) -> Result<Self> {
         Ok(Self {
             config,
@@ -395,7 +395,7 @@ impl TodoCommentScanner {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Scan an entire repository and return structured output
+    // Scan an entire repository and return structured output
     pub fn scan_repo(&self, repo_path: impl AsRef<Path>) -> Result<ScanOutput> {
         let repo_path = repo_path.as_ref().to_path_buf();
         let mut items: Vec<TodoCommentItem> = Vec::new();
@@ -447,10 +447,10 @@ impl TodoCommentScanner {
         })
     }
 
-    /// Scan a single file and return its TODO items.
-    ///
-    /// `repo_root` is used to produce relative paths in output when
-    /// `config.relative_paths` is true.
+    // Scan a single file and return its TODO items.
+    //
+    // `repo_root` is used to produce relative paths in output when
+    // `config.relative_paths` is true.
     pub fn scan_file(
         &self,
         path: impl AsRef<Path>,
@@ -565,7 +565,7 @@ impl TodoCommentScanner {
     // Private helpers
     // -----------------------------------------------------------------------
 
-    /// Decide whether a file should be scanned
+    // Decide whether a file should be scanned
     fn should_scan(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
 
@@ -585,7 +585,7 @@ impl TodoCommentScanner {
             .any(|e| e.eq_ignore_ascii_case(ext))
     }
 
-    /// Build a `TodoCommentItem` from parsed fields
+    // Build a `TodoCommentItem` from parsed fields
     #[allow(clippy::too_many_arguments)]
     fn build_item(
         &self,
@@ -631,7 +631,7 @@ impl TodoCommentScanner {
         }
     }
 
-    /// Refine priority using content heuristics on top of the keyword default
+    // Refine priority using content heuristics on top of the keyword default
     fn infer_priority(&self, kind: CommentKind, text: &str) -> CommentPriority {
         let base = kind.default_priority();
         let lower = text.to_ascii_lowercase();

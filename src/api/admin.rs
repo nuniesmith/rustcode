@@ -1,7 +1,7 @@
-//! Admin API Module
-//!
-//! Provides administrative endpoints for the dashboard.
-//! Includes metrics, analytics, webhook management, API key management, and system health.
+// Admin API Module
+//
+// Provides administrative endpoints for the dashboard.
+// Includes metrics, analytics, webhook management, API key management, and system health.
 
 use crate::api::ApiResponse;
 use crate::api::handlers::ApiState;
@@ -22,7 +22,7 @@ use std::sync::Arc;
 // Admin Router
 // ============================================================================
 
-/// Create admin router — wired into `create_api_router` under `/admin`
+// Create admin router — wired into `create_api_router` under `/admin`
 pub fn admin_router() -> Router<Arc<ApiState>> {
     Router::new()
         .route("/admin/stats", get(admin_stats))
@@ -68,7 +68,7 @@ pub struct ApiKeyResponse {
     pub id: String,
     pub name: String,
     pub prefix: String,
-    /// Only populated on creation — never returned again after that.
+    // Only populated on creation — never returned again after that.
     pub key: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
@@ -90,7 +90,7 @@ pub struct JobResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct JobsQuery {
-    /// Filter by status: pending | processing | completed | failed
+    // Filter by status: pending | processing | completed | failed
     pub status: Option<String>,
     pub limit: Option<i64>,
 }
@@ -99,7 +99,7 @@ pub struct JobsQuery {
 // Helpers
 // ============================================================================
 
-/// Map a sqlx error to a 500 status code, logging the detail.
+// Map a sqlx error to a 500 status code, logging the detail.
 fn db_err(e: sqlx::Error) -> StatusCode {
     tracing::error!(error = %e, "Admin handler DB error");
     StatusCode::INTERNAL_SERVER_ERROR
@@ -109,7 +109,7 @@ fn db_err(e: sqlx::Error) -> StatusCode {
 // Handlers
 // ============================================================================
 
-/// GET /admin/stats
+// GET /admin/stats
 async fn admin_stats(State(state): State<Arc<ApiState>>) -> Result<impl IntoResponse, StatusCode> {
     // Document counts — these tables are created by migration 006_documents.sql.
     // If they don't exist yet (pre-migration dev environment) we return 0 safely.
@@ -167,7 +167,7 @@ async fn admin_stats(State(state): State<Arc<ApiState>>) -> Result<impl IntoResp
     })))
 }
 
-/// GET /admin/health
+// GET /admin/health
 async fn health_check(State(state): State<Arc<ApiState>>) -> Result<impl IntoResponse, StatusCode> {
     let db_ok = sqlx::query("SELECT 1")
         .execute(&state.db_pool)
@@ -184,7 +184,7 @@ async fn health_check(State(state): State<Arc<ApiState>>) -> Result<impl IntoRes
     })))
 }
 
-/// GET /admin/api-keys
+// GET /admin/api-keys
 async fn list_api_keys(
     State(state): State<Arc<ApiState>>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -216,7 +216,7 @@ async fn list_api_keys(
     Ok(Json(ApiResponse::success(responses)))
 }
 
-/// POST /admin/api-keys
+// POST /admin/api-keys
 async fn create_api_key(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<CreateApiKeyRequest>,
@@ -253,7 +253,7 @@ async fn create_api_key(
     })))
 }
 
-/// DELETE /admin/api-keys/:id
+// DELETE /admin/api-keys/:id
 async fn revoke_api_key(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
@@ -274,7 +274,7 @@ async fn revoke_api_key(
     )))
 }
 
-/// GET /admin/jobs
+// GET /admin/jobs
 async fn list_jobs(
     State(state): State<Arc<ApiState>>,
     Query(params): Query<JobsQuery>,
@@ -348,7 +348,7 @@ async fn list_jobs(
     Ok(Json(ApiResponse::success(responses)))
 }
 
-/// POST /admin/jobs/:id/retry
+// POST /admin/jobs/:id/retry
 async fn retry_job(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,

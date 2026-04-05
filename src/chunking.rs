@@ -1,25 +1,25 @@
-//! Document Chunking Module
-//!
-//! This module provides intelligent text chunking for the RAG system.
-//! It splits documents into semantically meaningful chunks while preserving
-//! structure and adding overlap for better context retrieval.
-//!
-//! # Features
-//!
-//! - **Fixed-size chunking**: Split by word count with configurable size
-//! - **Markdown-aware**: Preserve code blocks, headings, and formatting
-//! - **Overlap**: Configurable overlap between chunks for context
-//! - **Smart splitting**: Prefer splitting at paragraph boundaries
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::chunking::{ChunkConfig, chunk_document};
-//!
-//! let config = ChunkConfig::default();
-//! let content = "# Introduction\n\nThis is a long document...";
-//! let chunks = chunk_document(content, &config).unwrap();
-//! ```
+// Document Chunking Module
+//
+// This module provides intelligent text chunking for the RAG system.
+// It splits documents into semantically meaningful chunks while preserving
+// structure and adding overlap for better context retrieval.
+//
+// # Features
+//
+// - **Fixed-size chunking**: Split by word count with configurable size
+// - **Markdown-aware**: Preserve code blocks, headings, and formatting
+// - **Overlap**: Configurable overlap between chunks for context
+// - **Smart splitting**: Prefer splitting at paragraph boundaries
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::chunking::{ChunkConfig, chunk_document};
+//
+// let config = ChunkConfig::default();
+// let content = "# Introduction\n\nThis is a long document...";
+// let chunks = chunk_document(content, &config).unwrap();
+// ```
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -28,28 +28,28 @@ use serde::{Deserialize, Serialize};
 // Configuration
 // ============================================================================
 
-/// Configuration for document chunking
+// Configuration for document chunking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkConfig {
-    /// Target number of words per chunk (default: 512)
+    // Target number of words per chunk (default: 512)
     pub target_words: usize,
 
-    /// Number of words to overlap between chunks (default: 100)
+    // Number of words to overlap between chunks (default: 100)
     pub overlap_words: usize,
 
-    /// Minimum chunk size in words (default: 50)
+    // Minimum chunk size in words (default: 50)
     pub min_chunk_size: usize,
 
-    /// Maximum chunk size in words before forcing split (default: 768)
+    // Maximum chunk size in words before forcing split (default: 768)
     pub max_chunk_size: usize,
 
-    /// Whether to preserve markdown structure (default: true)
+    // Whether to preserve markdown structure (default: true)
     pub markdown_aware: bool,
 
-    /// Whether to preserve code blocks (default: true)
+    // Whether to preserve code blocks (default: true)
     pub preserve_code_blocks: bool,
 
-    /// Whether to include headings in context (default: true)
+    // Whether to include headings in context (default: true)
     pub include_headings: bool,
 }
 
@@ -68,7 +68,7 @@ impl Default for ChunkConfig {
 }
 
 impl ChunkConfig {
-    /// Create a small chunk configuration (256 words target)
+    // Create a small chunk configuration (256 words target)
     pub fn small() -> Self {
         Self {
             target_words: 256,
@@ -79,7 +79,7 @@ impl ChunkConfig {
         }
     }
 
-    /// Create a large chunk configuration (1024 words target)
+    // Create a large chunk configuration (1024 words target)
     pub fn large() -> Self {
         Self {
             target_words: 1024,
@@ -90,7 +90,7 @@ impl ChunkConfig {
         }
     }
 
-    /// Validate configuration values
+    // Validate configuration values
     pub fn validate(&self) -> Result<()> {
         if self.target_words == 0 {
             anyhow::bail!("target_words must be greater than 0");
@@ -116,25 +116,25 @@ impl ChunkConfig {
 // Data Structures
 // ============================================================================
 
-/// A chunk of document content with metadata
+// A chunk of document content with metadata
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChunkData {
-    /// The text content of the chunk
+    // The text content of the chunk
     pub content: String,
 
-    /// Character offset where chunk starts in original document
+    // Character offset where chunk starts in original document
     pub char_start: usize,
 
-    /// Character offset where chunk ends in original document
+    // Character offset where chunk ends in original document
     pub char_end: usize,
 
-    /// Word count of this chunk
+    // Word count of this chunk
     pub word_count: usize,
 
-    /// Optional heading context (nearest preceding heading)
+    // Optional heading context (nearest preceding heading)
     pub heading: Option<String>,
 
-    /// Index of this chunk in the sequence (0-based)
+    // Index of this chunk in the sequence (0-based)
     pub index: usize,
 }
 
@@ -158,7 +158,7 @@ impl ChunkData {
     }
 }
 
-/// Internal representation of a text segment
+// Internal representation of a text segment
 #[derive(Debug, Clone)]
 struct TextSegment {
     content: String,
@@ -178,9 +178,9 @@ enum SegmentType {
 // Public API
 // ============================================================================
 
-/// Chunk a document according to the given configuration
-///
-/// This is the main entry point for chunking.
+// Chunk a document according to the given configuration
+//
+// This is the main entry point for chunking.
 pub fn chunk_document(content: &str, config: &ChunkConfig) -> Result<Vec<ChunkData>> {
     config.validate().context("Invalid chunk configuration")?;
 

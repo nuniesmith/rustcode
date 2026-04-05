@@ -1,112 +1,112 @@
-//! OpenAI-compatible `/v1/chat/completions` proxy endpoint.
-//!
-//! This module lets any OpenAI-SDK-compatible client (Python `openai`, JS `openai`,
-//! Rust `async-openai`, curl, the futures trading app, Zed IDE, etc.) point its
-//! `base_url` at RustCode and get responses routed through:
-//!
-//!   request → API-key auth → rate-limit → model routing (local/remote)
-//!           → RAG context injection → repo context injection
-//!           → Ollama (local) | Grok (remote)
-//!           → Redis/LRU response cache → OpenAI-shaped response
-//!
-//! # Endpoint
-//!
-//! ```text
-//! POST /v1/chat/completions
-//! Authorization: Bearer <RUSTCODE_API_KEY>
-//! Content-Type: application/json
-//!
-//! {
-//!   "model":    "auto",          // "auto" | "local" | "remote" | "rc:<hint>"
-//!   "messages": [
-//!     { "role": "system",    "content": "You are a trading analyst." },
-//!     { "role": "user",      "content": "Analyse BTC open interest spike." }
-//!   ],
-//!   "temperature": 0.2,          // optional, default 0.2
-//!   "max_tokens":  2048,         // optional
-//!   "stream":      true,         // SSE streaming supported (set false for JSON)
-//!
-//!   // RustCode extensions (all optional, ignored by stock OpenAI clients)
-//!   "x_repo_id":    "futures-bot",  // inject registered-repo RAG context
-//!   "x_no_cache":   false,          // bypass Redis/LRU cache
-//!   "x_force_remote": false         // skip local model regardless of task kind
-//! }
-//! ```
-//!
-//! # Streaming response  (`stream: true`)
-//!
-//! When `stream` is `true` the endpoint returns `Content-Type: text/event-stream`
-//! (SSE).  Each event carries a JSON delta in the standard OpenAI chunk shape:
-//!
-//! ```text
-//! data: {"id":"chatcmpl-rc-…","object":"chat.completion.chunk","created":…,
-//!        "model":"qwen2.5-coder:7b","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
-//!
-//! data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
-//!        "choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
-//!
-//! data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
-//!        "choices":[{"index":0,"delta":{},"finish_reason":"stop"}],
-//!        "usage":{"prompt_tokens":42,"completion_tokens":7,"total_tokens":49}}
-//!
-//! data: [DONE]
-//! ```
-//!
-//! # Non-streaming response  (`stream: false`, default)
-//!
-//! Returns `Content-Type: application/json`.
-//!
-//! # Response  (OpenAI `ChatCompletion` shape)
-//!
-//! ```json
-//! {
-//!   "id": "chatcmpl-rc-<uuid>",
-//!   "object": "chat.completion",
-//!   "created": 1710000000,
-//!   "model": "qwen2.5-coder:7b",
-//!   "choices": [{
-//!     "index": 0,
-//!     "message": { "role": "assistant", "content": "…" },
-//!     "finish_reason": "stop"
-//!   }],
-//!   "usage": {
-//!     "prompt_tokens": 312,
-//!     "completion_tokens": 128,
-//!     "total_tokens": 440
-//!   },
-//!   "x_ra_metadata": {
-//!     "task_kind":             "ArchitecturalReason",
-//!     "used_fallback":         false,
-//!     "repo_context_injected": true,
-//!     "rag_chunks_used":       3,
-//!     "cached":                false,
-//!     "cache_key":             "chat:a3f8c1d0e4b2f9a7"
-//!   }
-//! }
-//! ```
-//!
-//! # Model aliases understood in the `model` field
-//!
-//! | Value          | Behaviour                                      |
-//! |----------------|------------------------------------------------|
-//! | `"auto"`       | ModelRouter decides local vs remote            |
-//! | `"local"`      | Force Ollama regardless of task kind           |
-//! | `"remote"`     | Force Grok regardless of task kind             |
-//! | `"grok-*"`     | Force Grok, pass model name through            |
-//! | `"rc:<hint>"`  | Treat `<hint>` as the prompt for classification|
-//! | anything else  | Treated as `"auto"`                            |
-//!
-//! # Auth
-//!
-//! Set `RUSTCODE_PROXY_API_KEYS=key1,key2,...` in the environment.
-//! If the variable is empty / unset, the endpoint is open (useful for local dev).
-//! The key is read from `Authorization: Bearer <key>` or `X-API-Key: <key>`.
-//!
-//! # Fallback behaviour for the futures app
-//!
-//! The companion `ProxyClient` (see `src/api/proxy_client.rs`) tries
-//! RustCode first and falls back to the upstream Grok API transparently
-//! when RustCode is unreachable or returns a 5xx error.
+// OpenAI-compatible `/v1/chat/completions` proxy endpoint.
+//
+// This module lets any OpenAI-SDK-compatible client (Python `openai`, JS `openai`,
+// Rust `async-openai`, curl, the futures trading app, Zed IDE, etc.) point its
+// `base_url` at RustCode and get responses routed through:
+//
+//   request → API-key auth → rate-limit → model routing (local/remote)
+//           → RAG context injection → repo context injection
+//           → Ollama (local) | Grok (remote)
+//           → Redis/LRU response cache → OpenAI-shaped response
+//
+// # Endpoint
+//
+// ```text
+// POST /v1/chat/completions
+// Authorization: Bearer <RUSTCODE_API_KEY>
+// Content-Type: application/json
+//
+// {
+//   "model":    "auto",          // "auto" | "local" | "remote" | "rc:<hint>"
+//   "messages": [
+//     { "role": "system",    "content": "You are a trading analyst." },
+//     { "role": "user",      "content": "Analyse BTC open interest spike." }
+//   ],
+//   "temperature": 0.2,          // optional, default 0.2
+//   "max_tokens":  2048,         // optional
+//   "stream":      true,         // SSE streaming supported (set false for JSON)
+//
+//   // RustCode extensions (all optional, ignored by stock OpenAI clients)
+//   "x_repo_id":    "futures-bot",  // inject registered-repo RAG context
+//   "x_no_cache":   false,          // bypass Redis/LRU cache
+//   "x_force_remote": false         // skip local model regardless of task kind
+// }
+// ```
+//
+// # Streaming response  (`stream: true`)
+//
+// When `stream` is `true` the endpoint returns `Content-Type: text/event-stream`
+// (SSE).  Each event carries a JSON delta in the standard OpenAI chunk shape:
+//
+// ```text
+// data: {"id":"chatcmpl-rc-…","object":"chat.completion.chunk","created":…,
+//        "model":"qwen2.5-coder:7b","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+//
+// data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
+//        "choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
+//
+// data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
+//        "choices":[{"index":0,"delta":{},"finish_reason":"stop"}],
+//        "usage":{"prompt_tokens":42,"completion_tokens":7,"total_tokens":49}}
+//
+// data: [DONE]
+// ```
+//
+// # Non-streaming response  (`stream: false`, default)
+//
+// Returns `Content-Type: application/json`.
+//
+// # Response  (OpenAI `ChatCompletion` shape)
+//
+// ```json
+// {
+//   "id": "chatcmpl-rc-<uuid>",
+//   "object": "chat.completion",
+//   "created": 1710000000,
+//   "model": "qwen2.5-coder:7b",
+//   "choices": [{
+//     "index": 0,
+//     "message": { "role": "assistant", "content": "…" },
+//     "finish_reason": "stop"
+//   }],
+//   "usage": {
+//     "prompt_tokens": 312,
+//     "completion_tokens": 128,
+//     "total_tokens": 440
+//   },
+//   "x_ra_metadata": {
+//     "task_kind":             "ArchitecturalReason",
+//     "used_fallback":         false,
+//     "repo_context_injected": true,
+//     "rag_chunks_used":       3,
+//     "cached":                false,
+//     "cache_key":             "chat:a3f8c1d0e4b2f9a7"
+//   }
+// }
+// ```
+//
+// # Model aliases understood in the `model` field
+//
+// | Value          | Behaviour                                      |
+// |----------------|------------------------------------------------|
+// | `"auto"`       | ModelRouter decides local vs remote            |
+// | `"local"`      | Force Ollama regardless of task kind           |
+// | `"remote"`     | Force Grok regardless of task kind             |
+// | `"grok-*"`     | Force Grok, pass model name through            |
+// | `"rc:<hint>"`  | Treat `<hint>` as the prompt for classification|
+// | anything else  | Treated as `"auto"`                            |
+//
+// # Auth
+//
+// Set `RUSTCODE_PROXY_API_KEYS=key1,key2,...` in the environment.
+// If the variable is empty / unset, the endpoint is open (useful for local dev).
+// The key is read from `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+//
+// # Fallback behaviour for the futures app
+//
+// The companion `ProxyClient` (see `src/api/proxy_client.rs`) tries
+// RustCode first and falls back to the upstream Grok API transparently
+// when RustCode is unreachable or returns a 5xx error.
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -139,18 +139,18 @@ use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 #[derive(Clone)]
 pub struct ProxyState {
-    /// The full repo/chat state (model router, Ollama, Grok, cache, sync svc).
+    // The full repo/chat state (model router, Ollama, Grok, cache, sync svc).
     pub repo_state: RepoAppState,
-    /// SHA-256 hashes of allowed bearer tokens.
-    /// Empty → auth disabled (open endpoint).
+    // SHA-256 hashes of allowed bearer tokens.
+    // Empty → auth disabled (open endpoint).
     pub allowed_key_hashes: Arc<Vec<String>>,
 }
 
 impl ProxyState {
-    /// Build from an existing `RepoAppState`.
-    ///
-    /// Reads `RUSTCODE_PROXY_API_KEYS` from the environment (comma-separated raw keys).
-    /// If the variable is absent or empty, auth is disabled.
+    // Build from an existing `RepoAppState`.
+    //
+    // Reads `RUSTCODE_PROXY_API_KEYS` from the environment (comma-separated raw keys).
+    // If the variable is absent or empty, auth is disabled.
     pub fn new(repo_state: RepoAppState) -> Self {
         let raw_keys = std::env::var("RUSTCODE_PROXY_API_KEYS").unwrap_or_default();
         let allowed_key_hashes: Vec<String> = raw_keys
@@ -179,7 +179,7 @@ impl ProxyState {
         }
     }
 
-    /// Return true when the provided raw key is authorised (or auth is off).
+    // Return true when the provided raw key is authorised (or auth is off).
     pub fn is_authorised(&self, key: &str) -> bool {
         if self.allowed_key_hashes.is_empty() {
             return true;
@@ -193,28 +193,28 @@ impl ProxyState {
 // OpenAI-compatible request / response shapes
 // ---------------------------------------------------------------------------
 
-/// A single message in the conversation history.
+// A single message in the conversation history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OaiMessage {
-    /// `"system"` | `"user"` | `"assistant"`
+    // `"system"` | `"user"` | `"assistant"`
     pub role: String,
-    /// Conversation text — may arrive as a plain string or as the newer OpenAI
-    /// array-of-parts format: `[{"type":"text","text":"..."}]`.  The custom
-    /// deserialiser normalises both forms to a plain `String`; non-text parts
-    /// (e.g. `image_url`) are silently ignored since this proxy is text-only.
+    // Conversation text — may arrive as a plain string or as the newer OpenAI
+    // array-of-parts format: `[{"type":"text","text":"..."}]`.  The custom
+    // deserialiser normalises both forms to a plain `String`; non-text parts
+    // (e.g. `image_url`) are silently ignored since this proxy is text-only.
     #[serde(deserialize_with = "deserialize_oai_content")]
     pub content: String,
 }
 
-/// Deserialise the OpenAI `content` field.
-///
-/// The OpenAI Chat Completions API allows `content` to be either:
-///   - a plain string:  `"content": "Hello"`
-///   - an array of typed parts: `"content": [{"type":"text","text":"Hello"}]`
-///
-/// Clients such as OpenClaw use the array form when building multi-turn
-/// conversations with tool calls, so we must accept both.  All `"text"` parts
-/// are concatenated (separated by `"\n"`); other part types are dropped.
+// Deserialise the OpenAI `content` field.
+//
+// The OpenAI Chat Completions API allows `content` to be either:
+//   - a plain string:  `"content": "Hello"`
+//   - an array of typed parts: `"content": [{"type":"text","text":"Hello"}]`
+//
+// Clients such as OpenClaw use the array form when building multi-turn
+// conversations with tool calls, so we must accept both.  All `"text"` parts
+// are concatenated (separated by `"\n"`); other part types are dropped.
 fn deserialize_oai_content<'de, D>(de: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -231,7 +231,7 @@ where
             f.write_str("a string or an array of OpenAI content parts")
         }
 
-        /// Plain string form — the common case for simple clients.
+        // Plain string form — the common case for simple clients.
         fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
             Ok(v.to_owned())
         }
@@ -240,8 +240,8 @@ where
             Ok(v)
         }
 
-        /// Array-of-parts form: `[{"type":"text","text":"..."}, ...]`
-        /// Used by OpenClaw and newer OpenAI client libraries.
+        // Array-of-parts form: `[{"type":"text","text":"..."}, ...]`
+        // Used by OpenClaw and newer OpenAI client libraries.
         fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<String, A::Error> {
             #[derive(serde::Deserialize)]
             struct Part {
@@ -267,30 +267,30 @@ where
     de.deserialize_any(ContentVisitor)
 }
 
-/// OpenAI `POST /v1/chat/completions` request body.
+// OpenAI `POST /v1/chat/completions` request body.
 #[derive(Debug, Deserialize)]
 pub struct OaiChatRequest {
     // ── Standard OpenAI fields ───────────────────────────────────────────────
-    /// Model alias. See module-level doc for accepted values.
+    // Model alias. See module-level doc for accepted values.
     pub model: String,
-    /// Conversation messages in chronological order.
+    // Conversation messages in chronological order.
     pub messages: Vec<OaiMessage>,
-    /// Sampling temperature (0.0 – 2.0). Default: 0.2.
+    // Sampling temperature (0.0 – 2.0). Default: 0.2.
     #[serde(default = "default_temperature")]
     pub temperature: f32,
-    /// Maximum tokens to generate.
+    // Maximum tokens to generate.
     pub max_tokens: Option<u32>,
-    /// Streaming — must be `false` (streaming is not yet implemented).
+    // Streaming — must be `false` (streaming is not yet implemented).
     #[serde(default)]
     pub stream: bool,
 
     // ── RustCode extensions ─────────────────────────────────────────────
-    /// Inject RAG + symbol context from a registered repo slug or UUID.
+    // Inject RAG + symbol context from a registered repo slug or UUID.
     pub x_repo_id: Option<String>,
-    /// Bypass Redis/LRU response cache.
+    // Bypass Redis/LRU response cache.
     #[serde(default)]
     pub x_no_cache: bool,
-    /// Force remote (Grok) model regardless of task classification.
+    // Force remote (Grok) model regardless of task classification.
     #[serde(default)]
     pub x_force_remote: bool,
 }
@@ -299,7 +299,7 @@ fn default_temperature() -> f32 {
     0.2
 }
 
-/// OpenAI `ChatCompletion` response (non-streaming).
+// OpenAI `ChatCompletion` response (non-streaming).
 #[derive(Debug, Serialize)]
 pub struct OaiChatResponse {
     pub id: String,
@@ -308,7 +308,7 @@ pub struct OaiChatResponse {
     pub model: String,
     pub choices: Vec<OaiChoice>,
     pub usage: OaiUsage,
-    /// Non-standard metadata — OpenAI clients will ignore this field.
+    // Non-standard metadata — OpenAI clients will ignore this field.
     pub x_ra_metadata: RaMetadata,
 }
 
@@ -323,7 +323,7 @@ pub struct OaiChoice {
 // SSE / streaming shapes  (OpenAI `chat.completion.chunk`)
 // ---------------------------------------------------------------------------
 
-/// A single SSE data frame for streaming responses.
+// A single SSE data frame for streaming responses.
 #[derive(Debug, Serialize)]
 struct OaiChunkResponse {
     id: String,
@@ -331,7 +331,7 @@ struct OaiChunkResponse {
     created: u64,
     model: String,
     choices: Vec<OaiChunkChoice>,
-    /// Only present on the final chunk (finish_reason = "stop").
+    // Only present on the final chunk (finish_reason = "stop").
     #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<OaiUsage>,
 }
@@ -343,13 +343,13 @@ struct OaiChunkChoice {
     finish_reason: Option<String>,
 }
 
-/// The delta payload inside a streaming chunk.
+// The delta payload inside a streaming chunk.
 #[derive(Debug, Serialize)]
 struct OaiDelta {
-    /// Only set on the very first chunk to establish the role.
+    // Only set on the very first chunk to establish the role.
     #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<String>,
-    /// The incremental text content (empty string on the final chunk).
+    // The incremental text content (empty string on the final chunk).
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<String>,
 }
@@ -361,24 +361,24 @@ pub struct OaiUsage {
     pub total_tokens: u32,
 }
 
-/// RustCode-specific metadata returned alongside every response.
+// RustCode-specific metadata returned alongside every response.
 #[derive(Debug, Serialize)]
 pub struct RaMetadata {
-    /// The `TaskKind` the model router assigned to this prompt.
+    // The `TaskKind` the model router assigned to this prompt.
     pub task_kind: String,
-    /// True when the local model was tried but fell back to remote.
+    // True when the local model was tried but fell back to remote.
     pub used_fallback: bool,
-    /// True when repo symbols/tree/todos were injected into the prompt.
+    // True when repo symbols/tree/todos were injected into the prompt.
     pub repo_context_injected: bool,
-    /// Number of RAG chunks prepended to the prompt.
+    // Number of RAG chunks prepended to the prompt.
     pub rag_chunks_used: usize,
-    /// True when the response was served from cache.
+    // True when the response was served from cache.
     pub cached: bool,
-    /// Cache key used for this request (useful for debugging).
+    // Cache key used for this request (useful for debugging).
     pub cache_key: String,
 }
 
-/// OpenAI-compatible error body.
+// OpenAI-compatible error body.
 #[derive(Debug, Serialize)]
 pub struct OaiError {
     pub error: OaiErrorDetail,
@@ -435,17 +435,17 @@ struct CachedProxyResponse {
     completion_tokens: u32,
 }
 
-/// TTL for proxy response cache entries: 30 minutes.
-/// Shorter than the 1-hour chat TTL because market/code context can change fast.
+// TTL for proxy response cache entries: 30 minutes.
+// Shorter than the 1-hour chat TTL because market/code context can change fast.
 const PROXY_CACHE_TTL_SECS: u64 = 1800;
 
 // ---------------------------------------------------------------------------
 // Router constructor — call this in server.rs
 // ---------------------------------------------------------------------------
 
-/// Build the `/v1` router containing the OpenAI-compatible chat completion endpoint.
-///
-/// Mount with `.nest("/v1", proxy_router(proxy_state))` in `run_server`.
+// Build the `/v1` router containing the OpenAI-compatible chat completion endpoint.
+//
+// Mount with `.nest("/v1", proxy_router(proxy_state))` in `run_server`.
 pub fn proxy_router(state: ProxyState) -> Router {
     Router::new()
         .route("/chat/completions", post(handle_chat_completions))
@@ -627,11 +627,11 @@ async fn handle_chat_completions(
 // SSE streaming handler
 // ---------------------------------------------------------------------------
 
-/// Handle a streaming (`stream: true`) chat completion request.
-///
-/// Drives `OllamaClient::complete_streaming` and translates each
-/// [`StreamChunk`] into an OpenAI-compatible SSE `data:` frame.
-/// On completion the full assembled reply is written to the cache.
+// Handle a streaming (`stream: true`) chat completion request.
+//
+// Drives `OllamaClient::complete_streaming` and translates each
+// [`StreamChunk`] into an OpenAI-compatible SSE `data:` frame.
+// On completion the full assembled reply is written to the cache.
 #[allow(clippy::too_many_arguments)]
 async fn handle_streaming(
     state: ProxyState,
@@ -895,29 +895,29 @@ struct ModelEntry {
     owned_by: &'static str,
 
     // ── Token limits ────────────────────────────────────────────────
-    /// Total context window (prompt + completion).
+    // Total context window (prompt + completion).
     max_tokens: u32,
-    /// Maximum tokens the model will generate in one turn.
+    // Maximum tokens the model will generate in one turn.
     max_completion_tokens: u32,
-    /// Alias for `max_completion_tokens` (used by some clients, e.g. Zed).
+    // Alias for `max_completion_tokens` (used by some clients, e.g. Zed).
     max_output_tokens: u32,
 
     // ── Capability flags ────────────────────────────────────────────
-    /// Whether `tools` / `functions` are accepted.  RustCode does not
-    /// forward tool definitions, so this is `false` for all entries.
+    // Whether `tools` / `functions` are accepted.  RustCode does not
+    // forward tool definitions, so this is `false` for all entries.
     supports_tools: bool,
-    /// Whether parallel tool-call responses are supported.
+    // Whether parallel tool-call responses are supported.
     supports_parallel_tool_calls: bool,
-    /// Whether image content parts are accepted.
+    // Whether image content parts are accepted.
     supports_images: bool,
-    /// Whether a `prompt_cache_key` extension field is understood.
+    // Whether a `prompt_cache_key` extension field is understood.
     supports_prompt_cache_key: bool,
-    /// Always `true` — every entry here is a chat-completions model.
+    // Always `true` — every entry here is a chat-completions model.
     supports_chat_completions: bool,
 }
 
 impl ModelEntry {
-    /// Construct a RustCode virtual model entry.
+    // Construct a RustCode virtual model entry.
     fn rc(id: &str, max_tokens: u32, max_completion_tokens: u32, now: u64) -> Self {
         Self {
             id: id.to_string(),
@@ -935,7 +935,7 @@ impl ModelEntry {
         }
     }
 
-    /// Construct an Ollama passthrough model entry.
+    // Construct an Ollama passthrough model entry.
     fn ollama(id: String, now: u64) -> Self {
         Self {
             id,
@@ -1002,8 +1002,8 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Verify the bearer token or X-API-Key header against the configured key set.
-/// Returns `Some(error_response)` when auth fails, `None` when authorised.
+// Verify the bearer token or X-API-Key header against the configured key set.
+// Returns `Some(error_response)` when auth fails, `None` when authorised.
 fn check_auth(state: &ProxyState, headers: &HeaderMap) -> Option<(StatusCode, Json<OaiError>)> {
     if state.allowed_key_hashes.is_empty() {
         // Auth disabled — open endpoint.
@@ -1025,19 +1025,19 @@ fn check_auth(state: &ProxyState, headers: &HeaderMap) -> Option<(StatusCode, Js
     }
 }
 
-/// Determine model target from the `model` field in the request.
-///
-/// Supported aliases:
-/// - `"auto"` — let ModelRouter classify the last user message
-/// - `"local"` — always use Ollama
-/// - `"remote"` — always use Grok
-/// - `"grok-*"` / `"grok"` — always use Grok
-/// - `"anthropic/*"` / `"claude-*"` — treated as explicit remote (Grok) targets.
-///   OpenClaw and other OpenAI-compatible clients send Anthropic model names
-///   (e.g. `anthropic/claude-opus-4-6`) when configured with a custom base URL;
-///   we intercept and route to the remote backend without the classifier round-trip.
-/// - `"rc:<hint>"` — strip prefix, use hint as the classification prompt
-/// - anything else — treat as `"auto"` (message-classifier decides)
+// Determine model target from the `model` field in the request.
+//
+// Supported aliases:
+// - `"auto"` — let ModelRouter classify the last user message
+// - `"local"` — always use Ollama
+// - `"remote"` — always use Grok
+// - `"grok-*"` / `"grok"` — always use Grok
+// - `"anthropic/*"` / `"claude-*"` — treated as explicit remote (Grok) targets.
+//   OpenClaw and other OpenAI-compatible clients send Anthropic model names
+//   (e.g. `anthropic/claude-opus-4-6`) when configured with a custom base URL;
+//   we intercept and route to the remote backend without the classifier round-trip.
+// - `"rc:<hint>"` — strip prefix, use hint as the classification prompt
+// - anything else — treat as `"auto"` (message-classifier decides)
 async fn route_from_model_field(
     state: &RepoAppState,
     model: &str,
@@ -1082,8 +1082,8 @@ async fn route_from_model_field(
     }
 }
 
-/// Retrieve RAG chunks for the given prompt and return the enriched prompt
-/// string plus the number of chunks actually used.
+// Retrieve RAG chunks for the given prompt and return the enriched prompt
+// string plus the number of chunks actually used.
 async fn enrich_with_rag(state: &RepoAppState, prompt: &str) -> (String, usize) {
     let maybe_pool = {
         let svc = state.sync_service.read().await;
@@ -1109,23 +1109,23 @@ async fn enrich_with_rag(state: &RepoAppState, prompt: &str) -> (String, usize) 
     }
 }
 
-/// Collapse the full conversation history into a single prompt string that
-/// the underlying completion API can handle, injecting RAG text and optional
-/// repo context.
-///
-/// Format:
-/// ```text
-/// [System]
-/// <system message if present>
-///
-/// [Repo Context]
-/// <repo symbols / tree / todos if injected>
-///
-/// [Conversation]
-/// user: <msg>
-/// assistant: <msg>
-/// user: <rag-enriched last message>
-/// ```
+// Collapse the full conversation history into a single prompt string that
+// the underlying completion API can handle, injecting RAG text and optional
+// repo context.
+//
+// Format:
+// ```text
+// [System]
+// <system message if present>
+//
+// [Repo Context]
+// <repo symbols / tree / todos if injected>
+//
+// [Conversation]
+// user: <msg>
+// assistant: <msg>
+// user: <rag-enriched last message>
+// ```
 fn build_full_prompt(
     messages: &[OaiMessage],
     rag_enriched_last_user: &str,
@@ -1163,9 +1163,9 @@ fn build_full_prompt(
     parts.join("\n\n")
 }
 
-/// Dispatch to Ollama or Grok via the existing `dispatch_completion` logic.
-/// Duplicated here (rather than sharing with `repos.rs`) to keep the proxy
-/// self-contained and avoid coupling to private internals.
+// Dispatch to Ollama or Grok via the existing `dispatch_completion` logic.
+// Duplicated here (rather than sharing with `repos.rs`) to keep the proxy
+// self-contained and avoid coupling to private internals.
 async fn dispatch(
     state: &RepoAppState,
     req: &CompletionRequest,
@@ -1235,9 +1235,9 @@ async fn dispatch(
     }
 }
 
-/// Split a combined token count into an approximate prompt/completion split.
-/// If the model returned both counts, use them. Otherwise estimate using a
-/// naive 4-chars-per-token heuristic.
+// Split a combined token count into an approximate prompt/completion split.
+// If the model returned both counts, use them. Otherwise estimate using a
+// naive 4-chars-per-token heuristic.
 fn split_tokens(combined: Option<u32>, prompt: &str, completion: &str) -> (u32, u32) {
     if let Some(total) = combined {
         // Rough proportional split when we only have the total.
@@ -1255,7 +1255,7 @@ fn split_tokens(combined: Option<u32>, prompt: &str, completion: &str) -> (u32, 
     }
 }
 
-/// Build the final `OaiChatResponse`.
+// Build the final `OaiChatResponse`.
 #[allow(clippy::too_many_arguments)]
 fn build_oai_response(
     content: String,
@@ -1298,8 +1298,8 @@ fn build_oai_response(
     })
 }
 
-/// Build a deterministic cache key for the proxy.
-/// Identical to `repos.rs::build_cache_key` but namespaced as `proxy:`.
+// Build a deterministic cache key for the proxy.
+// Identical to `repos.rs::build_cache_key` but namespaced as `proxy:`.
 fn build_proxy_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&str>) -> String {
     let label = match target {
         ModelTarget::Local { model, .. } => format!("local:{}", model),
@@ -1317,14 +1317,14 @@ fn build_proxy_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&st
     format!("proxy:{}", hex::encode(&digest[..8]))
 }
 
-/// Hash a raw API key with SHA-256 for constant-time-safe comparison.
+// Hash a raw API key with SHA-256 for constant-time-safe comparison.
 fn hash_key(key: &str) -> String {
     let mut h = Sha256::new();
     h.update(key.as_bytes());
     hex::encode(h.finalize())
 }
 
-/// Seconds since Unix epoch.
+// Seconds since Unix epoch.
 fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

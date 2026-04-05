@@ -10,29 +10,29 @@ use tracing::{debug, info, warn};
 // Task classification
 // ---------------------------------------------------------------------------
 
-/// Describes the nature of a code/chat task so the router can pick the right model.
+// Describes the nature of a code/chat task so the router can pick the right model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskKind {
-    /// Generate a stub, skeleton, or boilerplate (80% quality target — local model)
+    // Generate a stub, skeleton, or boilerplate (80% quality target — local model)
     ScaffoldStub,
-    /// Insert TODO / FIXME / STUB tags into existing code
+    // Insert TODO / FIXME / STUB tags into existing code
     TodoTagging,
-    /// Walk a project tree and summarise structure
+    // Walk a project tree and summarise structure
     TreeSummary,
-    /// Extract symbols (fns, structs, traits, impls) from a file
+    // Extract symbols (fns, structs, traits, impls) from a file
     SymbolExtraction,
-    /// Answer a general question about a repo or codebase
+    // Answer a general question about a repo or codebase
     RepoQuestion,
-    /// Complex architectural reasoning or multi-file refactor (remote model)
+    // Complex architectural reasoning or multi-file refactor (remote model)
     ArchitecturalReason,
-    /// Final review / critique of generated code (remote model)
+    // Final review / critique of generated code (remote model)
     CodeReview,
-    /// Anything that doesn't clearly fit above — fall back to remote
+    // Anything that doesn't clearly fit above — fall back to remote
     Unknown,
 }
 
 impl TaskKind {
-    /// True if this task should be handled by the local model.
+    // True if this task should be handled by the local model.
     pub fn is_local(&self) -> bool {
         matches!(
             self,
@@ -57,9 +57,9 @@ impl fmt::Display for TaskKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelTarget {
-    /// Local Ollama instance (e.g. Qwen2.5-Coder:7b)
+    // Local Ollama instance (e.g. Qwen2.5-Coder:7b)
     Local { model: String, base_url: String },
-    /// Remote xAI Grok API
+    // Remote xAI Grok API
     Remote { model: String, api_key: String },
 }
 
@@ -82,9 +82,9 @@ pub struct ModelRouterConfig {
     pub local_base_url: String,
     pub remote_model: String,
     pub remote_api_key: String,
-    /// If true, always use remote regardless of task kind (useful for debugging)
+    // If true, always use remote regardless of task kind (useful for debugging)
     pub force_remote: bool,
-    /// If local Ollama is unreachable, fall back to remote automatically
+    // If local Ollama is unreachable, fall back to remote automatically
     pub fallback_to_remote: bool,
 }
 
@@ -115,27 +115,27 @@ impl ModelRouter {
         Self { config }
     }
 
-    /// Classify a raw user prompt into a `TaskKind`.
-    ///
-    /// Strategy (in order):
-    /// 1. Try a one-shot LLM classification against the local Ollama instance
-    ///    (fast, <200 ms on a warm model).  The model is asked to reply with
-    ///    exactly one label from the fixed set.
-    /// 2. If Ollama is unreachable or returns an unrecognised label, fall back
-    ///    to the deterministic keyword heuristic below.
-    ///
-    /// This is the sync surface — callers that want the async LLM path should
-    /// use `classify_prompt_async` instead.  The sync version always falls back
-    /// to keywords immediately (useful in tests and for the `route_prompt` API
-    /// that is called from sync contexts).
+    // Classify a raw user prompt into a `TaskKind`.
+    //
+    // Strategy (in order):
+    // 1. Try a one-shot LLM classification against the local Ollama instance
+    //    (fast, <200 ms on a warm model).  The model is asked to reply with
+    //    exactly one label from the fixed set.
+    // 2. If Ollama is unreachable or returns an unrecognised label, fall back
+    //    to the deterministic keyword heuristic below.
+    //
+    // This is the sync surface — callers that want the async LLM path should
+    // use `classify_prompt_async` instead.  The sync version always falls back
+    // to keywords immediately (useful in tests and for the `route_prompt` API
+    // that is called from sync contexts).
     pub fn classify_prompt(&self, prompt: &str) -> TaskKind {
         Self::keyword_classify(prompt)
     }
 
-    /// Async version of `classify_prompt` — tries the local Ollama model first,
-    /// falls back to keywords if Ollama is unreachable or gives a bad response.
-    ///
-    /// Callers in async contexts (e.g. `handle_chat`) should prefer this.
+    // Async version of `classify_prompt` — tries the local Ollama model first,
+    // falls back to keywords if Ollama is unreachable or gives a bad response.
+    //
+    // Callers in async contexts (e.g. `handle_chat`) should prefer this.
     pub async fn classify_prompt_async(&self, prompt: &str) -> TaskKind {
         // Only attempt LLM classification when not forced-remote and the local
         // model is configured.
@@ -147,10 +147,10 @@ impl ModelRouter {
         Self::keyword_classify(prompt)
     }
 
-    /// One-shot LLM classification via a tiny Ollama request.
-    ///
-    /// Returns `None` if Ollama is unreachable, times out, or returns an
-    /// unrecognised label — callers should fall back to keyword matching.
+    // One-shot LLM classification via a tiny Ollama request.
+    //
+    // Returns `None` if Ollama is unreachable, times out, or returns an
+    // unrecognised label — callers should fall back to keyword matching.
     async fn llm_classify(&self, prompt: &str) -> Option<TaskKind> {
         const CLASSIFY_SYSTEM: &str = "\
 You are a task classifier. Classify the user message into EXACTLY ONE of these labels \
@@ -258,7 +258,7 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
         Some(kind)
     }
 
-    /// Pure keyword heuristic — always fast, no I/O.
+    // Pure keyword heuristic — always fast, no I/O.
     fn keyword_classify(prompt: &str) -> TaskKind {
         let lower = prompt.to_lowercase();
 
@@ -305,7 +305,7 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
         TaskKind::Unknown
     }
 
-    /// Decide which model target to use for a given task.
+    // Decide which model target to use for a given task.
     pub fn route(&self, task: &TaskKind) -> ModelTarget {
         if self.config.force_remote || !task.is_local() {
             info!(task = %task, target = "remote", "Routing to remote model");
@@ -322,23 +322,23 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
         }
     }
 
-    /// Route by raw prompt (sync) — classifies via keywords then routes.
-    /// Use `route_prompt_async` in async contexts for LLM-assisted classification.
+    // Route by raw prompt (sync) — classifies via keywords then routes.
+    // Use `route_prompt_async` in async contexts for LLM-assisted classification.
     pub fn route_prompt(&self, prompt: &str) -> (TaskKind, ModelTarget) {
         let kind = self.classify_prompt(prompt);
         let target = self.route(&kind);
         (kind, target)
     }
 
-    /// Route by raw prompt (async) — tries LLM classification first, falls back
-    /// to keywords.  Prefer this in all async handlers.
+    // Route by raw prompt (async) — tries LLM classification first, falls back
+    // to keywords.  Prefer this in all async handlers.
     pub async fn route_prompt_async(&self, prompt: &str) -> (TaskKind, ModelTarget) {
         let kind = self.classify_prompt_async(prompt).await;
         let target = self.route(&kind);
         (kind, target)
     }
 
-    /// Called when a local model request fails. Returns fallback target if configured.
+    // Called when a local model request fails. Returns fallback target if configured.
     pub fn on_local_failure(&self, task: &TaskKind) -> Option<ModelTarget> {
         if self.config.fallback_to_remote {
             warn!(task = %task, "Local model failed — falling back to remote");
@@ -362,7 +362,7 @@ pub struct CompletionRequest {
     pub user_prompt: String,
     pub max_tokens: u32,
     pub temperature: f32,
-    /// Injected repo context (tree, symbols, todos) — prepended to user_prompt
+    // Injected repo context (tree, symbols, todos) — prepended to user_prompt
     pub repo_context: Option<String>,
 }
 
@@ -377,7 +377,7 @@ impl CompletionRequest {
         }
     }
 
-    /// Build the final prompt string injecting repo context if present.
+    // Build the final prompt string injecting repo context if present.
     pub fn build_prompt(&self) -> String {
         match &self.repo_context {
             Some(ctx) => format!(

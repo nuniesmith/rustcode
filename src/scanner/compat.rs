@@ -1,7 +1,7 @@
-//! Compatibility layer for old Scanner interface
-//!
-//! This module provides backward compatibility with the old Scanner interface
-//! that was used by enhanced_scanner and server modules.
+// Compatibility layer for old Scanner interface
+//
+// This module provides backward compatibility with the old Scanner interface
+// that was used by enhanced_scanner and server modules.
 
 use crate::error::Result;
 use crate::tags::TagScanner;
@@ -15,20 +15,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-/// Scanner for analyzing codebases (compatibility layer)
+// Scanner for analyzing codebases (compatibility layer)
 pub struct Scanner {
-    /// Root directory to scan
+    // Root directory to scan
     root: PathBuf,
-    /// Tag scanner
+    // Tag scanner
     tag_scanner: TagScanner,
-    /// Maximum file size to scan (bytes)
+    // Maximum file size to scan (bytes)
     max_file_size: usize,
-    /// Whether to include tests
+    // Whether to include tests
     include_tests: bool,
 }
 
 impl Scanner {
-    /// Create a new scanner
+    // Create a new scanner
     pub fn new(root: PathBuf, max_file_size: usize, include_tests: bool) -> Result<Self> {
         let tag_scanner = TagScanner::new()?;
 
@@ -40,7 +40,7 @@ impl Scanner {
         })
     }
 
-    /// Scan the codebase and generate a report
+    // Scan the codebase and generate a report
     pub fn scan(&self, _request: &AuditRequest) -> Result<AuditReport> {
         info!("Starting codebase scan at {}", self.root.display());
 
@@ -79,7 +79,7 @@ impl Scanner {
         })
     }
 
-    /// Build a system map of the codebase
+    // Build a system map of the codebase
     fn build_system_map(&self) -> Result<SystemMap> {
         debug!("Building system map");
 
@@ -93,7 +93,7 @@ impl Scanner {
         })
     }
 
-    /// Scan all files in the codebase
+    // Scan all files in the codebase
     fn scan_files(&self) -> Result<Vec<FileAnalysis>> {
         let mut analyses = Vec::new();
 
@@ -115,7 +115,7 @@ impl Scanner {
         Ok(analyses)
     }
 
-    /// Scan a single file
+    // Scan a single file
     fn scan_file(&self, path: &Path) -> Result<Option<FileAnalysis>> {
         // Skip files that are too large
         if let Ok(metadata) = fs::metadata(path) {
@@ -168,7 +168,7 @@ impl Scanner {
         }))
     }
 
-    /// Calculate summary statistics
+    // Calculate summary statistics
     fn calculate_summary(&self, files: &[FileAnalysis]) -> AuditSummary {
         let total_files = files.len();
         let total_lines: usize = files.iter().map(|f| f.lines).sum();
@@ -200,7 +200,7 @@ impl Scanner {
     }
 }
 
-/// Check if a file is a test file
+// Check if a file is a test file
 fn is_test_file(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
     path_str.contains("/test/")
@@ -210,7 +210,7 @@ fn is_test_file(path: &Path) -> bool {
         || path_str.ends_with(".spec.ts")
 }
 
-/// Categorize a file based on its path and name
+// Categorize a file based on its path and name
 fn categorize_file(path: &Path) -> Category {
     let path_str = path.to_string_lossy().to_lowercase();
 
@@ -239,7 +239,7 @@ fn categorize_file(path: &Path) -> Category {
     }
 }
 
-/// Detect issues in file content
+// Detect issues in file content
 fn detect_issues(path: &Path, content: &str) -> Vec<Issue> {
     let mut issues = Vec::new();
 
@@ -307,7 +307,7 @@ fn detect_issues(path: &Path, content: &str) -> Vec<Issue> {
     issues
 }
 
-/// Calculate file priority based on issues and category
+// Calculate file priority based on issues and category
 fn calculate_priority(issues: &[Issue], category: &Category) -> FilePriority {
     let has_critical = issues.iter().any(|i| i.severity == IssueSeverity::Critical);
     let has_high = issues.iter().any(|i| i.severity == IssueSeverity::High);

@@ -354,7 +354,7 @@ mod tests {
             ],
             DiscoveryResult {
                 tools: vec![tool("search"), tool("read"), tool("write")],
-                resources: vec![resource("docs", "file:///docs")],
+                resources: vec![resource("docs", "file://docs")],
                 partial: false,
             },
             None,
@@ -392,7 +392,7 @@ mod tests {
             ],
             DiscoveryResult {
                 tools: vec![tool("search"), tool("read")],
-                resources: vec![resource("alpha-docs", "file:///alpha")],
+                resources: vec![resource("alpha-docs", "file://alpha")],
                 partial: true,
             },
             None,

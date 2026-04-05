@@ -1,7 +1,7 @@
-//! Compatibility layer for old LLM client interface
-//!
-//! This module provides backward compatibility with the old LlmClient interface
-//! that was used by enhanced_scanner, llm_audit, research, and server modules.
+// Compatibility layer for old LLM client interface
+//
+// This module provides backward compatibility with the old LlmClient interface
+// that was used by enhanced_scanner, llm_audit, research, and server modules.
 
 use crate::error::{AuditError, Result};
 use crate::types::Category;
@@ -11,26 +11,26 @@ use std::path::Path;
 use std::time::Duration;
 use tracing::{info, warn};
 
-/// LLM client for code analysis (compatibility layer)
+// LLM client for code analysis (compatibility layer)
 pub struct LlmClient {
-    /// HTTP client
+    // HTTP client
     client: Client,
-    /// API key
+    // API key
     api_key: String,
-    /// Model name
+    // Model name
     model: String,
-    /// LLM provider (xai, google)
+    // LLM provider (xai, google)
     provider: String,
-    /// Base URL
+    // Base URL
     base_url: String,
-    /// Max tokens
+    // Max tokens
     max_tokens: usize,
-    /// Temperature
+    // Temperature
     temperature: f64,
 }
 
 impl LlmClient {
-    /// Create a new LLM client with provider detection
+    // Create a new LLM client with provider detection
     pub fn new(
         api_key: String,
         model: String,
@@ -52,7 +52,7 @@ impl LlmClient {
         Self::new_with_provider(api_key, provider, model, max_tokens, temperature)
     }
 
-    /// Create a new LLM client with explicit provider
+    // Create a new LLM client with explicit provider
     pub fn new_with_provider(
         api_key: String,
         provider: String,
@@ -91,7 +91,7 @@ impl LlmClient {
         })
     }
 
-    /// Analyze a file with LLM
+    // Analyze a file with LLM
     pub async fn analyze_file(
         &self,
         file_path: &Path,
@@ -104,7 +104,7 @@ impl LlmClient {
         self.call_llm(&system_prompt, &user_prompt).await
     }
 
-    /// Build system prompt based on category
+    // Build system prompt based on category
     fn build_system_prompt(&self, category: Category) -> String {
         format!(
             "You are an expert code analyst. Analyze the following {} code and provide insights.",
@@ -122,7 +122,7 @@ impl LlmClient {
         )
     }
 
-    /// Build file-specific prompt
+    // Build file-specific prompt
     fn build_file_prompt(&self, file_path: &Path, content: &str) -> String {
         format!(
             "File: {}\n\nContent:\n```\n{}\n```\n\nProvide a structured analysis.",
@@ -131,7 +131,7 @@ impl LlmClient {
         )
     }
 
-    /// Call the LLM API
+    // Call the LLM API
     async fn call_llm(&self, system: &str, user: &str) -> Result<LlmAnalysisResult> {
         match self.provider.as_str() {
             "xai" | "grok" => self.call_xai(system, user).await,
@@ -144,7 +144,7 @@ impl LlmClient {
         }
     }
 
-    /// Call XAI/Grok API
+    // Call XAI/Grok API
     async fn call_xai(&self, system: &str, user: &str) -> Result<LlmAnalysisResult> {
         #[derive(Serialize)]
         struct XaiRequest {
@@ -248,7 +248,7 @@ impl LlmClient {
         })
     }
 
-    /// Call Google/Gemini API
+    // Call Google/Gemini API
     async fn call_google(&self, system: &str, user: &str) -> Result<LlmAnalysisResult> {
         // Simplified implementation - in production, use proper Gemini API
         let combined = format!("{}\n\n{}", system, user);
@@ -360,7 +360,7 @@ impl LlmClient {
         })
     }
 
-    /// Call Anthropic/Claude API
+    // Call Anthropic/Claude API
     async fn call_anthropic(&self, system: &str, user: &str) -> Result<LlmAnalysisResult> {
         #[derive(Serialize)]
         struct ClaudeRequest {
@@ -453,7 +453,7 @@ impl LlmClient {
         })
     }
 
-    /// Analyze content with global context
+    // Analyze content with global context
     pub async fn analyze_with_global_context(
         &self,
         context: &str,
@@ -468,7 +468,7 @@ impl LlmClient {
         Ok(result.content)
     }
 
-    /// Run standard questionnaire for codebase analysis
+    // Run standard questionnaire for codebase analysis
     pub async fn run_standard_questionnaire(
         &self,
         codebase_context: &str,
@@ -501,7 +501,7 @@ impl LlmClient {
         Ok(vec![audit])
     }
 
-    /// Analyze entire codebase
+    // Analyze entire codebase
     pub async fn analyze_codebase(&self, files: &[(&str, &str)]) -> Result<LlmAnalysisResult> {
         let system = "You are analyzing an entire codebase. Provide a comprehensive analysis covering architecture, quality, security, and recommendations.";
 
@@ -524,7 +524,7 @@ impl LlmClient {
     }
 }
 
-/// Issue found during analysis
+// Issue found during analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
     pub severity: String,
@@ -532,7 +532,7 @@ pub struct Issue {
     pub suggestion: Option<String>,
 }
 
-/// Result from LLM analysis
+// Result from LLM analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmAnalysisResult {
     pub content: String,
@@ -548,7 +548,7 @@ pub struct LlmAnalysisResult {
     pub tokens_used: Option<usize>,
 }
 
-/// File audit result (compatibility type)
+// File audit result (compatibility type)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAuditResult {
     pub summary: String,
@@ -563,7 +563,7 @@ pub struct FileAuditResult {
 }
 
 impl FileAuditResult {
-    /// Parse from LLM analysis result
+    // Parse from LLM analysis result
     pub fn from_llm_result(result: &LlmAnalysisResult) -> Self {
         // Simple parsing - in production, use structured output
         Self {

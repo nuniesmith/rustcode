@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaneEventName {
@@ -88,6 +89,31 @@ pub struct LaneEvent {
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+}
+
+impl fmt::Display for LaneFailureClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::PromptDelivery    => "prompt_delivery",
+            Self::TrustGate         => "trust_gate",
+            Self::BranchDivergence  => "branch_divergence",
+            Self::Compile           => "compile",
+            Self::Test              => "test",
+            Self::PluginStartup     => "plugin_startup",
+            Self::McpStartup        => "mcp_startup",
+            Self::McpHandshake      => "mcp_handshake",
+            Self::GatewayRouting    => "gateway_routing",
+            Self::ToolRuntime       => "tool_runtime",
+            Self::Infra             => "infra",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for LaneEventBlocker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.failure_class, self.detail)
+    }
 }
 
 impl LaneEvent {

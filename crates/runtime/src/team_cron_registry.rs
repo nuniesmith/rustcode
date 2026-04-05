@@ -1,7 +1,7 @@
-//! In-memory registries for Team and Cron lifecycle management.
-//!
-//! Provides TeamCreate/Delete and CronCreate/Delete/List runtime backing
-//! to replace the stub implementations in the tools crate.
+// In-memory registries for Team and Cron lifecycle management.
+//
+// Provides TeamCreate/Delete and CronCreate/Delete/List runtime backing
+// to replace the stub implementations in the tools crate.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -191,7 +191,7 @@ impl CronRegistry {
             .ok_or_else(|| format!("cron not found: {cron_id}"))
     }
 
-    /// Disable a cron entry without removing it.
+    // Disable a cron entry without removing it.
     pub fn disable(&self, cron_id: &str) -> Result<(), String> {
         let mut inner = self.inner.lock().expect("cron registry lock poisoned");
         let entry = inner
@@ -203,7 +203,7 @@ impl CronRegistry {
         Ok(())
     }
 
-    /// Record a cron run.
+    // Record a cron run.
     pub fn record_run(&self, cron_id: &str) -> Result<(), String> {
         let mut inner = self.inner.lock().expect("cron registry lock poisoned");
         let entry = inner

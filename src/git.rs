@@ -1,21 +1,21 @@
-//! Git repository management for audit service
+// Git repository management for audit service
 
 use crate::error::{AuditError, Result};
 use git2::Repository;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-/// Git repository manager
+// Git repository manager
 pub struct GitManager {
-    /// Workspace directory where repos are cloned
+    // Workspace directory where repos are cloned
     workspace_dir: PathBuf,
-    /// Whether to do shallow clones
+    // Whether to do shallow clones
     #[allow(dead_code)]
     shallow_clone: bool,
 }
 
 impl GitManager {
-    /// Create a new git manager
+    // Create a new git manager
     pub fn new(workspace_dir: PathBuf, shallow_clone: bool) -> Result<Self> {
         // Create workspace directory if it doesn't exist
         std::fs::create_dir_all(&workspace_dir)?;
@@ -26,7 +26,7 @@ impl GitManager {
         })
     }
 
-    /// Clone a repository
+    // Clone a repository
     pub fn clone_repo(&self, url: &str, name: Option<&str>) -> Result<PathBuf> {
         let repo_name = name.unwrap_or_else(|| {
             url.split('/')
@@ -53,7 +53,7 @@ impl GitManager {
         Ok(target_path)
     }
 
-    /// Open an existing repository
+    // Open an existing repository
     pub fn open(&self, path: &Path) -> Result<Repository> {
         Repository::open(path).map_err(|e| {
             AuditError::other(format!(
@@ -64,7 +64,7 @@ impl GitManager {
         })
     }
 
-    /// Get the diff for a repository
+    // Get the diff for a repository
     pub fn get_diff(&self, repo_path: &Path, base: Option<&str>) -> Result<String> {
         let repo = self.open(repo_path)?;
 
@@ -127,7 +127,7 @@ impl GitManager {
         Ok(diff_str)
     }
 
-    /// Checkout a specific branch
+    // Checkout a specific branch
     pub fn checkout(&self, repo_path: &Path, branch: &str) -> Result<()> {
         let repo = self.open(repo_path)?;
 
@@ -153,7 +153,7 @@ impl GitManager {
         Ok(())
     }
 
-    /// Get the current branch name
+    // Get the current branch name
     pub fn current_branch(&self, repo_path: &Path) -> Result<String> {
         let repo = self.open(repo_path)?;
         let head = repo
@@ -167,7 +167,7 @@ impl GitManager {
         }
     }
 
-    /// Get repository statistics
+    // Get repository statistics
     pub fn stats(&self, repo_path: &Path) -> Result<RepoStats> {
         let repo = self.open(repo_path)?;
 
@@ -208,12 +208,12 @@ impl GitManager {
         })
     }
 
-    /// Check if a path is a git repository
+    // Check if a path is a git repository
     pub fn is_repository(&self, path: &Path) -> bool {
         Repository::open(path).is_ok()
     }
 
-    /// Update (pull) an existing repository
+    // Update (pull) an existing repository
     pub fn update(&self, repo_path: &Path) -> Result<()> {
         let repo = self.open(repo_path)?;
 
@@ -233,27 +233,27 @@ impl GitManager {
     }
 }
 
-/// Repository statistics
+// Repository statistics
 #[derive(Debug, Clone)]
 pub struct RepoStats {
-    /// Total commit count
+    // Total commit count
     pub commit_count: usize,
-    /// Number of branches
+    // Number of branches
     pub branch_count: usize,
-    /// Latest commit information
+    // Latest commit information
     pub latest_commit: CommitInfo,
 }
 
-/// Commit information
+// Commit information
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
-    /// Commit hash
+    // Commit hash
     pub hash: String,
-    /// Commit message
+    // Commit message
     pub message: String,
-    /// Author name
+    // Author name
     pub author: String,
-    /// Timestamp (seconds since epoch)
+    // Timestamp (seconds since epoch)
     pub timestamp: i64,
 }
 

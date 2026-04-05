@@ -1,38 +1,38 @@
-//! Static Analysis Pre-Filter Pipeline
-//!
-//! This module runs zero-cost and lightweight static checks on source files
-//! **before** sending them to the LLM for deep analysis. The goal is to:
-//!
-//! 1. Skip files that don't need LLM analysis (generated, trivial, clean)
-//! 2. Deprioritize files that are unlikely to have issues
-//! 3. Flag files that definitely need LLM attention (high unwrap density, unsafe, etc.)
-//! 4. Provide a quality signal that the auto_scanner can use to choose prompt tiers
-//!
-//! Based on the 2026-02-08 review findings:
-//! - 66% of files returned zero issues from the LLM
-//! - 28% of files are under 5K chars (trivial)
-//! - Top-cost files all returned 0 issues — static pre-filter could have skipped them
-//!
-//! # Architecture
-//!
-//! ```text
-//! File → StaticAnalyzer::analyze()
-//!        ├─ is_generated()           → Skip entirely
-//!        ├─ content_metrics()        → char count, line count, avg line len
-//!        ├─ unwrap_audit()           → .unwrap() / .expect() / panic!() density
-//!        ├─ unsafe_audit()           → unsafe blocks without safety comments
-//!        ├─ error_handling_ratio()   → .unwrap() vs ? operator ratio
-//!        ├─ security_patterns()      → hardcoded secrets, SQL injection hints
-//!        ├─ todo_fixme_count()       → quick count (full scan via TodoScanner)
-//!        ├─ complexity_estimate()    → function count, nesting depth
-//!        └─ staleness_check()        → git last-modified age
-//!
-//! Result: StaticAnalysisResult
-//!        ├─ recommendation: Skip | Minimal | Standard | DeepDive
-//!        ├─ skip_reason: Option<SkipReason>
-//!        ├─ quality_signals: QualitySignals
-//!        └─ estimated_llm_value: f64 (0.0 = no value, 1.0 = high value)
-//! ```
+// Static Analysis Pre-Filter Pipeline
+//
+// This module runs zero-cost and lightweight static checks on source files
+// **before** sending them to the LLM for deep analysis. The goal is to:
+//
+// 1. Skip files that don't need LLM analysis (generated, trivial, clean)
+// 2. Deprioritize files that are unlikely to have issues
+// 3. Flag files that definitely need LLM attention (high unwrap density, unsafe, etc.)
+// 4. Provide a quality signal that the auto_scanner can use to choose prompt tiers
+//
+// Based on the 2026-02-08 review findings:
+// - 66% of files returned zero issues from the LLM
+// - 28% of files are under 5K chars (trivial)
+// - Top-cost files all returned 0 issues — static pre-filter could have skipped them
+//
+// # Architecture
+//
+// ```text
+// File → StaticAnalyzer::analyze()
+//        ├─ is_generated()           → Skip entirely
+//        ├─ content_metrics()        → char count, line count, avg line len
+//        ├─ unwrap_audit()           → .unwrap() / .expect() / panic!() density
+//        ├─ unsafe_audit()           → unsafe blocks without safety comments
+//        ├─ error_handling_ratio()   → .unwrap() vs ? operator ratio
+//        ├─ security_patterns()      → hardcoded secrets, SQL injection hints
+//        ├─ todo_fixme_count()       → quick count (full scan via TodoScanner)
+//        ├─ complexity_estimate()    → function count, nesting depth
+//        └─ staleness_check()        → git last-modified age
+//
+// Result: StaticAnalysisResult
+//        ├─ recommendation: Skip | Minimal | Standard | DeepDive
+//        ├─ skip_reason: Option<SkipReason>
+//        ├─ quality_signals: QualitySignals
+//        └─ estimated_llm_value: f64 (0.0 = no value, 1.0 = high value)
+// ```
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -44,16 +44,16 @@ use tracing::{debug, info};
 // Result Types
 // ============================================================================
 
-/// The recommendation from static analysis about how to handle a file
+// The recommendation from static analysis about how to handle a file
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AnalysisRecommendation {
-    /// Skip LLM entirely — file is generated, trivial, or provably clean
+    // Skip LLM entirely — file is generated, trivial, or provably clean
     Skip,
-    /// Use a minimal/cheap prompt — small file, low complexity, no red flags
+    // Use a minimal/cheap prompt — small file, low complexity, no red flags
     Minimal,
-    /// Use the standard analysis prompt
+    // Use the standard analysis prompt
     Standard,
-    /// Use the full deep-dive prompt — file has red flags that need expert review
+    // Use the full deep-dive prompt — file has red flags that need expert review
     DeepDive,
 }
 
@@ -68,20 +68,20 @@ impl std::fmt::Display for AnalysisRecommendation {
     }
 }
 
-/// Why a file was recommended for skipping
+// Why a file was recommended for skipping
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SkipReason {
-    /// File contains generated code markers (@generated, protobuf output, etc.)
+    // File contains generated code markers (@generated, protobuf output, etc.)
     GeneratedCode,
-    /// File is empty or nearly empty (< 10 lines of actual code)
+    // File is empty or nearly empty (< 10 lines of actual code)
     TrivialFile,
-    /// File is a lockfile, manifest, or non-logic config
+    // File is a lockfile, manifest, or non-logic config
     NonCodeFile,
-    /// File content is identical to a previously analyzed file (content hash match)
+    // File content is identical to a previously analyzed file (content hash match)
     DuplicateContent,
-    /// File is a test-only file with no production logic
+    // File is a test-only file with no production logic
     TestOnly,
-    /// File hasn't changed since last successful analysis and had 0 issues
+    // File hasn't changed since last successful analysis and had 0 issues
     UnchangedClean,
 }
 
@@ -98,140 +98,140 @@ impl std::fmt::Display for SkipReason {
     }
 }
 
-/// Quality signals extracted from static analysis
+// Quality signals extracted from static analysis
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QualitySignals {
     // --- Content Metrics ---
-    /// Total characters in the file
+    // Total characters in the file
     pub char_count: usize,
-    /// Total lines (including blank)
+    // Total lines (including blank)
     pub total_lines: usize,
-    /// Lines of actual code (non-blank, non-comment)
+    // Lines of actual code (non-blank, non-comment)
     pub code_lines: usize,
-    /// Comment lines
+    // Comment lines
     pub comment_lines: usize,
-    /// Blank lines
+    // Blank lines
     pub blank_lines: usize,
-    /// Average line length (chars)
+    // Average line length (chars)
     pub avg_line_length: usize,
 
     // --- Error Handling ---
-    /// Count of `.unwrap()` calls
+    // Count of `.unwrap()` calls
     pub unwrap_count: usize,
-    /// Count of `.expect(...)` calls
+    // Count of `.expect(...)` calls
     pub expect_count: usize,
-    /// Count of `panic!()` / `unreachable!()` / `unimplemented!()`
+    // Count of `panic!()` / `unreachable!()` / `unimplemented!()`
     pub panic_macro_count: usize,
-    /// Count of `?` operator usage
+    // Count of `?` operator usage
     pub question_mark_count: usize,
-    /// Count of `.unwrap_or(...)` / `.unwrap_or_default()` / `.unwrap_or_else(...)`
+    // Count of `.unwrap_or(...)` / `.unwrap_or_default()` / `.unwrap_or_else(...)`
     pub unwrap_or_count: usize,
-    /// Ratio of safe error handling vs unsafe (0.0 = all unwrap, 1.0 = all ?)
+    // Ratio of safe error handling vs unsafe (0.0 = all unwrap, 1.0 = all ?)
     pub error_handling_ratio: f64,
 
     // --- Safety ---
-    /// Count of `unsafe` blocks/functions
+    // Count of `unsafe` blocks/functions
     pub unsafe_block_count: usize,
-    /// Count of `unsafe` blocks that have a `// SAFETY:` comment nearby
+    // Count of `unsafe` blocks that have a `// SAFETY:` comment nearby
     pub unsafe_with_safety_comment: usize,
-    /// Count of `unsafe` blocks WITHOUT safety comments
+    // Count of `unsafe` blocks WITHOUT safety comments
     pub unsafe_without_safety_comment: usize,
 
     // --- Security Patterns ---
-    /// Potential hardcoded secrets found (pattern matches, may be false positives)
+    // Potential hardcoded secrets found (pattern matches, may be false positives)
     pub potential_secrets: Vec<SecurityFinding>,
-    /// SQL string concatenation patterns
+    // SQL string concatenation patterns
     pub sql_injection_risks: usize,
 
     // --- Code Markers ---
-    /// Count of TODO comments
+    // Count of TODO comments
     pub todo_count: usize,
-    /// Count of FIXME comments
+    // Count of FIXME comments
     pub fixme_count: usize,
-    /// Count of HACK comments
+    // Count of HACK comments
     pub hack_count: usize,
-    /// Count of XXX comments
+    // Count of XXX comments
     pub xxx_count: usize,
 
     // --- TodoScanner integration ---
-    /// High-priority TODOs (FIXME, XXX, security, urgent) from TodoScanner
+    // High-priority TODOs (FIXME, XXX, security, urgent) from TodoScanner
     pub high_priority_todos: usize,
-    /// Medium-priority TODOs from TodoScanner
+    // Medium-priority TODOs from TodoScanner
     pub medium_priority_todos: usize,
-    /// Low-priority TODOs (NOTE, maybe, consider) from TodoScanner
+    // Low-priority TODOs (NOTE, maybe, consider) from TodoScanner
     pub low_priority_todos: usize,
-    /// Total items found by TodoScanner (may exceed simple regex counts)
+    // Total items found by TodoScanner (may exceed simple regex counts)
     pub todo_scanner_total: usize,
 
-    /// Whether the file contains `@generated` or similar markers
+    // Whether the file contains `@generated` or similar markers
     pub is_generated: bool,
-    /// Whether the file appears to be a protobuf/gRPC generated file
+    // Whether the file appears to be a protobuf/gRPC generated file
     pub is_protobuf_generated: bool,
 
     // --- Complexity ---
-    /// Estimated number of functions/methods
+    // Estimated number of functions/methods
     pub function_count: usize,
-    /// Estimated maximum nesting depth
+    // Estimated maximum nesting depth
     pub max_nesting_depth: usize,
-    /// Estimated cyclomatic complexity (simplified)
+    // Estimated cyclomatic complexity (simplified)
     pub estimated_complexity: usize,
-    /// Whether the file has any `pub` items (is part of public API)
+    // Whether the file has any `pub` items (is part of public API)
     pub has_public_api: bool,
 
     // --- Dependencies ---
-    /// Number of `use` / `import` statements
+    // Number of `use` / `import` statements
     pub import_count: usize,
-    /// Whether the file imports `unsafe` FFI bindings
+    // Whether the file imports `unsafe` FFI bindings
     pub has_ffi_imports: bool,
 }
 
-/// A potential security finding from pattern matching
+// A potential security finding from pattern matching
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityFinding {
-    /// Line number (1-based)
+    // Line number (1-based)
     pub line: usize,
-    /// Pattern that matched
+    // Pattern that matched
     pub pattern: String,
-    /// The matched text (redacted if it looks like an actual secret)
+    // The matched text (redacted if it looks like an actual secret)
     pub matched_text: String,
-    /// Confidence level
+    // Confidence level
     pub confidence: FindingConfidence,
 }
 
-/// Confidence level for a security finding
+// Confidence level for a security finding
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FindingConfidence {
-    /// Almost certainly a real issue
+    // Almost certainly a real issue
     High,
-    /// Likely an issue but could be a false positive
+    // Likely an issue but could be a false positive
     Medium,
-    /// Possibly an issue — needs human review
+    // Possibly an issue — needs human review
     Low,
 }
 
-/// Complete result of static analysis for a single file
+// Complete result of static analysis for a single file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticAnalysisResult {
-    /// File path (relative to repo root)
+    // File path (relative to repo root)
     pub file_path: String,
-    /// The language detected
+    // The language detected
     pub language: FileLanguage,
-    /// Recommendation for LLM handling
+    // Recommendation for LLM handling
     pub recommendation: AnalysisRecommendation,
-    /// If Skip, why
+    // If Skip, why
     pub skip_reason: Option<SkipReason>,
-    /// All quality signals
+    // All quality signals
     pub signals: QualitySignals,
-    /// Estimated value of sending this file to the LLM (0.0–1.0)
-    /// 0.0 = waste of money, 1.0 = definitely worth analyzing
+    // Estimated value of sending this file to the LLM (0.0–1.0)
+    // 0.0 = waste of money, 1.0 = definitely worth analyzing
     pub estimated_llm_value: f64,
-    /// Human-readable summary of findings
+    // Human-readable summary of findings
     pub summary: String,
-    /// Number of static issues found (before LLM)
+    // Number of static issues found (before LLM)
     pub static_issue_count: usize,
 }
 
-/// Detected file language
+// Detected file language
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FileLanguage {
     Rust,
@@ -249,7 +249,7 @@ pub enum FileLanguage {
 }
 
 impl FileLanguage {
-    /// Detect language from file extension
+    // Detect language from file extension
     pub fn from_extension(path: &str) -> Self {
         let ext = path.rsplit('.').next().unwrap_or("");
         match ext {
@@ -268,7 +268,7 @@ impl FileLanguage {
         }
     }
 
-    /// Get single-line comment prefix for this language
+    // Get single-line comment prefix for this language
     pub fn comment_prefix(&self) -> &'static str {
         match self {
             Self::Rust
@@ -309,24 +309,24 @@ impl std::fmt::Display for FileLanguage {
 // Configuration
 // ============================================================================
 
-/// Configuration for the static analyzer
+// Configuration for the static analyzer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticAnalyzerConfig {
-    /// Character threshold below which a file is considered "small" (default: 5000)
+    // Character threshold below which a file is considered "small" (default: 5000)
     pub small_file_threshold: usize,
-    /// Character threshold above which a file is "large" (default: 50000)
+    // Character threshold above which a file is "large" (default: 50000)
     pub large_file_threshold: usize,
-    /// Unwrap density threshold (unwraps per 100 LOC) to trigger deep dive (default: 5.0)
+    // Unwrap density threshold (unwraps per 100 LOC) to trigger deep dive (default: 5.0)
     pub unwrap_density_threshold: f64,
-    /// Minimum code lines to be considered non-trivial (default: 10)
+    // Minimum code lines to be considered non-trivial (default: 10)
     pub min_code_lines: usize,
-    /// Whether to run security pattern scanning (default: true)
+    // Whether to run security pattern scanning (default: true)
     pub enable_security_scan: bool,
-    /// Whether to check for generated file markers (default: true)
+    // Whether to check for generated file markers (default: true)
     pub enable_generated_detection: bool,
-    /// File staleness threshold in days — files older than this get lower priority (default: 180)
+    // File staleness threshold in days — files older than this get lower priority (default: 180)
     pub staleness_threshold_days: u64,
-    /// Whether to skip test-only files (default: false — tests are still useful to scan)
+    // Whether to skip test-only files (default: false — tests are still useful to scan)
     pub skip_test_files: bool,
 }
 
@@ -349,14 +349,14 @@ impl Default for StaticAnalyzerConfig {
 // Static Analyzer
 // ============================================================================
 
-/// The main static analyzer that runs all pre-filter checks
+// The main static analyzer that runs all pre-filter checks
 pub struct StaticAnalyzer {
     config: StaticAnalyzerConfig,
-    /// Compiled regex patterns (compiled once, reused)
+    // Compiled regex patterns (compiled once, reused)
     patterns: AnalysisPatterns,
 }
 
-/// Pre-compiled regex patterns for analysis
+// Pre-compiled regex patterns for analysis
 struct AnalysisPatterns {
     // Error handling
     unwrap_call: Regex,
@@ -459,7 +459,7 @@ impl AnalysisPatterns {
 }
 
 impl StaticAnalyzer {
-    /// Create a new static analyzer with default configuration
+    // Create a new static analyzer with default configuration
     pub fn new() -> Self {
         Self {
             config: StaticAnalyzerConfig::default(),
@@ -467,7 +467,7 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Create a new static analyzer with custom configuration
+    // Create a new static analyzer with custom configuration
     pub fn with_config(config: StaticAnalyzerConfig) -> Self {
         Self {
             config,
@@ -475,10 +475,10 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Run all static analysis checks on a file's content.
-    ///
-    /// This is the main entry point. It returns a complete `StaticAnalysisResult`
-    /// with a recommendation on whether/how to send the file to the LLM.
+    // Run all static analysis checks on a file's content.
+    //
+    // This is the main entry point. It returns a complete `StaticAnalysisResult`
+    // with a recommendation on whether/how to send the file to the LLM.
     pub fn analyze(&self, file_path: &str, content: &str) -> StaticAnalysisResult {
         let language = FileLanguage::from_extension(file_path);
         let mut signals = QualitySignals::default();
@@ -534,13 +534,13 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Run static analysis with TodoScanner integration.
-    ///
-    /// This performs the same analysis as `analyze()` but additionally runs
-    /// the `TodoScanner` on the content to get richer TODO/FIXME data with
-    /// priority classification. The TodoScanner results are merged into
-    /// `QualitySignals` and can influence the recommendation (e.g. many
-    /// high-priority FIXMEs may push a file toward DeepDive).
+    // Run static analysis with TodoScanner integration.
+    //
+    // This performs the same analysis as `analyze()` but additionally runs
+    // the `TodoScanner` on the content to get richer TODO/FIXME data with
+    // priority classification. The TodoScanner results are merged into
+    // `QualitySignals` and can influence the recommendation (e.g. many
+    // high-priority FIXMEs may push a file toward DeepDive).
     pub fn analyze_with_todos(
         &self,
         file_path: &str,
@@ -558,13 +558,13 @@ impl StaticAnalyzer {
         result
     }
 
-    /// Merge TodoScanner-style priority classification into an existing
-    /// StaticAnalysisResult by scanning the content inline.
-    ///
-    /// This avoids the need for a temp file: instead of calling
-    /// `TodoScanner::scan_file`, we iterate lines and classify each
-    /// TODO/FIXME/HACK/XXX/NOTE match by priority using the same
-    /// heuristics that `TodoScanner::infer_priority` uses.
+    // Merge TodoScanner-style priority classification into an existing
+    // StaticAnalysisResult by scanning the content inline.
+    //
+    // This avoids the need for a temp file: instead of calling
+    // `TodoScanner::scan_file`, we iterate lines and classify each
+    // TODO/FIXME/HACK/XXX/NOTE match by priority using the same
+    // heuristics that `TodoScanner::infer_priority` uses.
     fn merge_todo_scanner_results(
         &self,
         _file_path: &str,
@@ -675,9 +675,9 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Analyze a file by reading it from disk.
-    ///
-    /// Convenience wrapper around `analyze()` that handles file I/O.
+    // Analyze a file by reading it from disk.
+    //
+    // Convenience wrapper around `analyze()` that handles file I/O.
     pub fn analyze_file(&self, file_path: &Path) -> std::io::Result<StaticAnalysisResult> {
         let content = std::fs::read_to_string(file_path)?;
         let path_str = file_path.to_string_lossy();
@@ -712,8 +712,8 @@ impl StaticAnalyzer {
             } else if trimmed.starts_with(comment_prefix)
                 || trimmed.starts_with("/*")
                 || trimmed.starts_with('*')
-                || trimmed.starts_with("///")
-                || trimmed.starts_with("//!")
+                || trimmed.starts_with("//")
+                || trimmed.starts_with("//")
                 || trimmed.starts_with('#')
                     && matches!(language, FileLanguage::Python | FileLanguage::Shell)
             {
@@ -884,7 +884,7 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Redact potentially sensitive values for logging
+    // Redact potentially sensitive values for logging
     fn redact_match(line: &str) -> String {
         if line.len() > 80 {
             format!("{}...[REDACTED]", &line[..40])
@@ -1081,7 +1081,7 @@ impl StaticAnalyzer {
         (AnalysisRecommendation::Standard, None)
     }
 
-    /// Estimate how valuable it would be to send this file to the LLM (0.0–1.0)
+    // Estimate how valuable it would be to send this file to the LLM (0.0–1.0)
     fn estimate_llm_value(
         &self,
         signals: &QualitySignals,
@@ -1118,7 +1118,7 @@ impl StaticAnalyzer {
         }
     }
 
-    /// Count the number of issues found purely by static analysis
+    // Count the number of issues found purely by static analysis
     fn count_static_issues(&self, signals: &QualitySignals) -> usize {
         let mut count = 0usize;
 
@@ -1143,7 +1143,7 @@ impl StaticAnalyzer {
         count
     }
 
-    /// Check if a file is test-only based on its path
+    // Check if a file is test-only based on its path
     fn is_test_only_file(path: &str) -> bool {
         path.contains("/tests/")
             || path.contains("/test/")
@@ -1157,7 +1157,7 @@ impl StaticAnalyzer {
             || path.ends_with(".spec.js")
     }
 
-    /// Generate a human-readable summary
+    // Generate a human-readable summary
     fn generate_summary(
         &self,
         file_path: &str,
@@ -1226,7 +1226,7 @@ impl StaticAnalyzer {
         parts.join("\n")
     }
 
-    /// Get the analyzer configuration
+    // Get the analyzer configuration
     pub fn config(&self) -> &StaticAnalyzerConfig {
         &self.config
     }
@@ -1242,30 +1242,30 @@ impl Default for StaticAnalyzer {
 // Batch Analysis
 // ============================================================================
 
-/// Result of analyzing a batch of files
+// Result of analyzing a batch of files
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchAnalysisReport {
-    /// Total files analyzed
+    // Total files analyzed
     pub total_files: usize,
-    /// Files recommended to skip
+    // Files recommended to skip
     pub skip_count: usize,
-    /// Files recommended for minimal prompt
+    // Files recommended for minimal prompt
     pub minimal_count: usize,
-    /// Files recommended for standard prompt
+    // Files recommended for standard prompt
     pub standard_count: usize,
-    /// Files recommended for deep dive
+    // Files recommended for deep dive
     pub deep_dive_count: usize,
-    /// Total static issues found
+    // Total static issues found
     pub total_static_issues: usize,
-    /// Breakdown by skip reason
+    // Breakdown by skip reason
     pub skip_reasons: HashMap<String, usize>,
-    /// Estimated LLM cost savings (percentage of files that can be skipped/minimized)
+    // Estimated LLM cost savings (percentage of files that can be skipped/minimized)
     pub estimated_savings_percent: f64,
-    /// Individual file results
+    // Individual file results
     pub results: Vec<StaticAnalysisResult>,
 }
 
-/// Run static analysis on a batch of files and produce an aggregate report
+// Run static analysis on a batch of files and produce an aggregate report
 pub fn analyze_batch(
     analyzer: &StaticAnalyzer,
     files: &[(String, String)], // (file_path, content) pairs
@@ -1322,40 +1322,40 @@ pub fn analyze_batch(
 // Clippy Integration
 // ============================================================================
 
-/// Result of running `cargo clippy` on a project
+// Result of running `cargo clippy` on a project
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClippyResult {
-    /// Total warnings found
+    // Total warnings found
     pub total_warnings: usize,
-    /// Warnings grouped by file path
+    // Warnings grouped by file path
     pub warnings_by_file: HashMap<String, Vec<ClippyWarning>>,
-    /// Whether clippy ran successfully
+    // Whether clippy ran successfully
     pub success: bool,
-    /// Error message if clippy failed
+    // Error message if clippy failed
     pub error: Option<String>,
 }
 
-/// A single clippy warning
+// A single clippy warning
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClippyWarning {
-    /// Lint name (e.g., "clippy::unwrap_used")
+    // Lint name (e.g., "clippy::unwrap_used")
     pub lint: String,
-    /// Warning message
+    // Warning message
     pub message: String,
-    /// File path
+    // File path
     pub file: String,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Column number
+    // Column number
     pub column: usize,
-    /// Severity level
+    // Severity level
     pub level: String,
 }
 
-/// Run `cargo clippy --message-format=json` and parse the results.
-///
-/// This provides deterministic, zero-cost (no LLM) issue detection for Rust projects.
-/// Returns structured warnings that can be used as a pre-filter.
+// Run `cargo clippy --message-format=json` and parse the results.
+//
+// This provides deterministic, zero-cost (no LLM) issue detection for Rust projects.
+// Returns structured warnings that can be used as a pre-filter.
 pub async fn run_clippy(project_path: &Path) -> ClippyResult {
     use std::process::Command;
 
@@ -1471,7 +1471,7 @@ pub async fn run_clippy(project_path: &Path) -> ClippyResult {
 // Git Staleness Check
 // ============================================================================
 
-/// Check how recently a file was modified in git
+// Check how recently a file was modified in git
 pub fn check_file_staleness(repo_path: &Path, file_path: &str) -> Option<i64> {
     use std::process::Command;
 
@@ -1485,7 +1485,7 @@ pub fn check_file_staleness(repo_path: &Path, file_path: &str) -> Option<i64> {
     stdout.trim().parse::<i64>().ok()
 }
 
-/// Check how many days since a file was last modified in git
+// Check how many days since a file was last modified in git
 pub fn file_age_days(repo_path: &Path, file_path: &str) -> Option<u64> {
     let last_modified = check_file_staleness(repo_path, file_path)?;
     let now = chrono::Utc::now().timestamp();
@@ -1497,7 +1497,7 @@ pub fn file_age_days(repo_path: &Path, file_path: &str) -> Option<u64> {
 // Content Hash for Deduplication
 // ============================================================================
 
-/// Generate a content hash for deduplication across repos
+// Generate a content hash for deduplication across repos
 pub fn content_hash(content: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -1505,8 +1505,8 @@ pub fn content_hash(content: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Strip comments and blank lines from content to reduce LLM token usage.
-/// Returns the stripped content and the ratio of content removed.
+// Strip comments and blank lines from content to reduce LLM token usage.
+// Returns the stripped content and the ratio of content removed.
 pub fn strip_for_prompt(content: &str, language: FileLanguage) -> (String, f64) {
     let original_len = content.len();
     let comment_prefix = language.comment_prefix();
@@ -1523,8 +1523,8 @@ pub fn strip_for_prompt(content: &str, language: FileLanguage) -> (String, f64) 
                 && !trimmed.starts_with("*/")
                 && !(trimmed.starts_with('*') && !trimmed.starts_with("*/"))
                 // Keep doc comments (they carry semantic value)
-                || trimmed.starts_with("///")
-                || trimmed.starts_with("//!");
+                || trimmed.starts_with("//")
+                || trimmed.starts_with("//");
             keep
         })
         .collect::<Vec<_>>()
@@ -1898,7 +1898,7 @@ pub fn helper_c(x: i32) -> i32 { x + 1 }
     #[test]
     fn test_strip_for_prompt() {
         let content = r#"// This is a comment
-/// Doc comment (should be kept)
+// Doc comment (should be kept)
 use std::fs;
 
 // Another comment
@@ -1909,7 +1909,7 @@ pub fn read_file(path: &str) -> String {
 "#;
         let (stripped, reduction) = strip_for_prompt(content, FileLanguage::Rust);
         assert!(reduction > 0.0);
-        assert!(stripped.contains("/// Doc comment"));
+        assert!(stripped.contains("// Doc comment"));
         assert!(stripped.contains("pub fn read_file"));
         assert!(!stripped.contains("// This is a comment"));
     }

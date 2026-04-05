@@ -1,43 +1,43 @@
-//! GitHub Webhook Handler
-//!
-//! Provides webhook support for real-time GitHub event processing.
-//! This enables the system to react to GitHub events (push, PR, issues)
-//! without polling, reducing API calls and improving responsiveness.
-//!
-//! # Architecture
-//!
-//! Webhooks allow GitHub to push events to our system in real-time:
-//! - Zero API calls needed for updates (GitHub pushes to us)
-//! - Instant synchronization on repo changes
-//! - Event-driven architecture for better UX
-//!
-//! # Security
-//!
-//! All webhooks are verified using HMAC-SHA256 signatures to ensure
-//! they originate from GitHub and haven't been tampered with.
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::github::webhook::WebhookHandler;
-//! use axum::{Router, routing::post, response::IntoResponse};
-//!
-//! async fn webhook_endpoint() -> impl IntoResponse {
-//!     "ok"
-//! }
-//!
-//! #[tokio::main]
-//! async fn main() {
-//!     let _handler = WebhookHandler::new("webhook_secret");
-//!
-//!     let app = Router::new()
-//!         .route("/webhook", post(webhook_endpoint));
-//!
-//!     // Listen on port 3000
-//!     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-//!     axum::serve(listener, app).await.unwrap();
-//! }
-//! ```
+// GitHub Webhook Handler
+//
+// Provides webhook support for real-time GitHub event processing.
+// This enables the system to react to GitHub events (push, PR, issues)
+// without polling, reducing API calls and improving responsiveness.
+//
+// # Architecture
+//
+// Webhooks allow GitHub to push events to our system in real-time:
+// - Zero API calls needed for updates (GitHub pushes to us)
+// - Instant synchronization on repo changes
+// - Event-driven architecture for better UX
+//
+// # Security
+//
+// All webhooks are verified using HMAC-SHA256 signatures to ensure
+// they originate from GitHub and haven't been tampered with.
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::github::webhook::WebhookHandler;
+// use axum::{Router, routing::post, response::IntoResponse};
+//
+// async fn webhook_endpoint() -> impl IntoResponse {
+//     "ok"
+// }
+//
+// #[tokio::main]
+// async fn main() {
+//     let _handler = WebhookHandler::new("webhook_secret");
+//
+//     let app = Router::new()
+//         .route("/webhook", post(webhook_endpoint));
+//
+//     // Listen on port 3000
+//     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+//     axum::serve(listener, app).await.unwrap();
+// }
+// ```
 
 use crate::github::{models::*, GitHubError, Result};
 use chrono::{DateTime, Utc};
@@ -52,54 +52,54 @@ type HmacSha256 = Hmac<Sha256>;
 // Webhook Events
 // ============================================================================
 
-/// GitHub webhook event (polymorphic)
+// GitHub webhook event (polymorphic)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum WebhookEvent {
-    /// Push event (commits pushed to a branch)
+    // Push event (commits pushed to a branch)
     #[serde(rename = "push")]
     Push(PushEvent),
 
-    /// Issue opened
+    // Issue opened
     #[serde(rename = "opened")]
     IssuesOpened(IssueEvent),
 
-    /// Issue closed
+    // Issue closed
     #[serde(rename = "closed")]
     IssuesClosed(IssueEvent),
 
-    /// Issue reopened
+    // Issue reopened
     #[serde(rename = "reopened")]
     IssuesReopened(IssueEvent),
 
-    /// Pull request opened
+    // Pull request opened
     PullRequestOpened(PullRequestEvent),
 
-    /// Pull request closed
+    // Pull request closed
     PullRequestClosed(PullRequestEvent),
 
-    /// Pull request reopened
+    // Pull request reopened
     PullRequestReopened(PullRequestEvent),
 
-    /// Pull request merged
+    // Pull request merged
     PullRequestMerged(PullRequestEvent),
 
-    /// Repository created
+    // Repository created
     RepositoryCreated(RepositoryEvent),
 
-    /// Repository deleted
+    // Repository deleted
     RepositoryDeleted(RepositoryEvent),
 
-    /// Repository archived
+    // Repository archived
     RepositoryArchived(RepositoryEvent),
 
-    /// Star added to repository
+    // Star added to repository
     StarCreated(StarEvent),
 
-    /// Fork created
+    // Fork created
     ForkCreated(ForkEvent),
 
-    /// Ping event (webhook test)
+    // Ping event (webhook test)
     Ping(PingEvent),
 }
 
@@ -107,7 +107,7 @@ pub enum WebhookEvent {
 // Event Payloads
 // ============================================================================
 
-/// Push event payload
+// Push event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushEvent {
     #[serde(rename = "ref")]
@@ -139,7 +139,7 @@ pub struct PushCommit {
     pub modified: Vec<String>,
 }
 
-/// Issue event payload
+// Issue event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueEvent {
     pub action: String,
@@ -148,7 +148,7 @@ pub struct IssueEvent {
     pub sender: User,
 }
 
-/// Pull request event payload
+// Pull request event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequestEvent {
     pub action: String,
@@ -158,7 +158,7 @@ pub struct PullRequestEvent {
     pub sender: User,
 }
 
-/// Repository event payload
+// Repository event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepositoryEvent {
     pub action: String,
@@ -166,7 +166,7 @@ pub struct RepositoryEvent {
     pub sender: User,
 }
 
-/// Star event payload
+// Star event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StarEvent {
     pub action: String,
@@ -175,7 +175,7 @@ pub struct StarEvent {
     pub sender: User,
 }
 
-/// Fork event payload
+// Fork event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForkEvent {
     pub forkee: Repository,
@@ -183,7 +183,7 @@ pub struct ForkEvent {
     pub sender: User,
 }
 
-/// Ping event payload (webhook test)
+// Ping event payload (webhook test)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PingEvent {
     pub zen: String,
@@ -213,24 +213,24 @@ pub struct WebhookConfigDetails {
 // Webhook Payload Wrapper
 // ============================================================================
 
-/// Raw webhook payload with headers
+// Raw webhook payload with headers
 #[derive(Debug, Clone)]
 pub struct WebhookPayload {
-    /// Event type (from X-GitHub-Event header)
+    // Event type (from X-GitHub-Event header)
     pub event_type: String,
 
-    /// Delivery ID (from X-GitHub-Delivery header)
+    // Delivery ID (from X-GitHub-Delivery header)
     pub delivery_id: String,
 
-    /// Signature (from X-Hub-Signature-256 header)
+    // Signature (from X-Hub-Signature-256 header)
     pub signature: Option<String>,
 
-    /// Raw JSON body
+    // Raw JSON body
     pub body: String,
 }
 
 impl WebhookPayload {
-    /// Create new webhook payload
+    // Create new webhook payload
     pub fn new(
         event_type: impl Into<String>,
         delivery_id: impl Into<String>,
@@ -245,7 +245,7 @@ impl WebhookPayload {
         }
     }
 
-    /// Parse event from JSON body
+    // Parse event from JSON body
     pub fn parse_event(&self) -> Result<WebhookEvent> {
         match self.event_type.as_str() {
             "push" => {
@@ -315,20 +315,20 @@ impl WebhookPayload {
 // Webhook Handler
 // ============================================================================
 
-/// GitHub webhook handler with signature verification
+// GitHub webhook handler with signature verification
 pub struct WebhookHandler {
     secret: String,
 }
 
 impl WebhookHandler {
-    /// Create new webhook handler with secret
+    // Create new webhook handler with secret
     pub fn new(secret: impl Into<String>) -> Self {
         Self {
             secret: secret.into(),
         }
     }
 
-    /// Verify webhook signature
+    // Verify webhook signature
     pub fn verify_signature(&self, payload: &WebhookPayload) -> Result<bool> {
         let signature = match &payload.signature {
             Some(sig) => sig,
@@ -367,7 +367,7 @@ impl WebhookHandler {
         Ok(is_valid)
     }
 
-    /// Process webhook payload
+    // Process webhook payload
     pub async fn handle(&self, payload: WebhookPayload) -> Result<WebhookEvent> {
         debug!(
             "Processing webhook: type={}, delivery={}",
@@ -396,7 +396,7 @@ impl WebhookHandler {
 // ============================================================================
 
 impl WebhookEvent {
-    /// Get event type as string
+    // Get event type as string
     pub fn event_type(&self) -> &str {
         match self {
             WebhookEvent::Push(_) => "push",
@@ -416,7 +416,7 @@ impl WebhookEvent {
         }
     }
 
-    /// Get repository associated with event
+    // Get repository associated with event
     pub fn repository(&self) -> Option<&Repository> {
         match self {
             WebhookEvent::Push(e) => Some(&e.repository),
@@ -436,7 +436,7 @@ impl WebhookEvent {
         }
     }
 
-    /// Get sender (user who triggered the event)
+    // Get sender (user who triggered the event)
     pub fn sender(&self) -> Option<&User> {
         match self {
             WebhookEvent::Push(e) => Some(&e.sender),
@@ -456,7 +456,7 @@ impl WebhookEvent {
         }
     }
 
-    /// Check if event requires sync action
+    // Check if event requires sync action
     pub fn should_trigger_sync(&self) -> bool {
         matches!(
             self,
@@ -472,12 +472,12 @@ impl WebhookEvent {
 }
 
 impl PushEvent {
-    /// Get branch name from ref
+    // Get branch name from ref
     pub fn branch_name(&self) -> Option<&str> {
         self.git_ref.strip_prefix("refs/heads/")
     }
 
-    /// Check if push is to main/master branch
+    // Check if push is to main/master branch
     pub fn is_main_branch(&self) -> bool {
         matches!(
             self.branch_name(),

@@ -1,37 +1,37 @@
-//! GitHub Search Module
-//!
-//! Unified search interface across repositories, issues, PRs, and commits.
-//! Implements intelligent query routing to minimize LLM costs by answering
-//! queries directly from the local GitHub cache.
-//!
-//! # Architecture
-//!
-//! This module follows the "cost optimization" pattern - search operations
-//! query the local SQLite database (FREE) instead of calling expensive LLMs.
-//! Only when semantic understanding is required do we escalate to LLM APIs.
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::github::{GitHubClient, SyncEngine, search::*};
-//! use sqlx::PgPool;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
-//!     let searcher = GitHubSearcher::new(pool);
-//!
-//!     // Search across all GitHub data
-//!     let query = SearchQuery::new("authentication bug")
-//!         .with_type(SearchType::Issues)
-//!         .only_open();
-//!
-//!     let results = searcher.search(query).await?;
-//!     println!("Found {} results", results.len());
-//!
-//!     Ok(())
-//! }
-//! ```
+// GitHub Search Module
+//
+// Unified search interface across repositories, issues, PRs, and commits.
+// Implements intelligent query routing to minimize LLM costs by answering
+// queries directly from the local GitHub cache.
+//
+// # Architecture
+//
+// This module follows the "cost optimization" pattern - search operations
+// query the local SQLite database (FREE) instead of calling expensive LLMs.
+// Only when semantic understanding is required do we escalate to LLM APIs.
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::github::{GitHubClient, SyncEngine, search::*};
+// use sqlx::PgPool;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
+//     let searcher = GitHubSearcher::new(pool);
+//
+//     // Search across all GitHub data
+//     let query = SearchQuery::new("authentication bug")
+//         .with_type(SearchType::Issues)
+//         .only_open();
+//
+//     let results = searcher.search(query).await?;
+//     println!("Found {} results", results.len());
+//
+//     Ok(())
+// }
+// ```
 
 use crate::github::Result;
 use chrono::{DateTime, Utc};
@@ -43,23 +43,23 @@ use tracing::{debug, info};
 // Search Types
 // ============================================================================
 
-/// Type of search to perform
+// Type of search to perform
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SearchType {
-    /// Search repositories
+    // Search repositories
     Repositories,
 
-    /// Search issues
+    // Search issues
     Issues,
 
-    /// Search pull requests
+    // Search pull requests
     PullRequests,
 
-    /// Search commits
+    // Search commits
     Commits,
 
-    /// Search everything
+    // Search everything
     All,
 }
 
@@ -79,46 +79,46 @@ impl std::fmt::Display for SearchType {
 // Search Query
 // ============================================================================
 
-/// Search query builder
+// Search query builder
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
-    /// Search text
+    // Search text
     pub text: String,
 
-    /// Type of search
+    // Type of search
     pub search_type: SearchType,
 
-    /// Filter by repository
+    // Filter by repository
     pub repository: Option<String>,
 
-    /// Filter by state (open/closed)
+    // Filter by state (open/closed)
     pub state: Option<String>,
 
-    /// Filter by language
+    // Filter by language
     pub language: Option<String>,
 
-    /// Filter by author/user
+    // Filter by author/user
     pub author: Option<String>,
 
-    /// Filter by label
+    // Filter by label
     pub labels: Vec<String>,
 
-    /// Date range filters
+    // Date range filters
     pub created_after: Option<DateTime<Utc>>,
     pub created_before: Option<DateTime<Utc>>,
     pub updated_after: Option<DateTime<Utc>>,
     pub updated_before: Option<DateTime<Utc>>,
 
-    /// Limit results
+    // Limit results
     pub limit: Option<i32>,
 
-    /// Offset for pagination
+    // Offset for pagination
     pub offset: Option<i32>,
 
-    /// Sort by field
+    // Sort by field
     pub sort_by: Option<SortField>,
 
-    /// Sort order
+    // Sort order
     pub sort_order: SortOrder,
 }
 
@@ -139,7 +139,7 @@ pub enum SortOrder {
 }
 
 impl SearchQuery {
-    /// Create new search query
+    // Create new search query
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -160,61 +160,61 @@ impl SearchQuery {
         }
     }
 
-    /// Set search type
+    // Set search type
     pub fn with_type(mut self, search_type: SearchType) -> Self {
         self.search_type = search_type;
         self
     }
 
-    /// Filter by repository
+    // Filter by repository
     pub fn in_repo(mut self, repo: impl Into<String>) -> Self {
         self.repository = Some(repo.into());
         self
     }
 
-    /// Only open items
+    // Only open items
     pub fn only_open(mut self) -> Self {
         self.state = Some("open".to_string());
         self
     }
 
-    /// Only closed items
+    // Only closed items
     pub fn only_closed(mut self) -> Self {
         self.state = Some("closed".to_string());
         self
     }
 
-    /// Filter by language
+    // Filter by language
     pub fn with_language(mut self, lang: impl Into<String>) -> Self {
         self.language = Some(lang.into());
         self
     }
 
-    /// Filter by author
+    // Filter by author
     pub fn by_author(mut self, author: impl Into<String>) -> Self {
         self.author = Some(author.into());
         self
     }
 
-    /// Add label filter
+    // Add label filter
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.labels.push(label.into());
         self
     }
 
-    /// Set result limit
+    // Set result limit
     pub fn limit(mut self, limit: i32) -> Self {
         self.limit = Some(limit);
         self
     }
 
-    /// Set pagination offset
+    // Set pagination offset
     pub fn offset(mut self, offset: i32) -> Self {
         self.offset = Some(offset);
         self
     }
 
-    /// Sort by field
+    // Sort by field
     pub fn sort_by(mut self, field: SortField, order: SortOrder) -> Self {
         self.sort_by = Some(field);
         self.sort_order = order;
@@ -226,7 +226,7 @@ impl SearchQuery {
 // Search Results
 // ============================================================================
 
-/// Search result item
+// Search result item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum SearchResult {
@@ -298,18 +298,18 @@ pub struct CommitResult {
 // GitHub Searcher
 // ============================================================================
 
-/// GitHub search engine
+// GitHub search engine
 pub struct GitHubSearcher {
     pool: PgPool,
 }
 
 impl GitHubSearcher {
-    /// Create new searcher
+    // Create new searcher
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
-    /// Execute search query
+    // Execute search query
     pub async fn search(&self, query: SearchQuery) -> Result<Vec<SearchResult>> {
         info!("Executing search: {:?}", query);
 
@@ -322,7 +322,7 @@ impl GitHubSearcher {
         }
     }
 
-    /// Search repositories
+    // Search repositories
     async fn search_repositories(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
             r#"
@@ -409,7 +409,7 @@ impl GitHubSearcher {
         Ok(results)
     }
 
-    /// Search issues
+    // Search issues
     async fn search_issues(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
             r#"
@@ -500,7 +500,7 @@ impl GitHubSearcher {
         Ok(results)
     }
 
-    /// Search pull requests
+    // Search pull requests
     async fn search_pull_requests(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
             r#"
@@ -583,7 +583,7 @@ impl GitHubSearcher {
         Ok(results)
     }
 
-    /// Search commits
+    // Search commits
     async fn search_commits(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
             r#"
@@ -653,7 +653,7 @@ impl GitHubSearcher {
         Ok(results)
     }
 
-    /// Search all types
+    // Search all types
     async fn search_all(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
 
@@ -684,7 +684,7 @@ impl GitHubSearcher {
         Ok(results)
     }
 
-    /// Get statistics about synced GitHub data
+    // Get statistics about synced GitHub data
     pub async fn get_stats(&self) -> Result<GitHubStats> {
         let repos = sqlx::query("SELECT COUNT(*) FROM github_repositories")
             .fetch_one(&self.pool)

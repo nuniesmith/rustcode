@@ -1,37 +1,37 @@
-//! Configuration for the audit service
+// Configuration for the audit service
 
 use crate::error::{AuditError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Audit service configuration
+// Audit service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Server configuration
+    // Server configuration
     pub server: ServerConfig,
-    /// LLM configuration
+    // LLM configuration
     pub llm: LlmConfig,
-    /// Git configuration
+    // Git configuration
     pub git: GitConfig,
-    /// Scanner configuration
+    // Scanner configuration
     pub scanner: ScannerConfig,
-    /// Storage configuration
+    // Storage configuration
     pub storage: StorageConfig,
-    /// Research pipeline configuration
+    // Research pipeline configuration
     pub research: Option<ResearchConfig>,
-    /// Security configuration
+    // Security configuration
     pub security: SecurityConfig,
-    /// Database configuration
+    // Database configuration
     pub database: DatabaseConfig,
-    /// Model router configuration (XAI/Ollama inference routing)
+    // Model router configuration (XAI/Ollama inference routing)
     pub model: ModelConfig,
-    /// Auto-scanner configuration
+    // Auto-scanner configuration
     pub auto_scan: AutoScanConfig,
 }
 
 impl Config {
-    /// Load configuration from environment and config files
+    // Load configuration from environment and config files
     pub fn load() -> Result<Self> {
         // Load from environment variables
         dotenvy::dotenv().ok();
@@ -221,12 +221,12 @@ impl Config {
         })
     }
 
-    /// Get a research prompt by key, falling back to defaults
+    // Get a research prompt by key, falling back to defaults
     pub fn get_research_prompt(&self, key: &str) -> Option<String> {
         self.research.as_ref()?.prompts.get(key).cloned()
     }
 
-    /// Validate the configuration
+    // Validate the configuration
     pub fn validate(&self) -> Result<()> {
         if self.llm.enabled && self.llm.api_key.is_none() {
             let env_var = match self.llm.provider.as_str() {
@@ -265,19 +265,19 @@ impl Default for Config {
     }
 }
 
-/// Security configuration for SSRF prevention and access control
+// Security configuration for SSRF prevention and access control
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    /// Whitelist of allowed Git hosts for cloning
-    /// Examples: ["github.com", "gitlab.com", "bitbucket.org"]
+    // Whitelist of allowed Git hosts for cloning
+    // Examples: ["github.com", "gitlab.com", "bitbucket.org"]
     pub allowed_git_hosts: Vec<String>,
-    /// Whether to allow local filesystem paths (disable in production)
+    // Whether to allow local filesystem paths (disable in production)
     pub allow_local_paths: bool,
-    /// Require HTTPS for Git URLs (prevents MITM attacks)
+    // Require HTTPS for Git URLs (prevents MITM attacks)
     pub require_https: bool,
-    /// Maximum repository size to clone (in MB)
+    // Maximum repository size to clone (in MB)
     pub max_clone_size_mb: usize,
-    /// GitHub webhook secret for validating incoming webhook events — set via GITHUB_WEBHOOK_SECRET
+    // GitHub webhook secret for validating incoming webhook events — set via GITHUB_WEBHOOK_SECRET
     pub webhook_secret: String,
 }
 
@@ -301,7 +301,7 @@ impl Default for SecurityConfig {
 }
 
 impl SecurityConfig {
-    /// Validate a Git URL against the security policy
+    // Validate a Git URL against the security policy
     pub fn validate_git_url(&self, url: &str) -> Result<()> {
         // Parse the URL to extract the host
         if url.starts_with("git@") {
@@ -363,7 +363,7 @@ impl SecurityConfig {
         Ok(())
     }
 
-    /// Check if a local path is allowed
+    // Check if a local path is allowed
     pub fn validate_local_path(&self, path: &str) -> Result<()> {
         if !self.allow_local_paths {
             return Err(AuditError::config(
@@ -386,16 +386,16 @@ impl SecurityConfig {
     }
 }
 
-/// Research pipeline configuration
+// Research pipeline configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResearchConfig {
-    /// Whether research pipeline is enabled
+    // Whether research pipeline is enabled
     pub enabled: bool,
-    /// Directory where research breakdowns are saved
+    // Directory where research breakdowns are saved
     pub output_dir: String,
-    /// File extensions to scan for research materials
+    // File extensions to scan for research materials
     pub file_extensions: Vec<String>,
-    /// Custom prompts for research analysis
+    // Custom prompts for research analysis
     pub prompts: HashMap<String, String>,
 }
 
@@ -410,12 +410,12 @@ impl Default for ResearchConfig {
     }
 }
 
-/// Server configuration
+// Server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
-    /// Host to bind to
+    // Host to bind to
     pub host: String,
-    /// Port to bind to
+    // Port to bind to
     pub port: u16,
 }
 
@@ -428,20 +428,20 @@ impl Default for ServerConfig {
     }
 }
 
-/// LLM configuration
+// LLM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
-    /// LLM provider (grok, openai, etc.)
+    // LLM provider (grok, openai, etc.)
     pub provider: String,
-    /// API key
+    // API key
     pub api_key: Option<String>,
-    /// Model name
+    // Model name
     pub model: String,
-    /// Max tokens for completion
+    // Max tokens for completion
     pub max_tokens: usize,
-    /// Temperature for sampling
+    // Temperature for sampling
     pub temperature: f64,
-    /// Whether LLM analysis is enabled
+    // Whether LLM analysis is enabled
     pub enabled: bool,
 }
 
@@ -458,18 +458,18 @@ impl Default for LlmConfig {
     }
 }
 
-/// Git configuration
+// Git configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitConfig {
-    /// Directory where repositories are cloned
+    // Directory where repositories are cloned
     pub workspace_dir: PathBuf,
-    /// Default branch to checkout
+    // Default branch to checkout
     pub default_branch: String,
-    /// Whether to do shallow clones (depth=1)
+    // Whether to do shallow clones (depth=1)
     pub shallow_clone: bool,
-    /// Directory where repositories are stored for auto-scanning — set via REPOS_DIR
+    // Directory where repositories are stored for auto-scanning — set via REPOS_DIR
     pub repos_dir: PathBuf,
-    /// Interval in seconds between repository syncs — set via REPO_SYNC_INTERVAL_SECS
+    // Interval in seconds between repository syncs — set via REPO_SYNC_INTERVAL_SECS
     pub sync_interval_secs: u64,
 }
 
@@ -485,17 +485,17 @@ impl Default for GitConfig {
     }
 }
 
-/// Scanner configuration
+// Scanner configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScannerConfig {
-    /// Maximum file size to scan (in bytes)
+    // Maximum file size to scan (in bytes)
     pub max_file_size: usize,
-    /// Whether to include test files
+    // Whether to include test files
     pub include_tests: bool,
-    /// Patterns to exclude from scanning
+    // Patterns to exclude from scanning
     pub exclude_patterns: Vec<String>,
-    /// File extensions to skip entirely (e.g. ["min.js", "map", "lock"]).
-    /// Loaded from `SCANNER_SKIP_EXTENSIONS` (comma-separated).
+    // File extensions to skip entirely (e.g. ["min.js", "map", "lock"]).
+    // Loaded from `SCANNER_SKIP_EXTENSIONS` (comma-separated).
     pub skip_extensions: Vec<String>,
 }
 
@@ -516,7 +516,7 @@ impl Default for ScannerConfig {
     }
 }
 
-/// Default file extensions that are always skipped by the scanner.
+// Default file extensions that are always skipped by the scanner.
 pub fn default_skip_extensions() -> Vec<String> {
     vec![
         "min.js".to_string(),
@@ -538,12 +538,12 @@ pub fn default_skip_extensions() -> Vec<String> {
     ]
 }
 
-/// Storage configuration
+// Storage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
-    /// Directory where audit reports are saved
+    // Directory where audit reports are saved
     pub reports_dir: PathBuf,
-    /// Directory where generated tasks are saved
+    // Directory where generated tasks are saved
     pub tasks_dir: PathBuf,
 }
 
@@ -556,10 +556,10 @@ impl Default for StorageConfig {
     }
 }
 
-/// Database configuration
+// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    /// PostgreSQL connection URL — set via DATABASE_URL
+    // PostgreSQL connection URL — set via DATABASE_URL
     pub url: String,
 }
 
@@ -571,18 +571,18 @@ impl Default for DatabaseConfig {
     }
 }
 
-/// Model router configuration for XAI/Ollama inference routing
+// Model router configuration for XAI/Ollama inference routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
-    /// XAI (Grok) API key — set via XAI_API_KEY
+    // XAI (Grok) API key — set via XAI_API_KEY
     pub xai_api_key: Option<String>,
-    /// Remote model name (e.g. grok-4-1-fast-reasoning) — set via REMOTE_MODEL
+    // Remote model name (e.g. grok-4-1-fast-reasoning) — set via REMOTE_MODEL
     pub remote_model: String,
-    /// Local Ollama model name (e.g. qwen2.5-coder:7b) — set via LOCAL_MODEL
+    // Local Ollama model name (e.g. qwen2.5-coder:7b) — set via LOCAL_MODEL
     pub local_model: String,
-    /// Ollama base URL — set via OLLAMA_BASE_URL
+    // Ollama base URL — set via OLLAMA_BASE_URL
     pub ollama_base_url: String,
-    /// Force all requests through the remote model, skip local — set via FORCE_REMOTE_MODEL
+    // Force all requests through the remote model, skip local — set via FORCE_REMOTE_MODEL
     pub force_remote: bool,
 }
 
@@ -598,16 +598,16 @@ impl Default for ModelConfig {
     }
 }
 
-/// Auto-scanner configuration
+// Auto-scanner configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoScanConfig {
-    /// Whether the auto-scanner is enabled — set via AUTO_SCAN_ENABLED
+    // Whether the auto-scanner is enabled — set via AUTO_SCAN_ENABLED
     pub enabled: bool,
-    /// Scan interval in minutes — set via AUTO_SCAN_INTERVAL
+    // Scan interval in minutes — set via AUTO_SCAN_INTERVAL
     pub interval_minutes: u64,
-    /// Maximum number of concurrent scans — set via AUTO_SCAN_MAX_CONCURRENT
+    // Maximum number of concurrent scans — set via AUTO_SCAN_MAX_CONCURRENT
     pub max_concurrent: usize,
-    /// Per-scan cost budget in USD (0.0 = unlimited) — set via AUTO_SCAN_COST_BUDGET
+    // Per-scan cost budget in USD (0.0 = unlimited) — set via AUTO_SCAN_COST_BUDGET
     pub cost_budget: f64,
 }
 

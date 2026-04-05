@@ -1,4 +1,4 @@
-//! Core types for the audit service
+// Core types for the audit service
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -7,35 +7,35 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 // Re-export types from other modules
-pub use crate::context::GlobalContextBundle;
+pub use crate::context_llm::GlobalContextBundle;
 pub use crate::tests_runner::TestResults;
 
-/// File category based on location and purpose
+// File category based on location and purpose
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Category {
-    /// Janus - Core trading system, neuromorphic components, and decision-making
+    // Janus - Core trading system, neuromorphic components, and decision-making
     Janus,
-    /// Execution - Lightweight external communication service (receives signals from Janus)
+    // Execution - Lightweight external communication service (receives signals from Janus)
     Execution,
-    /// Clients - KMP applications (Android, iOS, Web, Desktop for Linux/Windows/macOS)
+    // Clients - KMP applications (Android, iOS, Web, Desktop for Linux/Windows/macOS)
     Clients,
-    /// Audit - Audit service and tooling
+    // Audit - Audit service and tooling
     Audit,
-    /// Infrastructure (Docker, CI/CD)
+    // Infrastructure (Docker, CI/CD)
     Infra,
-    /// Configuration files
+    // Configuration files
     Config,
-    /// Documentation
+    // Documentation
     Documentation,
-    /// Tests
+    // Tests
     Tests,
-    /// Other/Unknown
+    // Other/Unknown
     Other,
 }
 
 impl Category {
-    /// Get the category from a file path
+    // Get the category from a file path
     pub fn from_path(path: &str) -> Self {
         // Audit service itself
         if path.contains("src/audit/") {
@@ -127,7 +127,7 @@ impl Category {
         }
     }
 
-    /// Get the main category group (for high-level organization)
+    // Get the main category group (for high-level organization)
     pub fn main_group(&self) -> MainCategory {
         match self {
             Category::Janus => MainCategory::Janus,
@@ -139,24 +139,24 @@ impl Category {
     }
 }
 
-/// Main category groupings for high-level organization
+// Main category groupings for high-level organization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MainCategory {
-    /// Janus - Core trading system, neuromorphic components, decision-making, and risk management
+    // Janus - Core trading system, neuromorphic components, decision-making, and risk management
     Janus,
-    /// Execution - Lightweight external communication service (receives signals from Janus)
+    // Execution - Lightweight external communication service (receives signals from Janus)
     Execution,
-    /// Clients - KMP applications (Android, iOS, Web, Desktop for Linux/Windows/macOS)
+    // Clients - KMP applications (Android, iOS, Web, Desktop for Linux/Windows/macOS)
     Clients,
-    /// Audit - Audit service and tooling
+    // Audit - Audit service and tooling
     Audit,
-    /// Other - Infrastructure, config, docs, tests
+    // Other - Infrastructure, config, docs, tests
     Other,
 }
 
 impl MainCategory {
-    /// Get a human-readable description
+    // Get a human-readable description
     pub fn description(&self) -> &'static str {
         match self {
             MainCategory::Janus => {
@@ -174,7 +174,7 @@ impl MainCategory {
     }
 }
 
-/// File priority for audit
+// File priority for audit
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FilePriority {
@@ -186,7 +186,7 @@ pub enum FilePriority {
 }
 
 impl FilePriority {
-    /// Determine priority from file path
+    // Determine priority from file path
     pub fn from_path(path: &str) -> Self {
         // Critical files
         if path.contains("kill_switch")
@@ -222,7 +222,7 @@ impl FilePriority {
     }
 }
 
-/// Security rating for code
+// Security rating for code
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SecurityRating {
@@ -234,7 +234,7 @@ pub enum SecurityRating {
 }
 
 impl SecurityRating {
-    /// Convert from importance score
+    // Convert from importance score
     pub fn from_importance(score: f64) -> Self {
         if score >= 0.9 {
             SecurityRating::A
@@ -250,39 +250,39 @@ impl SecurityRating {
     }
 }
 
-/// Audit tag found in code
+// Audit tag found in code
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditTag {
-    /// Tag type
+    // Tag type
     pub tag_type: AuditTagType,
-    /// File path
+    // File path
     pub file: PathBuf,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Tag value/description
+    // Tag value/description
     pub value: String,
-    /// Additional context
+    // Additional context
     pub context: Option<String>,
 }
 
-/// Type of audit tag
+// Type of audit tag
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AuditTagType {
-    /// @audit-tag: [new | old | experimental | deprecated]
+    // @audit-tag: [new | old | experimental | deprecated]
     Tag,
-    /// @audit-todo: [task description]
+    // @audit-todo: [task description]
     Todo,
-    /// @audit-freeze (never modify)
+    // @audit-freeze (never modify)
     Freeze,
-    /// @audit-review: [review notes]
+    // @audit-review: [review notes]
     Review,
-    /// @audit-security: [security concern]
+    // @audit-security: [security concern]
     Security,
 }
 
 impl AuditTagType {
-    /// Get the tag prefix
+    // Get the tag prefix
     pub fn prefix(&self) -> &'static str {
         match self {
             AuditTagType::Tag => "@audit-tag:",
@@ -294,31 +294,31 @@ impl AuditTagType {
     }
 }
 
-/// Generated task from audit
+// Generated task from audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    /// Unique task ID
+    // Unique task ID
     pub id: String,
-    /// Task title
+    // Task title
     pub title: String,
-    /// Task description
+    // Task description
     pub description: String,
-    /// Source file
+    // Source file
     pub file: PathBuf,
-    /// Line number
+    // Line number
     pub line: Option<usize>,
-    /// Task priority
+    // Task priority
     pub priority: TaskPriority,
-    /// Task category
+    // Task category
     pub category: Category,
-    /// Created timestamp
+    // Created timestamp
     pub created_at: DateTime<Utc>,
-    /// Tags
+    // Tags
     pub tags: Vec<String>,
 }
 
 impl Task {
-    /// Create a new task
+    // Create a new task
     pub fn new(
         title: impl Into<String>,
         description: impl Into<String>,
@@ -340,14 +340,14 @@ impl Task {
         }
     }
 
-    /// Add a tag
+    // Add a tag
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tags.push(tag.into());
         self
     }
 }
 
-/// Task priority
+// Task priority
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskPriority {
@@ -357,47 +357,47 @@ pub enum TaskPriority {
     Low,
 }
 
-/// File analysis result
+// File analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAnalysis {
-    /// File path
+    // File path
     pub path: PathBuf,
-    /// Category
+    // Category
     pub category: Category,
-    /// Priority
+    // Priority
     pub priority: FilePriority,
-    /// Lines of code
+    // Lines of code
     pub lines: usize,
-    /// Documentation blocks
+    // Documentation blocks
     pub doc_blocks: usize,
-    /// Security rating
+    // Security rating
     pub security_rating: Option<SecurityRating>,
-    /// Issues found
+    // Issues found
     pub issues: Vec<Issue>,
-    /// LLM analysis (if available)
+    // LLM analysis (if available)
     pub llm_analysis: Option<String>,
-    /// Tags found
+    // Tags found
     pub tags: Vec<AuditTag>,
 }
 
-/// Code issue
+// Code issue
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
-    /// Issue severity
+    // Issue severity
     pub severity: IssueSeverity,
-    /// Issue category
+    // Issue category
     pub category: IssueCategory,
-    /// File path
+    // File path
     pub file: PathBuf,
-    /// Line number
+    // Line number
     pub line: usize,
-    /// Issue message
+    // Issue message
     pub message: String,
-    /// Suggested fix
+    // Suggested fix
     pub suggestion: Option<String>,
 }
 
-/// Issue severity
+// Issue severity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IssueSeverity {
@@ -408,7 +408,7 @@ pub enum IssueSeverity {
     Info,
 }
 
-/// Issue category
+// Issue category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IssueCategory {
@@ -422,33 +422,33 @@ pub enum IssueCategory {
     Testing,
 }
 
-/// System architecture map
+// System architecture map
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemMap {
-    /// Total files analyzed
+    // Total files analyzed
     pub total_files: usize,
-    /// Files by category
+    // Files by category
     pub files_by_category: HashMap<Category, usize>,
-    /// Lines by category
+    // Lines by category
     pub lines_by_category: HashMap<Category, usize>,
-    /// Service dependencies
+    // Service dependencies
     pub dependencies: Vec<ServiceDependency>,
-    /// Mermaid diagram
+    // Mermaid diagram
     pub mermaid_diagram: Option<String>,
 }
 
-/// Service dependency
+// Service dependency
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceDependency {
-    /// Source service
+    // Source service
     pub from: String,
-    /// Target service
+    // Target service
     pub to: String,
-    /// Dependency type
+    // Dependency type
     pub dep_type: DependencyType,
 }
 
-/// Dependency type
+// Dependency type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyType {
@@ -457,69 +457,69 @@ pub enum DependencyType {
     Internal,
 }
 
-/// Audit request
+// Audit request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditRequest {
-    /// Repository URL or local path
+    // Repository URL or local path
     pub repository: String,
-    /// Branch to audit (default: main)
+    // Branch to audit (default: main)
     pub branch: Option<String>,
-    /// Enable LLM analysis
+    // Enable LLM analysis
     pub enable_llm: bool,
-    /// Focus areas
+    // Focus areas
     pub focus: Vec<String>,
-    /// Include tests
+    // Include tests
     pub include_tests: bool,
 }
 
-/// Audit report
+// Audit report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditReport {
-    /// Report ID
+    // Report ID
     pub id: String,
-    /// Repository audited
+    // Repository audited
     pub repository: String,
-    /// Branch audited
+    // Branch audited
     pub branch: String,
-    /// Timestamp
+    // Timestamp
     pub created_at: DateTime<Utc>,
-    /// System map
+    // System map
     pub system_map: SystemMap,
-    /// File analyses
+    // File analyses
     pub files: Vec<FileAnalysis>,
-    /// Generated tasks
+    // Generated tasks
     pub tasks: Vec<Task>,
-    /// Total issues by severity
+    // Total issues by severity
     pub issues_by_severity: HashMap<IssueSeverity, usize>,
-    /// Summary
+    // Summary
     pub summary: AuditSummary,
-    /// Test results (if tests were run)
+    // Test results (if tests were run)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test_results: Option<Vec<TestResults>>,
-    /// Global context bundle (if deep analysis was performed)
+    // Global context bundle (if deep analysis was performed)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_bundle: Option<GlobalContextBundle>,
 }
 
-/// Audit summary
+// Audit summary
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuditSummary {
-    /// Total files analyzed
+    // Total files analyzed
     pub total_files: usize,
-    /// Total lines of code
+    // Total lines of code
     pub total_lines: usize,
-    /// Total issues found
+    // Total issues found
     pub total_issues: usize,
-    /// Total tasks generated
+    // Total tasks generated
     pub total_tasks: usize,
-    /// Files with critical issues
+    // Files with critical issues
     pub critical_files: usize,
-    /// Average security rating
+    // Average security rating
     pub avg_security_rating: Option<f64>,
-    /// Total tests run
+    // Total tests run
     pub total_tests: Option<usize>,
-    /// Test pass rate
+    // Test pass rate
     pub test_pass_rate: Option<f64>,
-    /// Code coverage percentage
+    // Code coverage percentage
     pub code_coverage: Option<f64>,
 }

@@ -1,39 +1,39 @@
-//! Semantic Search Module
-//!
-//! This module provides semantic search capabilities using vector embeddings.
-//! It supports similarity-based retrieval, filtering, ranking, and hybrid search.
-//!
-//! # Features
-//!
-//! - **Vector similarity search**: Find semantically similar documents
-//! - **Top-k retrieval**: Get the most relevant results
-//! - **Filtering**: Filter by document type, tags, repository, dates
-//! - **Hybrid search**: Combine semantic and keyword search
-//! - **Relevance scoring**: Rank results by relevance
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::search::{SemanticSearcher, SearchQuery, SearchConfig};
-//! use sqlx::PgPool;
-//!
-//! # async fn example(pool: &PgPool) -> anyhow::Result<()> {
-//! let searcher = SemanticSearcher::new(SearchConfig::default()).await?;
-//!
-//! let query = SearchQuery {
-//!     text: "How do I implement async functions in Rust?".to_string(),
-//!     top_k: 10,
-//!     filters: Default::default(),
-//! };
-//!
-//! let results = searcher.search(pool, &query).await?;
-//!
-//! for result in results {
-//!     println!("Document: {} (score: {:.4})", result.document_id, result.score);
-//! }
-//! # Ok(())
-//! # }
-//! ```
+// Semantic Search Module
+//
+// This module provides semantic search capabilities using vector embeddings.
+// It supports similarity-based retrieval, filtering, ranking, and hybrid search.
+//
+// # Features
+//
+// - **Vector similarity search**: Find semantically similar documents
+// - **Top-k retrieval**: Get the most relevant results
+// - **Filtering**: Filter by document type, tags, repository, dates
+// - **Hybrid search**: Combine semantic and keyword search
+// - **Relevance scoring**: Rank results by relevance
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::search::{SemanticSearcher, SearchQuery, SearchConfig};
+// use sqlx::PgPool;
+//
+// # async fn example(pool: &PgPool) -> anyhow::Result<()> {
+// let searcher = SemanticSearcher::new(SearchConfig::default()).await?;
+//
+// let query = SearchQuery {
+//     text: "How do I implement async functions in Rust?".to_string(),
+//     top_k: 10,
+//     filters: Default::default(),
+// };
+//
+// let results = searcher.search(pool, &query).await?;
+//
+// for result in results {
+//     println!("Document: {} (score: {:.4})", result.document_id, result.score);
+// }
+// # Ok(())
+// # }
+// ```
 
 use crate::embeddings::{Embedding, EmbeddingGenerator};
 use anyhow::{Context, Result};
@@ -45,25 +45,25 @@ use std::collections::HashMap;
 // Configuration
 // ============================================================================
 
-/// Configuration for semantic search
+// Configuration for semantic search
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchConfig {
-    /// Default number of results to return
+    // Default number of results to return
     pub default_top_k: usize,
 
-    /// Maximum number of results allowed
+    // Maximum number of results allowed
     pub max_top_k: usize,
 
-    /// Minimum similarity score threshold (0.0 - 1.0)
+    // Minimum similarity score threshold (0.0 - 1.0)
     pub min_similarity: f32,
 
-    /// Whether to use hybrid search by default
+    // Whether to use hybrid search by default
     pub use_hybrid_search: bool,
 
-    /// Weight for semantic search in hybrid mode (0.0 - 1.0)
+    // Weight for semantic search in hybrid mode (0.0 - 1.0)
     pub semantic_weight: f32,
 
-    /// Weight for keyword search in hybrid mode (0.0 - 1.0)
+    // Weight for keyword search in hybrid mode (0.0 - 1.0)
     pub keyword_weight: f32,
 }
 
@@ -84,43 +84,43 @@ impl Default for SearchConfig {
 // Search Query
 // ============================================================================
 
-/// A search query with filters
+// A search query with filters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
-    /// The search text
+    // The search text
     pub text: String,
 
-    /// Number of results to return
+    // Number of results to return
     #[serde(default)]
     pub top_k: usize,
 
-    /// Search filters
+    // Search filters
     #[serde(default)]
     pub filters: SearchFilters,
 }
 
-/// Filters for search queries
+// Filters for search queries
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchFilters {
-    /// Filter by document type
+    // Filter by document type
     pub doc_type: Option<String>,
 
-    /// Filter by tags (any of these tags)
+    // Filter by tags (any of these tags)
     pub tags: Option<Vec<String>>,
 
-    /// Filter by repository ID
+    // Filter by repository ID
     pub repo_id: Option<i64>,
 
-    /// Filter by source type (e.g., "file", "manual", "web")
+    // Filter by source type (e.g., "file", "manual", "web")
     pub source_type: Option<String>,
 
-    /// Filter by minimum creation date (unix timestamp)
+    // Filter by minimum creation date (unix timestamp)
     pub created_after: Option<i64>,
 
-    /// Filter by maximum creation date (unix timestamp)
+    // Filter by maximum creation date (unix timestamp)
     pub created_before: Option<i64>,
 
-    /// Only search indexed documents
+    // Only search indexed documents
     #[serde(default = "default_indexed_only")]
     pub indexed_only: bool,
 }
@@ -147,65 +147,65 @@ impl Default for SearchFilters {
 // Search Results
 // ============================================================================
 
-/// A single search result
+// A single search result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
-    /// Document ID
+    // Document ID
     pub document_id: String,
 
-    /// Chunk ID that matched
+    // Chunk ID that matched
     pub chunk_id: String,
 
-    /// Chunk index within the document
+    // Chunk index within the document
     pub chunk_index: i64,
 
-    /// The chunk content
+    // The chunk content
     pub content: String,
 
-    /// Similarity score (0.0 - 1.0)
+    // Similarity score (0.0 - 1.0)
     pub score: f32,
 
-    /// Document title
+    // Document title
     pub title: Option<String>,
 
-    /// Document type
+    // Document type
     pub doc_type: Option<String>,
 
-    /// Document tags
+    // Document tags
     pub tags: Option<Vec<String>>,
 
-    /// Heading context for this chunk
+    // Heading context for this chunk
     pub heading: Option<String>,
 
-    /// Character position in original document
+    // Character position in original document
     pub char_start: i64,
 
-    /// Character end position in original document
+    // Character end position in original document
     pub char_end: i64,
 
-    /// Metadata about the match
+    // Metadata about the match
     pub metadata: SearchResultMetadata,
 }
 
-/// Metadata about a search result
+// Metadata about a search result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultMetadata {
-    /// Model used for embedding
+    // Model used for embedding
     pub model: String,
 
-    /// Embedding dimension
+    // Embedding dimension
     pub dimension: i64,
 
-    /// Whether this was a semantic match
+    // Whether this was a semantic match
     pub semantic_match: bool,
 
-    /// Whether this was a keyword match
+    // Whether this was a keyword match
     pub keyword_match: bool,
 
-    /// Semantic similarity score (if semantic match)
+    // Semantic similarity score (if semantic match)
     pub semantic_score: Option<f32>,
 
-    /// Keyword score (if keyword match)
+    // Keyword score (if keyword match)
     pub keyword_score: Option<f32>,
 }
 
@@ -213,14 +213,14 @@ pub struct SearchResultMetadata {
 // Semantic Searcher
 // ============================================================================
 
-/// Main semantic search engine
+// Main semantic search engine
 pub struct SemanticSearcher {
     config: SearchConfig,
     embedding_generator: EmbeddingGenerator,
 }
 
 impl SemanticSearcher {
-    /// Create a new semantic searcher
+    // Create a new semantic searcher
     pub async fn new(config: SearchConfig) -> Result<Self> {
         let embedding_config = crate::embeddings::EmbeddingConfig::default();
         let embedding_generator = EmbeddingGenerator::new(embedding_config)
@@ -232,7 +232,7 @@ impl SemanticSearcher {
         })
     }
 
-    /// Perform semantic search
+    // Perform semantic search
     pub async fn search(&self, pool: &PgPool, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         // Determine top_k
         let top_k = if query.top_k == 0 {
@@ -248,7 +248,7 @@ impl SemanticSearcher {
         }
     }
 
-    /// Perform semantic-only search
+    // Perform semantic-only search
     async fn semantic_search_only(
         &self,
         pool: &PgPool,
@@ -331,7 +331,7 @@ impl SemanticSearcher {
         Ok(results)
     }
 
-    /// Perform hybrid search (semantic + keyword)
+    // Perform hybrid search (semantic + keyword)
     async fn hybrid_search(
         &self,
         pool: &PgPool,
@@ -350,7 +350,7 @@ impl SemanticSearcher {
         Ok(merged)
     }
 
-    /// Perform keyword-based search
+    // Perform keyword-based search
     async fn keyword_search(
         &self,
         pool: &PgPool,
@@ -426,7 +426,7 @@ impl SemanticSearcher {
         Ok(results)
     }
 
-    /// Merge semantic and keyword results using Reciprocal Rank Fusion
+    // Merge semantic and keyword results using Reciprocal Rank Fusion
     fn merge_results(
         &self,
         semantic_results: Vec<SearchResult>,
@@ -473,7 +473,7 @@ impl SemanticSearcher {
         merged.into_iter().map(|(_, result)| result).collect()
     }
 
-    /// Get candidate embeddings from database with filters
+    // Get candidate embeddings from database with filters
     async fn get_candidate_embeddings(
         &self,
         pool: &PgPool,
@@ -559,7 +559,7 @@ impl SemanticSearcher {
         Ok(candidates)
     }
 
-    /// Build SQL filter clause from search filters
+    // Build SQL filter clause from search filters
     fn build_filter_clause(&self, filters: &SearchFilters) -> String {
         let mut conditions = Vec::new();
 
@@ -605,7 +605,7 @@ impl SemanticSearcher {
         }
     }
 
-    /// Calculate cosine similarity between query and candidate
+    // Calculate cosine similarity between query and candidate
     fn calculate_similarity(
         &self,
         query_embedding: &Embedding,
@@ -614,7 +614,7 @@ impl SemanticSearcher {
         query_embedding.cosine_similarity(&candidate.embedding)
     }
 
-    /// Get search configuration
+    // Get search configuration
     pub fn config(&self) -> &SearchConfig {
         &self.config
     }
@@ -624,7 +624,7 @@ impl SemanticSearcher {
 // Internal Types
 // ============================================================================
 
-/// A candidate embedding from the database
+// A candidate embedding from the database
 #[derive(Debug, Clone)]
 struct CandidateEmbedding {
     chunk_id: String,
@@ -646,32 +646,32 @@ struct CandidateEmbedding {
 // Statistics
 // ============================================================================
 
-/// Statistics about search operations
+// Statistics about search operations
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchStats {
-    /// Total searches performed
+    // Total searches performed
     pub total_searches: usize,
 
-    /// Total results returned
+    // Total results returned
     pub total_results: usize,
 
-    /// Average results per search
+    // Average results per search
     pub avg_results_per_search: f64,
 
-    /// Average search time (milliseconds)
+    // Average search time (milliseconds)
     pub avg_search_time_ms: f64,
 
-    /// Searches with zero results
+    // Searches with zero results
     pub zero_result_searches: usize,
 }
 
 impl SearchStats {
-    /// Create new search stats
+    // Create new search stats
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Record a search operation
+    // Record a search operation
     pub fn record_search(&mut self, results_count: usize, time_ms: f64) {
         self.total_searches += 1;
         self.total_results += results_count;

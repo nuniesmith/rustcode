@@ -1,6 +1,6 @@
-//! Queue CLI Commands
-//!
-//! Commands for managing the processing queue, scanning repos, and viewing status.
+// Queue CLI Commands
+//
+// Commands for managing the processing queue, scanning repos, and viewing status.
 
 use crate::db::queue::{
     create_queue_tables, QueuePriority, QueueSource, QueueStage, GITHUB_USERNAME,
@@ -25,112 +25,112 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum QueueCommands {
-    /// Add content to the processing queue
+    // Add content to the processing queue
     Add {
-        /// Content to add
+        // Content to add
         content: String,
 
-        /// Source type: note, thought, research
+        // Source type: note, thought, research
         #[arg(short, long, default_value = "note")]
         source: String,
 
-        /// Priority: critical, high, normal, low, background
+        // Priority: critical, high, normal, low, background
         #[arg(short, long, default_value = "normal")]
         priority: String,
 
-        /// Associated project name
+        // Associated project name
         #[arg(long)]
         project: Option<String>,
     },
 
-    /// View queue status and statistics
+    // View queue status and statistics
     Status,
 
-    /// List items in a specific stage
+    // List items in a specific stage
     List {
-        /// Stage to list: inbox, pending, analyzing, ready, failed
+        // Stage to list: inbox, pending, analyzing, ready, failed
         #[arg(default_value = "inbox")]
         stage: String,
 
-        /// Maximum items to show
+        // Maximum items to show
         #[arg(short, long, default_value = "20")]
         limit: i32,
     },
 
-    /// Process the queue (run in foreground)
+    // Process the queue (run in foreground)
     Process {
-        /// Number of items per batch
+        // Number of items per batch
         #[arg(short, long, default_value = "10")]
         batch_size: i32,
 
-        /// Run once and exit (don't loop)
+        // Run once and exit (don't loop)
         #[arg(long)]
         once: bool,
     },
 
-    /// Retry failed items
+    // Retry failed items
     Retry {
-        /// Specific item ID to retry (or all if not specified)
+        // Specific item ID to retry (or all if not specified)
         id: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ScanCommands {
-    /// Sync repositories from GitHub
+    // Sync repositories from GitHub
     Repos {
-        /// GitHub API token (optional, for higher rate limits)
+        // GitHub API token (optional, for higher rate limits)
         #[arg(short, long, env = "GITHUB_TOKEN")]
         token: Option<String>,
     },
 
-    /// Scan a repository for TODOs
+    // Scan a repository for TODOs
     Todos {
-        /// Repository path or ID
+        // Repository path or ID
         repo: String,
     },
 
-    /// Build/update directory tree for a repository
+    // Build/update directory tree for a repository
     Tree {
-        /// Repository path or ID
+        // Repository path or ID
         repo: String,
 
-        /// Maximum depth
+        // Maximum depth
         #[arg(short, long, default_value = "5")]
         depth: usize,
     },
 
-    /// Find unanalyzed files in a repository
+    // Find unanalyzed files in a repository
     Unanalyzed {
-        /// Repository path or ID
+        // Repository path or ID
         repo: String,
 
-        /// Maximum files to show
+        // Maximum files to show
         #[arg(short, long, default_value = "20")]
         limit: i32,
     },
 
-    /// Analyze files in a repository
+    // Analyze files in a repository
     Analyze {
-        /// Repository path or ID
+        // Repository path or ID
         repo: String,
 
-        /// Maximum files to analyze
+        // Maximum files to analyze
         #[arg(short, long, default_value = "10")]
         limit: i32,
     },
 
-    /// Run full scan on all repos
+    // Run full scan on all repos
     All {
-        /// GitHub API token
+        // GitHub API token
         #[arg(short, long, env = "GITHUB_TOKEN")]
         token: Option<String>,
 
-        /// Skip TODO scanning
+        // Skip TODO scanning
         #[arg(long)]
         skip_todos: bool,
 
-        /// Skip tree building
+        // Skip tree building
         #[arg(long)]
         skip_tree: bool,
     },
@@ -138,37 +138,37 @@ pub enum ScanCommands {
 
 #[derive(Subcommand)]
 pub enum ReportCommands {
-    /// Show TODO summary across all repos
+    // Show TODO summary across all repos
     Todos {
-        /// Filter by priority (1-4)
+        // Filter by priority (1-4)
         #[arg(short, long)]
         priority: Option<i32>,
 
-        /// Filter by repository
+        // Filter by repository
         #[arg(short, long)]
         repo: Option<String>,
     },
 
-    /// Show file analysis summary
+    // Show file analysis summary
     Files {
-        /// Filter by repository
+        // Filter by repository
         #[arg(short, long)]
         repo: Option<String>,
 
-        /// Show only files needing attention
+        // Show only files needing attention
         #[arg(long)]
         attention_only: bool,
     },
 
-    /// Show repository health report
+    // Show repository health report
     Health {
-        /// Repository path or ID
+        // Repository path or ID
         repo: Option<String>,
     },
 
-    /// Generate standardization report
+    // Generate standardization report
     Standardization {
-        /// Repository path or ID
+        // Repository path or ID
         repo: String,
     },
 }

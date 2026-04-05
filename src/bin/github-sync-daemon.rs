@@ -1,7 +1,7 @@
-//! GitHub Background Sync Daemon
-//!
-//! A simple daemon that runs continuous background sync for GitHub repositories.
-//! This is designed to run as a long-lived process or service.
+// GitHub Background Sync Daemon
+//
+// A simple daemon that runs continuous background sync for GitHub repositories.
+// This is designed to run as a long-lived process or service.
 
 use rustcode::db::init_db;
 use rustcode::github::{
@@ -93,10 +93,10 @@ async fn main() -> anyhow::Result<()> {
         result = start_background_sync_with_config(pool, client, config) => {
             if let Err(e) = result {
                 tracing::error!("❌ Background sync failed: {}", e);
-                return Err(anyhow::anyhow!("Background sync failed: {}", e));
+                return Err(anyhow::anyhow!("Background sync failed: {e}"));
             }
         }
-        _ = shutdown => {
+        () = shutdown => {
             tracing::info!("✅ Daemon stopped gracefully");
         }
     }

@@ -1,21 +1,21 @@
-//! # Ollama Client
-//!
-//! OpenAI-compatible HTTP client for local Ollama inference.
-//!
-//! ## Features
-//! - `POST /api/chat` against a local Ollama instance
-//! - Automatic fallback to `GrokClient` when Ollama is unreachable or unconfigured
-//! - Retry with exponential back-off (same pattern as `grok_client.rs`)
-//! - Token-count pass-through (Ollama `eval_count` / `prompt_eval_count`)
-//! - Shared `CompletionRequest` / `CompletionResponse` types with `model_router`
-//!
-//! ## Environment variables
-//! | Variable | Default | Description |
-//! |---|---|---|
-//! | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL of the Ollama server |
-//! | `LOCAL_MODEL` | `qwen2.5-coder:7b` | Model tag to request |
-//! | `OLLAMA_TIMEOUT_SECS` | `120` | Per-request timeout |
-//! | `OLLAMA_MAX_RETRIES` | `2` | Retry attempts before fallback |
+// # Ollama Client
+//
+// OpenAI-compatible HTTP client for local Ollama inference.
+//
+// ## Features
+// - `POST /api/chat` against a local Ollama instance
+// - Automatic fallback to `GrokClient` when Ollama is unreachable or unconfigured
+// - Retry with exponential back-off (same pattern as `grok_client.rs`)
+// - Token-count pass-through (Ollama `eval_count` / `prompt_eval_count`)
+// - Shared `CompletionRequest` / `CompletionResponse` types with `model_router`
+//
+// ## Environment variables
+// | Variable | Default | Description |
+// |---|---|---|
+// | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL of the Ollama server |
+// | `LOCAL_MODEL` | `qwen2.5-coder:7b` | Model tag to request |
+// | `OLLAMA_TIMEOUT_SECS` | `120` | Per-request timeout |
+// | `OLLAMA_MAX_RETRIES` | `2` | Retry attempts before fallback |
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -46,17 +46,17 @@ struct OllamaChatRequest {
     options: OllamaOptions,
 }
 
-/// A single chunk from Ollama's streaming `/api/chat` NDJSON response.
+// A single chunk from Ollama's streaming `/api/chat` NDJSON response.
 #[derive(Debug, Deserialize)]
 struct OllamaStreamChunk {
     message: Option<OllamaMessage>,
-    /// `true` on the final chunk (contains token counts, no new content).
+    // `true` on the final chunk (contains token counts, no new content).
     #[serde(default)]
     done: bool,
-    /// Tokens in the generated response — present only on the final chunk.
+    // Tokens in the generated response — present only on the final chunk.
     #[serde(default)]
     eval_count: Option<u32>,
-    /// Tokens in the prompt — present only on the final chunk.
+    // Tokens in the prompt — present only on the final chunk.
     #[serde(default)]
     prompt_eval_count: Option<u32>,
 }
@@ -70,25 +70,25 @@ struct OllamaMessage {
 #[derive(Debug, Serialize)]
 struct OllamaOptions {
     temperature: f32,
-    /// Maximum tokens to generate (maps to `num_predict` in Ollama).
+    // Maximum tokens to generate (maps to `num_predict` in Ollama).
     num_predict: u32,
-    /// KV-cache / context window size passed to llama.cpp via Ollama.
-    /// Ollama defaults to 4096; with 16 GB VRAM and a 7B model we can
-    /// safely use 16384 (uses ~896 MiB extra VRAM for KV cache).
+    // KV-cache / context window size passed to llama.cpp via Ollama.
+    // Ollama defaults to 4096; with 16 GB VRAM and a 7B model we can
+    // safely use 16384 (uses ~896 MiB extra VRAM for KV cache).
     num_ctx: u32,
 }
 
-/// Ollama non-streaming response body.
+// Ollama non-streaming response body.
 #[derive(Debug, Deserialize)]
 struct OllamaChatResponse {
     message: OllamaMessage,
-    /// Tokens used to generate the response.
+    // Tokens used to generate the response.
     #[serde(default)]
     eval_count: Option<u32>,
-    /// Tokens in the prompt.
+    // Tokens in the prompt.
     #[serde(default)]
     prompt_eval_count: Option<u32>,
-    /// Whether Ollama reports the model finished normally.
+    // Whether Ollama reports the model finished normally.
     #[serde(default)]
     done: bool,
 }
@@ -97,31 +97,31 @@ struct OllamaChatResponse {
 // Public completion types (shared with `model_router` / `api/repos`)
 // ---------------------------------------------------------------------------
 
-/// Outcome of a completion call, regardless of which backend served it.
+// Outcome of a completion call, regardless of which backend served it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaCompletionResponse {
     pub content: String,
     pub model_used: String,
-    /// True when Ollama was down and the Grok fallback was used.
+    // True when Ollama was down and the Grok fallback was used.
     pub used_fallback: bool,
     pub prompt_tokens: Option<u32>,
     pub completion_tokens: Option<u32>,
 }
 
-/// A token/text delta sent through the streaming channel.
+// A token/text delta sent through the streaming channel.
 #[derive(Debug, Clone)]
 pub enum StreamChunk {
-    /// A text delta to forward to the client.
+    // A text delta to forward to the client.
     Delta(String),
-    /// The stream has finished; carries final token counts (may be `None`
-    /// when served from a Grok fallback that doesn't report them).
+    // The stream has finished; carries final token counts (may be `None`
+    // when served from a Grok fallback that doesn't report them).
     Done {
         model_used: String,
         used_fallback: bool,
         prompt_tokens: Option<u32>,
         completion_tokens: Option<u32>,
     },
-    /// A fatal error terminated the stream.
+    // A fatal error terminated the stream.
     Error(String),
 }
 
@@ -165,17 +165,17 @@ impl Default for OllamaClientConfig {
 pub struct OllamaClient {
     config: OllamaClientConfig,
     http: reqwest::Client,
-    /// Optional GrokClient used when Ollama is unreachable.
+    // Optional GrokClient used when Ollama is unreachable.
     fallback: Option<Arc<crate::grok_client::GrokClient>>,
 }
 
 impl OllamaClient {
-    /// Build a client from environment variables using default config.
+    // Build a client from environment variables using default config.
     pub fn from_env() -> Self {
         Self::new(OllamaClientConfig::default(), None)
     }
 
-    /// Build a client with an explicit config and optional Grok fallback.
+    // Build a client with an explicit config and optional Grok fallback.
     pub fn new(
         config: OllamaClientConfig,
         fallback: Option<Arc<crate::grok_client::GrokClient>>,
@@ -192,7 +192,7 @@ impl OllamaClient {
         }
     }
 
-    /// Attach a Grok fallback after construction.
+    // Attach a Grok fallback after construction.
     pub fn with_fallback(mut self, client: Arc<crate::grok_client::GrokClient>) -> Self {
         self.fallback = Some(client);
         self
@@ -202,15 +202,15 @@ impl OllamaClient {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Send a streaming completion request.
-    ///
-    /// Returns a `tokio::sync::mpsc::Receiver` that yields [`StreamChunk`]
-    /// values as the model generates tokens.  The final message is always
-    /// `StreamChunk::Done` (on success) or `StreamChunk::Error` (on failure).
-    ///
-    /// Falls back to the blocking [`complete`] path (then re-emits the full
-    /// response as a single delta) when Ollama streaming fails or a Grok
-    /// fallback is active.
+    // Send a streaming completion request.
+    //
+    // Returns a `tokio::sync::mpsc::Receiver` that yields [`StreamChunk`]
+    // values as the model generates tokens.  The final message is always
+    // `StreamChunk::Done` (on success) or `StreamChunk::Error` (on failure).
+    //
+    // Falls back to the blocking [`complete`] path (then re-emits the full
+    // response as a single delta) when Ollama streaming fails or a Grok
+    // fallback is active.
     pub async fn complete_streaming(
         &self,
         system_prompt: Option<&str>,
@@ -222,7 +222,7 @@ impl OllamaClient {
             .await
     }
 
-    /// Like [`complete_streaming`] but with an explicit context-window size.
+    // Like [`complete_streaming`] but with an explicit context-window size.
     pub async fn complete_streaming_with_ctx(
         &self,
         system_prompt: Option<&str>,
@@ -374,8 +374,8 @@ impl OllamaClient {
         rx
     }
 
-    /// Emit the entire Grok (or error) response as a single `Delta` followed
-    /// by `Done`.  Used when Ollama is unreachable during a streaming call.
+    // Emit the entire Grok (or error) response as a single `Delta` followed
+    // by `Done`.  Used when Ollama is unreachable during a streaming call.
     async fn streaming_grok_fallback(
         fallback: Option<&crate::grok_client::GrokClient>,
         system_prompt: Option<&str>,
@@ -419,11 +419,11 @@ impl OllamaClient {
         }
     }
 
-    /// Send a completion request.
-    ///
-    /// * Tries Ollama up to `config.max_retries` times.
-    /// * Falls back to `GrokClient` if all attempts fail and a fallback is set.
-    /// * Returns an error only if both Ollama and the fallback are unavailable.
+    // Send a completion request.
+    //
+    // * Tries Ollama up to `config.max_retries` times.
+    // * Falls back to `GrokClient` if all attempts fail and a fallback is set.
+    // * Returns an error only if both Ollama and the fallback are unavailable.
     pub async fn complete(
         &self,
         system_prompt: Option<&str>,
@@ -435,7 +435,7 @@ impl OllamaClient {
             .await
     }
 
-    /// Like [`complete`] but with an explicit context-window size (`num_ctx`).
+    // Like [`complete`] but with an explicit context-window size (`num_ctx`).
     pub async fn complete_with_ctx(
         &self,
         system_prompt: Option<&str>,
@@ -466,7 +466,7 @@ impl OllamaClient {
         }
     }
 
-    /// Check whether the Ollama server is reachable by hitting `/api/tags`.
+    // Check whether the Ollama server is reachable by hitting `/api/tags`.
     pub async fn health_check(&self) -> bool {
         let url = format!("{}/api/tags", self.config.base_url);
         self.http
@@ -478,7 +478,7 @@ impl OllamaClient {
             .unwrap_or(false)
     }
 
-    /// List models available on the connected Ollama instance.
+    // List models available on the connected Ollama instance.
     pub async fn list_models(&self) -> Result<Vec<String>> {
         let url = format!("{}/api/tags", self.config.base_url);
 

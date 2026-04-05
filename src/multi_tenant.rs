@@ -1,41 +1,41 @@
-//! Multi-Tenancy Module
-//!
-//! Provides organization isolation for SaaS deployments.
-//! Supports tenant quotas, resource limits, and usage tracking.
-//!
-//! # Features
-//!
-//! - **Tenant Isolation**: Complete data separation per organization
-//! - **Resource Quotas**: Configurable limits on documents, searches, storage
-//! - **Usage Tracking**: Monitor resource consumption per tenant
-//! - **Billing Metrics**: Track usage for invoicing
-//! - **Custom Domains**: Support for white-label deployments
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::multi_tenant::{TenantManager, TenantQuota, QuotaType, UsageMetric};
-//! use sqlx::PgPool;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let db_pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
-//! let tenant_mgr = TenantManager::new(db_pool).await?;
-//!
-//! // Create new tenant
-//! let tenant = tenant_mgr.create_tenant(
-//!     "acme-corp",
-//!     "ACME Corporation",
-//!     TenantQuota::standard()
-//! ).await?;
-//!
-//! // Check quota before operation
-//! tenant_mgr.check_quota(&tenant.id, QuotaType::Documents).await?;
-//!
-//! // Track usage
-//! tenant_mgr.increment_usage(&tenant.id, UsageMetric::Documents(1)).await?;
-//! # Ok(())
-//! # }
-//! ```
+// Multi-Tenancy Module
+//
+// Provides organization isolation for SaaS deployments.
+// Supports tenant quotas, resource limits, and usage tracking.
+//
+// # Features
+//
+// - **Tenant Isolation**: Complete data separation per organization
+// - **Resource Quotas**: Configurable limits on documents, searches, storage
+// - **Usage Tracking**: Monitor resource consumption per tenant
+// - **Billing Metrics**: Track usage for invoicing
+// - **Custom Domains**: Support for white-label deployments
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::multi_tenant::{TenantManager, TenantQuota, QuotaType, UsageMetric};
+// use sqlx::PgPool;
+//
+// # async fn example() -> anyhow::Result<()> {
+// let db_pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
+// let tenant_mgr = TenantManager::new(db_pool).await?;
+//
+// // Create new tenant
+// let tenant = tenant_mgr.create_tenant(
+//     "acme-corp",
+//     "ACME Corporation",
+//     TenantQuota::standard()
+// ).await?;
+//
+// // Check quota before operation
+// tenant_mgr.check_quota(&tenant.id, QuotaType::Documents).await?;
+//
+// // Track usage
+// tenant_mgr.increment_usage(&tenant.id, UsageMetric::Documents(1)).await?;
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -47,7 +47,7 @@ use std::collections::HashMap;
 // Data Structures
 // ============================================================================
 
-/// Tenant/Organization
+// Tenant/Organization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tenant {
     pub id: String,
@@ -59,7 +59,7 @@ pub struct Tenant {
     pub custom_domain: Option<String>,
 }
 
-/// Resource quotas for a tenant
+// Resource quotas for a tenant
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenantQuota {
     pub max_documents: i64,
@@ -76,7 +76,7 @@ impl Default for TenantQuota {
 }
 
 impl TenantQuota {
-    /// Free tier quota
+    // Free tier quota
     pub fn free() -> Self {
         Self {
             max_documents: 100,
@@ -87,7 +87,7 @@ impl TenantQuota {
         }
     }
 
-    /// Standard paid tier
+    // Standard paid tier
     pub fn standard() -> Self {
         Self {
             max_documents: 10000,
@@ -98,7 +98,7 @@ impl TenantQuota {
         }
     }
 
-    /// Enterprise tier
+    // Enterprise tier
     pub fn enterprise() -> Self {
         Self {
             max_documents: 1000000,
@@ -109,7 +109,7 @@ impl TenantQuota {
         }
     }
 
-    /// Unlimited (for internal use)
+    // Unlimited (for internal use)
     pub fn unlimited() -> Self {
         Self {
             max_documents: i64::MAX,
@@ -121,7 +121,7 @@ impl TenantQuota {
     }
 }
 
-/// Current usage metrics for a tenant
+// Current usage metrics for a tenant
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenantUsage {
     pub tenant_id: String,
@@ -133,7 +133,7 @@ pub struct TenantUsage {
     pub last_updated: DateTime<Utc>,
 }
 
-/// Usage metric types
+// Usage metric types
 #[derive(Debug, Clone)]
 pub enum UsageMetric {
     Documents(i64),
@@ -143,7 +143,7 @@ pub enum UsageMetric {
     Webhooks(i64),
 }
 
-/// Quota check result
+// Quota check result
 #[derive(Debug, Clone)]
 pub enum QuotaType {
     Documents,
@@ -162,14 +162,14 @@ pub struct TenantManager {
 }
 
 impl TenantManager {
-    /// Create new tenant manager
+    // Create new tenant manager
     pub async fn new(db_pool: PgPool) -> Result<Self> {
         let manager = Self { db_pool };
         manager.init_tables().await?;
         Ok(manager)
     }
 
-    /// Initialize database tables
+    // Initialize database tables
     async fn init_tables(&self) -> Result<()> {
         // Acquire a session-level advisory lock so that concurrent test threads
         // don't race on `CREATE TABLE IF NOT EXISTS` + `BIGSERIAL` sequence
@@ -316,7 +316,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Create new tenant
+    // Create new tenant
     pub async fn create_tenant(
         &self,
         slug: &str,
@@ -369,7 +369,7 @@ impl TenantManager {
         })
     }
 
-    /// Get tenant by ID
+    // Get tenant by ID
     pub async fn get_tenant(&self, tenant_id: &str) -> Result<Option<Tenant>> {
         let row = sqlx::query_as::<
             _,
@@ -432,7 +432,7 @@ impl TenantManager {
         }
     }
 
-    /// Get tenant by slug
+    // Get tenant by slug
     pub async fn get_tenant_by_slug(&self, slug: &str) -> Result<Option<Tenant>> {
         let row = sqlx::query_scalar::<_, String>("SELECT id FROM organizations WHERE slug = $1")
             .bind(slug)
@@ -446,7 +446,7 @@ impl TenantManager {
         }
     }
 
-    /// Get tenant by API key
+    // Get tenant by API key
     pub async fn get_tenant_by_key(&self, api_key_hash: &str) -> Result<Option<Tenant>> {
         let tenant_id =
             sqlx::query_scalar::<_, String>("SELECT tenant_id FROM api_keys WHERE key_hash = $1")
@@ -461,7 +461,7 @@ impl TenantManager {
         }
     }
 
-    /// Get current usage for tenant
+    // Get current usage for tenant
     pub async fn get_usage(&self, tenant_id: &str) -> Result<TenantUsage> {
         // All counter columns are BIGINT (i64); api_key_count and webhook_count
         // are stored as BIGINT too (schema changed from INTEGER to match Rust types).
@@ -488,7 +488,7 @@ impl TenantManager {
         })
     }
 
-    /// Check if operation would exceed quota
+    // Check if operation would exceed quota
     pub async fn check_quota(&self, tenant_id: &str, quota_type: QuotaType) -> Result<()> {
         let tenant = self
             .get_tenant(tenant_id)
@@ -552,7 +552,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Increment usage counter
+    // Increment usage counter
     pub async fn increment_usage(&self, tenant_id: &str, metric: UsageMetric) -> Result<()> {
         let (field, value) = match metric {
             UsageMetric::Documents(n) => ("document_count", n),
@@ -576,7 +576,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Decrement usage counter
+    // Decrement usage counter
     pub async fn decrement_usage(&self, tenant_id: &str, metric: UsageMetric) -> Result<()> {
         let (field, value) = match metric {
             UsageMetric::Documents(n) => ("document_count", n),
@@ -600,7 +600,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Reset daily search counter (call this daily)
+    // Reset daily search counter (call this daily)
     pub async fn reset_daily_searches(&self) -> Result<u64> {
         let result =
             sqlx::query("UPDATE tenant_usage SET searches_today = 0, last_updated = NOW()")
@@ -610,7 +610,7 @@ impl TenantManager {
         Ok(result.rows_affected())
     }
 
-    /// Update tenant quota
+    // Update tenant quota
     pub async fn update_quota(&self, tenant_id: &str, quota: TenantQuota) -> Result<()> {
         sqlx::query(
             r#"
@@ -632,7 +632,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Enable/disable tenant
+    // Enable/disable tenant
     pub async fn set_tenant_enabled(&self, tenant_id: &str, enabled: bool) -> Result<()> {
         sqlx::query("UPDATE organizations SET enabled = $1 WHERE id = $2")
             .bind(enabled)
@@ -643,7 +643,7 @@ impl TenantManager {
         Ok(())
     }
 
-    /// List all tenants
+    // List all tenants
     pub async fn list_tenants(&self) -> Result<Vec<Tenant>> {
         let rows = sqlx::query_as::<
             _,
@@ -706,7 +706,7 @@ impl TenantManager {
         Ok(tenants)
     }
 
-    /// Get billing metrics for tenant
+    // Get billing metrics for tenant
     pub async fn get_billing_metrics(
         &self,
         tenant_id: &str,
@@ -754,8 +754,8 @@ mod tests {
         .unwrap()
     }
 
-    /// Generate a unique slug for each test run so parallel tests don't collide
-    /// on the `organizations_slug_key` unique constraint.
+    // Generate a unique slug for each test run so parallel tests don't collide
+    // on the `organizations_slug_key` unique constraint.
     fn unique_slug(base: &str) -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
         let nanos = SystemTime::now()

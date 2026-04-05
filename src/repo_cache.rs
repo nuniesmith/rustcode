@@ -1,61 +1,61 @@
-//! Repository-level cache module for storing analysis results
-//!
-//! This module provides caching at the repository level by storing
-//! analysis results in `.rustcode/cache/` directories within each repo.
-//!
-//! ## Cache Structure
-//!
-//! ```text
-//! <repo>/.rustcode/
-//!   ├── cache/
-//!   │   ├── analysis/      # General analysis results
-//!   │   ├── docs/          # Documentation generation results
-//!   │   ├── refactor/      # Refactoring analysis results
-//!   │   └── todos/         # TODO scan results
-//!   ├── config.toml        # Repo-specific config
-//!   └── README.md          # Cache documentation
-//! ```
-//!
-//! ## Features
-//!
-//! - Content-based invalidation (SHA-256 hashing)
-//! - Separate cache directories by analysis type
-//! - Automatic cache miss/hit tracking
-//! - JSON storage for human readability
-//! - Repository-specific caching (no global cache pollution)
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::repo_cache::{RepoCache, CacheType, CacheSetParams};
-//! use std::path::Path;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let repo_path = Path::new("/path/to/repo");
-//! let cache = RepoCache::new(repo_path)?;
-//!
-//! // Check for cached result
-//! let file_content = "fn main() {}";
-//! if let Some(cached) = cache.get(CacheType::Refactor, "src/main.rs", file_content)? {
-//!     println!("Using cached analysis");
-//! } else {
-//!     // Perform analysis...
-//!     let result = serde_json::json!({"score": 95});
-//!     cache.set(CacheSetParams {
-//!         cache_type: CacheType::Refactor,
-//!         file_path: "src/main.rs",
-//!         content: file_content,
-//!         provider: "xai",
-//!         model: "grok-beta",
-//!         result,
-//!         tokens_used: Some(150),
-//!         prompt_hash: None,
-//!         schema_version: None,
-//!     })?;
-//! }
-//! # Ok(())
-//! # }
-//! ```
+// Repository-level cache module for storing analysis results
+//
+// This module provides caching at the repository level by storing
+// analysis results in `.rustcode/cache/` directories within each repo.
+//
+// ## Cache Structure
+//
+// ```text
+// <repo>/.rustcode/
+//   ├── cache/
+//   │   ├── analysis/      # General analysis results
+//   │   ├── docs/          # Documentation generation results
+//   │   ├── refactor/      # Refactoring analysis results
+//   │   └── todos/         # TODO scan results
+//   ├── config.toml        # Repo-specific config
+//   └── README.md          # Cache documentation
+// ```
+//
+// ## Features
+//
+// - Content-based invalidation (SHA-256 hashing)
+// - Separate cache directories by analysis type
+// - Automatic cache miss/hit tracking
+// - JSON storage for human readability
+// - Repository-specific caching (no global cache pollution)
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::repo_cache::{RepoCache, CacheType, CacheSetParams};
+// use std::path::Path;
+//
+// # async fn example() -> anyhow::Result<()> {
+// let repo_path = Path::new("/path/to/repo");
+// let cache = RepoCache::new(repo_path)?;
+//
+// // Check for cached result
+// let file_content = "fn main() {}";
+// if let Some(cached) = cache.get(CacheType::Refactor, "src/main.rs", file_content)? {
+//     println!("Using cached analysis");
+// } else {
+//     // Perform analysis...
+//     let result = serde_json::json!({"score": 95});
+//     cache.set(CacheSetParams {
+//         cache_type: CacheType::Refactor,
+//         file_path: "src/main.rs",
+//         content: file_content,
+//         provider: "xai",
+//         model: "grok-beta",
+//         result,
+//         tokens_used: Some(150),
+//         prompt_hash: None,
+//         schema_version: None,
+//     })?;
+// }
+// # Ok(())
+// # }
+// ```
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -63,20 +63,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-/// Directory name for repo-level cache
+// Directory name for repo-level cache
 pub const REPO_CACHE_DIR: &str = ".rustcode";
 
-/// Cache storage strategy
+// Cache storage strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CacheStrategy {
-    /// Centralized cache in ~/.rustcode/cache/repos/<hash>/
+    // Centralized cache in ~/.rustcode/cache/repos/<hash>/
     #[default]
     Centralized,
-    /// Local cache in <repo>/.rustcode/cache/
+    // Local cache in <repo>/.rustcode/cache/
     Local,
 }
 
-/// Compute stable hash of repository path
+// Compute stable hash of repository path
 fn compute_repo_hash(path: &Path) -> String {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let path_str = canonical.display().to_string();
@@ -88,21 +88,21 @@ fn compute_repo_hash(path: &Path) -> String {
     format!("{:x}", result)[..8].to_string()
 }
 
-/// Cache types for different analysis results
+// Cache types for different analysis results
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheType {
-    /// General analysis results
+    // General analysis results
     Analysis,
-    /// Documentation generation
+    // Documentation generation
     Docs,
-    /// Refactoring analysis
+    // Refactoring analysis
     Refactor,
-    /// TODO/FIXME scans
+    // TODO/FIXME scans
     Todos,
 }
 
 impl CacheType {
-    /// Get the subdirectory name for this cache type
+    // Get the subdirectory name for this cache type
     pub fn subdirectory(&self) -> &'static str {
         match self {
             CacheType::Analysis => "analysis",
@@ -113,89 +113,89 @@ impl CacheType {
     }
 }
 
-/// Cache entry for repository-level caching
+// Cache entry for repository-level caching
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoCacheEntry {
-    /// File path (relative to repo root)
+    // File path (relative to repo root)
     pub file_path: String,
 
-    /// SHA-256 hash of file content when analyzed
+    // SHA-256 hash of file content when analyzed
     pub file_hash: String,
 
-    /// Multi-factor cache key (includes file, model, prompt, schema)
+    // Multi-factor cache key (includes file, model, prompt, schema)
     #[serde(default)]
     pub cache_key: String,
 
-    /// Timestamp when analysis was performed (RFC3339)
+    // Timestamp when analysis was performed (RFC3339)
     pub analyzed_at: String,
 
-    /// LLM provider used
+    // LLM provider used
     pub provider: String,
 
-    /// Model used
+    // Model used
     pub model: String,
 
-    /// Prompt template hash (first 16 chars of SHA-256)
+    // Prompt template hash (first 16 chars of SHA-256)
     #[serde(default)]
     pub prompt_hash: String,
 
-    /// Schema version for this analysis type
+    // Schema version for this analysis type
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
-    /// Analysis result (JSON)
+    // Analysis result (JSON)
     pub result: serde_json::Value,
 
-    /// Token count (if available)
+    // Token count (if available)
     pub tokens_used: Option<usize>,
 
-    /// File size in bytes
+    // File size in bytes
     pub file_size: usize,
 
-    /// Cache type
+    // Cache type
     pub cache_type: String,
 }
 
-/// Default schema version
+// Default schema version
 fn default_schema_version() -> u32 {
     1
 }
 
-/// Parameters for setting a cache entry
+// Parameters for setting a cache entry
 pub struct CacheSetParams<'a> {
-    /// Cache type
+    // Cache type
     pub cache_type: CacheType,
-    /// File path (relative to repo root)
+    // File path (relative to repo root)
     pub file_path: &'a str,
-    /// File content
+    // File content
     pub content: &'a str,
-    /// LLM provider
+    // LLM provider
     pub provider: &'a str,
-    /// Model name
+    // Model name
     pub model: &'a str,
-    /// Analysis result
+    // Analysis result
     pub result: serde_json::Value,
-    /// Token count (if available)
+    // Token count (if available)
     pub tokens_used: Option<usize>,
-    /// Prompt hash (optional, will be computed if not provided)
+    // Prompt hash (optional, will be computed if not provided)
     pub prompt_hash: Option<&'a str>,
-    /// Schema version (optional, defaults to 1)
+    // Schema version (optional, defaults to 1)
     pub schema_version: Option<u32>,
 }
 
-/// Repository cache manager
+// Repository cache manager
 pub struct RepoCache {
-    /// Cache directory (.rustcode)
+    // Cache directory (.rustcode)
     cache_dir: PathBuf,
 
-    /// Whether cache is enabled
+    // Whether cache is enabled
     enabled: bool,
 }
 
 impl RepoCache {
-    /// Create a new repository cache with specified strategy
-    ///
-    /// This will create the cache structure if it doesn't exist.
+    // Create a new repository cache with specified strategy
+    //
+    // This will create the cache structure if it doesn't exist.
     pub fn new_with_strategy(
         repo_root: impl AsRef<Path>,
         strategy: CacheStrategy,
@@ -236,14 +236,14 @@ impl RepoCache {
         Ok(cache)
     }
 
-    /// Create a new repository cache (uses default centralized strategy)
-    ///
-    /// This will create the cache structure if it doesn't exist.
+    // Create a new repository cache (uses default centralized strategy)
+    //
+    // This will create the cache structure if it doesn't exist.
     pub fn new(repo_root: impl AsRef<Path>) -> anyhow::Result<Self> {
         Self::new_with_strategy(repo_root, CacheStrategy::default())
     }
 
-    /// Create a disabled cache (no-op)
+    // Create a disabled cache (no-op)
     pub fn disabled() -> Self {
         Self {
             cache_dir: PathBuf::new(),
@@ -251,17 +251,17 @@ impl RepoCache {
         }
     }
 
-    /// Check if cache is enabled
+    // Check if cache is enabled
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    /// Get the cache directory path
+    // Get the cache directory path
     pub fn cache_dir(&self) -> &Path {
         &self.cache_dir
     }
 
-    /// Ensure cache directory structure exists
+    // Ensure cache directory structure exists
     fn ensure_cache_structure(&self) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
@@ -293,7 +293,7 @@ impl RepoCache {
         Ok(())
     }
 
-    /// Create README for cache directory
+    // Create README for cache directory
     fn create_readme(&self) -> anyhow::Result<()> {
         let readme_path = self.cache_dir.join("README.md");
         if !readme_path.exists() {
@@ -337,17 +337,17 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(())
     }
 
-    /// Calculate SHA-256 hash of content
+    // Calculate SHA-256 hash of content
     fn hash_content(&self, content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
-    /// Compute multi-factor cache key
-    ///
-    /// Combines file hash, model ID, prompt hash, and schema version to create
-    /// a unique cache key that invalidates when any of these factors change.
+    // Compute multi-factor cache key
+    //
+    // Combines file hash, model ID, prompt hash, and schema version to create
+    // a unique cache key that invalidates when any of these factors change.
     fn compute_cache_key(
         &self,
         file_hash: &str,
@@ -361,7 +361,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         format!("{:x}", hasher.finalize())[..32].to_string()
     }
 
-    /// Get cache file path for a file
+    // Get cache file path for a file
     fn cache_file_path(&self, cache_type: CacheType, file_path: &str) -> PathBuf {
         // Sanitize file path to create safe cache filename
         let safe_name = file_path.replace(['/', '\\'], "_").replace(['.', ':'], "_");
@@ -372,14 +372,14 @@ Add to `.gitignore` if you prefer not to track cache files:
             .join(format!("{}.json", safe_name))
     }
 
-    /// Get cached analysis result for a file
-    /// Get cached analysis result if available and valid
-    ///
-    /// Returns None if:
-    /// - Cache is disabled
-    /// - No cache entry exists
-    /// - Cache entry exists but content has changed (stale)
-    /// - Cache entry exists but model/prompt has changed (stale)
+    // Get cached analysis result for a file
+    // Get cached analysis result if available and valid
+    //
+    // Returns None if:
+    // - Cache is disabled
+    // - No cache entry exists
+    // - Cache entry exists but content has changed (stale)
+    // - Cache entry exists but model/prompt has changed (stale)
     pub fn get(
         &self,
         cache_type: CacheType,
@@ -389,9 +389,9 @@ Add to `.gitignore` if you prefer not to track cache files:
         self.get_with_validation(cache_type, file_path, current_content, None, None)
     }
 
-    /// Get cached analysis with explicit model and prompt validation
-    ///
-    /// This validates that the cache entry was created with the same model and prompt.
+    // Get cached analysis with explicit model and prompt validation
+    //
+    // This validates that the cache entry was created with the same model and prompt.
     pub fn get_with_validation(
         &self,
         cache_type: CacheType,
@@ -482,7 +482,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(Some(entry))
     }
 
-    /// Store analysis result in cache
+    // Store analysis result in cache
     pub fn set(&self, params: CacheSetParams) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
@@ -535,7 +535,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(())
     }
 
-    /// Clear all cache entries of a specific type
+    // Clear all cache entries of a specific type
     pub fn clear_type(&self, cache_type: CacheType) -> anyhow::Result<usize> {
         if !self.enabled {
             return Ok(0);
@@ -563,7 +563,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(removed)
     }
 
-    /// Clear all cache entries
+    // Clear all cache entries
     pub fn clear_all(&self) -> anyhow::Result<usize> {
         if !self.enabled {
             return Ok(0);
@@ -583,7 +583,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(total_removed)
     }
 
-    /// Get statistics for a cache type
+    // Get statistics for a cache type
     pub fn stats(&self, cache_type: CacheType) -> anyhow::Result<CacheStats> {
         if !self.enabled {
             return Ok(CacheStats::default());
@@ -620,7 +620,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(stats)
     }
 
-    /// Get combined statistics for all cache types
+    // Get combined statistics for all cache types
     pub fn all_stats(&self) -> anyhow::Result<Vec<CacheStats>> {
         let mut all_stats = Vec::new();
         for cache_type in &[
@@ -634,7 +634,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(all_stats)
     }
 
-    /// Print cache summary
+    // Print cache summary
     pub fn print_summary(&self) -> anyhow::Result<()> {
         println!("\n📦 Repository Cache Summary");
         println!("  Location: {}", self.cache_dir.display());
@@ -665,7 +665,7 @@ Add to `.gitignore` if you prefer not to track cache files:
         Ok(())
     }
 
-    /// Print detailed summary with cost estimates and budget tracking
+    // Print detailed summary with cost estimates and budget tracking
     pub fn print_detailed_summary(
         &self,
         budget_config: Option<&crate::token_budget::BudgetConfig>,
@@ -723,16 +723,16 @@ Add to `.gitignore` if you prefer not to track cache files:
     }
 }
 
-/// Cache statistics
+// Cache statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CacheStats {
-    /// Cache type
+    // Cache type
     pub cache_type: String,
-    /// Number of entries
+    // Number of entries
     pub total_entries: usize,
-    /// Total tokens used
+    // Total tokens used
     pub total_tokens: usize,
-    /// Total file size cached
+    // Total file size cached
     pub total_file_size: usize,
 }
 

@@ -1,38 +1,38 @@
-//! Prometheus Metrics Module
-//!
-//! Provides comprehensive metrics collection for monitoring and observability.
-//! Tracks API requests, search performance, indexing jobs, and system health.
-//!
-//! # Features
-//!
-//! - **Request Metrics**: Track API endpoint usage, latency, and errors
-//! - **Search Metrics**: Monitor search performance and quality
-//! - **Indexing Metrics**: Track background job performance
-//! - **System Metrics**: Database, cache, and resource utilization
-//! - **Custom Metrics**: Application-specific business metrics
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::metrics::MetricsRegistry;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let registry = MetricsRegistry::new();
-//!
-//! // Track API request
-//! let timer = registry.start_request_timer("POST", "/api/documents");
-//! // ... process request ...
-//! timer.observe_with_status(200).await;
-//!
-//! // Record search metrics
-//! registry.record_search("hybrid", 10, 45).await;
-//!
-//! // Export metrics (async)
-//! let metrics = registry.export_prometheus().await;
-//! println!("{}", metrics);
-//! # Ok(())
-//! # }
-//! ```
+// Prometheus Metrics Module
+//
+// Provides comprehensive metrics collection for monitoring and observability.
+// Tracks API requests, search performance, indexing jobs, and system health.
+//
+// # Features
+//
+// - **Request Metrics**: Track API endpoint usage, latency, and errors
+// - **Search Metrics**: Monitor search performance and quality
+// - **Indexing Metrics**: Track background job performance
+// - **System Metrics**: Database, cache, and resource utilization
+// - **Custom Metrics**: Application-specific business metrics
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::metrics::MetricsRegistry;
+//
+// # async fn example() -> anyhow::Result<()> {
+// let registry = MetricsRegistry::new();
+//
+// // Track API request
+// let timer = registry.start_request_timer("POST", "/api/documents");
+// // ... process request ...
+// timer.observe_with_status(200).await;
+//
+// // Record search metrics
+// registry.record_search("hybrid", 10, 45).await;
+//
+// // Export metrics (async)
+// let metrics = registry.export_prometheus().await;
+// println!("{}", metrics);
+// # Ok(())
+// # }
+// ```
 
 use chrono::Utc;
 use serde::Serialize;
@@ -45,7 +45,7 @@ use tokio::sync::RwLock;
 // Metrics Registry
 // ============================================================================
 
-/// Main metrics registry
+// Main metrics registry
 pub struct MetricsRegistry {
     counters: Arc<RwLock<HashMap<String, Counter>>>,
     gauges: Arc<RwLock<HashMap<String, Gauge>>>,
@@ -54,7 +54,7 @@ pub struct MetricsRegistry {
 }
 
 impl MetricsRegistry {
-    /// Create a new metrics registry
+    // Create a new metrics registry
     pub fn new() -> Self {
         Self {
             counters: Arc::new(RwLock::new(HashMap::new())),
@@ -64,7 +64,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// Increment a counter
+    // Increment a counter
     pub async fn increment_counter(&self, name: &str, labels: HashMap<String, String>) {
         let mut counters = self.counters.write().await;
         let key = Self::metric_key(name, &labels);
@@ -74,7 +74,7 @@ impl MetricsRegistry {
             .increment();
     }
 
-    /// Set a gauge value
+    // Set a gauge value
     pub async fn set_gauge(&self, name: &str, value: f64, labels: HashMap<String, String>) {
         let mut gauges = self.gauges.write().await;
         let key = Self::metric_key(name, &labels);
@@ -84,7 +84,7 @@ impl MetricsRegistry {
             .set(value);
     }
 
-    /// Observe a histogram value
+    // Observe a histogram value
     pub async fn observe_histogram(&self, name: &str, value: f64, labels: HashMap<String, String>) {
         let mut histograms = self.histograms.write().await;
         let key = Self::metric_key(name, &labels);
@@ -94,7 +94,7 @@ impl MetricsRegistry {
             .observe(value);
     }
 
-    /// Start a request timer
+    // Start a request timer
     pub fn start_request_timer(&self, method: &str, path: &str) -> RequestTimer {
         let mut labels = HashMap::new();
         labels.insert("method".to_string(), method.to_string());
@@ -107,7 +107,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// Record API request
+    // Record API request
     pub async fn record_request(&self, method: &str, path: &str, status: u16, duration_ms: f64) {
         let mut labels = HashMap::new();
         labels.insert("method".to_string(), method.to_string());
@@ -121,7 +121,7 @@ impl MetricsRegistry {
             .await;
     }
 
-    /// Record search metrics
+    // Record search metrics
     pub async fn record_search(&self, search_type: &str, results_count: usize, duration_ms: u64) {
         let mut labels = HashMap::new();
         labels.insert("search_type".to_string(), search_type.to_string());
@@ -136,7 +136,7 @@ impl MetricsRegistry {
             .await;
     }
 
-    /// Record indexing job metrics
+    // Record indexing job metrics
     pub async fn record_indexing_job(&self, documents: usize, duration_ms: u64, success: bool) {
         let mut labels = HashMap::new();
         labels.insert(
@@ -154,7 +154,7 @@ impl MetricsRegistry {
             .await;
     }
 
-    /// Record cache metrics
+    // Record cache metrics
     pub async fn record_cache_hit(&self, cache_type: &str) {
         let mut labels = HashMap::new();
         labels.insert("cache_type".to_string(), cache_type.to_string());
@@ -171,7 +171,7 @@ impl MetricsRegistry {
         self.increment_counter("cache_requests_total", labels).await;
     }
 
-    /// Record webhook delivery
+    // Record webhook delivery
     pub async fn record_webhook_delivery(&self, success: bool, retry_count: u32) {
         let mut labels = HashMap::new();
         labels.insert(
@@ -184,12 +184,12 @@ impl MetricsRegistry {
             .await;
     }
 
-    /// Get system uptime in seconds
+    // Get system uptime in seconds
     pub fn uptime_seconds(&self) -> f64 {
         self.start_time.elapsed().as_secs_f64()
     }
 
-    /// Export metrics in Prometheus format
+    // Export metrics in Prometheus format
     pub async fn export_prometheus(&self) -> String {
         let mut output = String::new();
 
@@ -222,7 +222,7 @@ impl MetricsRegistry {
         output
     }
 
-    /// Export metrics as JSON
+    // Export metrics as JSON
     pub async fn export_json(&self) -> serde_json::Value {
         let counters = self.counters.read().await;
         let gauges = self.gauges.read().await;
@@ -237,7 +237,7 @@ impl MetricsRegistry {
         })
     }
 
-    /// Get metric statistics
+    // Get metric statistics
     pub async fn get_stats(&self) -> MetricsStats {
         let counters = self.counters.read().await;
         let gauges = self.gauges.read().await;
@@ -251,7 +251,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// Reset all metrics
+    // Reset all metrics
     pub async fn reset(&self) {
         self.counters.write().await.clear();
         self.gauges.write().await.clear();
@@ -291,7 +291,7 @@ impl Default for MetricsRegistry {
 // Metric Types
 // ============================================================================
 
-/// Counter metric (monotonically increasing)
+// Counter metric (monotonically increasing)
 #[derive(Debug, Clone, Serialize)]
 pub struct Counter {
     name: String,
@@ -336,7 +336,7 @@ impl Counter {
     }
 }
 
-/// Gauge metric (can go up or down)
+// Gauge metric (can go up or down)
 #[derive(Debug, Clone, Serialize)]
 pub struct Gauge {
     name: String,
@@ -381,7 +381,7 @@ impl Gauge {
     }
 }
 
-/// Histogram metric (distribution of values)
+// Histogram metric (distribution of values)
 #[derive(Debug, Clone)]
 pub struct Histogram {
     name: String,
@@ -507,7 +507,7 @@ pub struct HistogramSummary {
 // Request Timer
 // ============================================================================
 
-/// Timer for tracking request duration
+// Timer for tracking request duration
 pub struct RequestTimer {
     registry: Arc<MetricsRegistry>,
     labels: HashMap<String, String>,
@@ -515,7 +515,7 @@ pub struct RequestTimer {
 }
 
 impl RequestTimer {
-    /// Observe the duration and record the metric
+    // Observe the duration and record the metric
     pub async fn observe_duration(self) {
         let duration = self.start.elapsed().as_secs_f64() * 1000.0; // Convert to ms
         self.registry
@@ -523,7 +523,7 @@ impl RequestTimer {
             .await;
     }
 
-    /// Observe duration with status code
+    // Observe duration with status code
     pub async fn observe_with_status(self, status: u16) {
         let duration = self.start.elapsed().as_secs_f64() * 1000.0;
         let mut labels = self.labels.clone();
@@ -560,7 +560,7 @@ use std::sync::LazyLock;
 static GLOBAL_REGISTRY: LazyLock<Arc<MetricsRegistry>> =
     LazyLock::new(|| Arc::new(MetricsRegistry::new()));
 
-/// Get the global metrics registry
+// Get the global metrics registry
 pub fn global_registry() -> Arc<MetricsRegistry> {
     Arc::clone(&GLOBAL_REGISTRY)
 }
@@ -569,33 +569,33 @@ pub fn global_registry() -> Arc<MetricsRegistry> {
 // Helper Functions
 // ============================================================================
 
-/// Track an API request
+// Track an API request
 pub async fn track_request(method: &str, path: &str, status: u16, duration_ms: f64) {
     global_registry()
         .record_request(method, path, status, duration_ms)
         .await;
 }
 
-/// Track a search request
+// Track a search request
 pub async fn track_search(search_type: &str, results_count: usize, duration_ms: u64) {
     global_registry()
         .record_search(search_type, results_count, duration_ms)
         .await;
 }
 
-/// Track an indexing job
+// Track an indexing job
 pub async fn track_indexing_job(documents: usize, duration_ms: u64, success: bool) {
     global_registry()
         .record_indexing_job(documents, duration_ms, success)
         .await;
 }
 
-/// Track cache hit
+// Track cache hit
 pub async fn track_cache_hit(cache_type: &str) {
     global_registry().record_cache_hit(cache_type).await;
 }
 
-/// Track cache miss
+// Track cache miss
 pub async fn track_cache_miss(cache_type: &str) {
     global_registry().record_cache_miss(cache_type).await;
 }

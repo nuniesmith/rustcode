@@ -1,7 +1,7 @@
-//! Research Worker
-//!
-//! Handles parallel research execution. Each worker investigates
-//! a subtopic and reports findings back for aggregation.
+// Research Worker
+//
+// Handles parallel research execution. Each worker investigates
+// a subtopic and reports findings back for aggregation.
 
 use super::{ResearchRequest, WorkerResult, save_worker_result};
 use crate::db::get_all_embeddings;
@@ -22,13 +22,13 @@ use tracing::{error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
-    /// Maximum concurrent workers
+    // Maximum concurrent workers
     pub max_concurrent: usize,
-    /// Timeout per worker (seconds)
+    // Timeout per worker (seconds)
     pub timeout_secs: u64,
-    /// Max tokens per worker request
+    // Max tokens per worker request
     pub max_tokens: usize,
-    /// Retry failed workers
+    // Retry failed workers
     pub retry_failed: bool,
 }
 
@@ -65,7 +65,7 @@ impl ResearchOrchestrator {
         }
     }
 
-    /// Execute a research request with parallel workers
+    // Execute a research request with parallel workers
     pub async fn execute(&self, request: &ResearchRequest) -> Result<Vec<WorkerResult>> {
         info!(
             "Starting research: {} with {} workers",
@@ -137,7 +137,7 @@ impl ResearchOrchestrator {
         Ok(results)
     }
 
-    /// Generate subtopics for parallel research
+    // Generate subtopics for parallel research
     async fn generate_subtopics(&self, request: &ResearchRequest) -> Result<Vec<String>> {
         let prompt = format!(
             r#"Break down this research topic into {count} distinct subtopics that can be researched in parallel.
@@ -192,7 +192,7 @@ Subtopics should be:
         Ok(subtopics)
     }
 
-    /// Run a single worker to research a subtopic
+    // Run a single worker to research a subtopic
     async fn run_worker(
         llm: &GrokClient,
         main_topic: &str,
@@ -230,7 +230,7 @@ Be thorough but focused on this specific subtopic."#,
         Ok((response, sources, tokens))
     }
 
-    /// Calculate confidence score based on result quality
+    // Calculate confidence score based on result quality
     fn calculate_confidence(result: &WorkerResult) -> i32 {
         let mut score = 5; // Base score
 
@@ -279,7 +279,7 @@ pub struct RagResult {
 
 struct RagIndex {
     index: VectorIndex,
-    /// chunk_id → (content snippet, source label)
+    // chunk_id → (content snippet, source label)
     metadata: std::collections::HashMap<String, (String, String)>,
 }
 
@@ -289,12 +289,12 @@ fn rag_index_cell() -> &'static Arc<Mutex<Option<RagIndex>>> {
     RAG_INDEX.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
-/// (Re-)build the in-process HNSW index from all embeddings stored in Postgres.
-///
-/// Call this:
-/// - Once at server startup (after `init_db`)
-/// - After every `DocumentIndexer::index_document` completes
-/// - After every `RepoSyncService::sync` that upserts new chunk embeddings
+// (Re-)build the in-process HNSW index from all embeddings stored in Postgres.
+//
+// Call this:
+// - Once at server startup (after `init_db`)
+// - After every `DocumentIndexer::index_document` completes
+// - After every `RepoSyncService::sync` that upserts new chunk embeddings
 pub async fn refresh_rag_index(pool: &PgPool) -> Result<usize> {
     let embeddings = get_all_embeddings(pool).await?;
     if embeddings.is_empty() {
@@ -357,10 +357,10 @@ pub async fn refresh_rag_index(pool: &PgPool) -> Result<usize> {
     Ok(loaded)
 }
 
-/// Search the RAG index for chunks semantically close to `query`.
-///
-/// Falls back gracefully when the index is empty or the embedding model
-/// has not initialised yet (returns an empty vec rather than an error).
+// Search the RAG index for chunks semantically close to `query`.
+//
+// Falls back gracefully when the index is empty or the embedding model
+// has not initialised yet (returns an empty vec rather than an error).
 pub async fn search_rag_context(
     pool: &PgPool,
     query: &str,
@@ -460,7 +460,7 @@ pub async fn search_rag_context(
     Ok(results)
 }
 
-/// Enhance a prompt with RAG context snippets prepended.
+// Enhance a prompt with RAG context snippets prepended.
 pub fn enhance_prompt_with_rag(prompt: &str, rag_results: &[RagResult]) -> String {
     if rag_results.is_empty() {
         return prompt.to_string();

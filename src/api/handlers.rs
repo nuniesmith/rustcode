@@ -1,4 +1,4 @@
-//! API handlers for RAG system endpoints
+// API handlers for RAG system endpoints
 
 use axum::{
     extract::{Path, Query, State},
@@ -62,7 +62,7 @@ impl ApiState {
 // Health & Status
 // ============================================================================
 
-/// Health check endpoint
+// Health check endpoint
 pub async fn health_check(State(state): State<Arc<ApiState>>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().unwrap_or_default().as_secs();
 
@@ -93,7 +93,7 @@ pub async fn health_check(State(state): State<Arc<ApiState>>) -> impl IntoRespon
     Json(ApiResponse::success(response))
 }
 
-/// Get system statistics
+// Get system statistics
 pub async fn get_stats(State(state): State<Arc<ApiState>>) -> impl IntoResponse {
     // Get document stats
     let total_docs = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents")
@@ -178,7 +178,7 @@ pub async fn get_stats(State(state): State<Arc<ApiState>>) -> impl IntoResponse 
 // Document Management
 // ============================================================================
 
-/// Upload a new document
+// Upload a new document
 pub async fn upload_document(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<UploadDocumentRequest>,
@@ -261,7 +261,7 @@ pub async fn upload_document(
     }
 }
 
-/// Get document by ID
+// Get document by ID
 pub async fn get_document(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
@@ -332,7 +332,7 @@ pub async fn get_document(
     }
 }
 
-/// List documents with pagination
+// List documents with pagination
 pub async fn list_documents(
     State(state): State<Arc<ApiState>>,
     Query(params): Query<ListDocumentsQuery>,
@@ -470,7 +470,7 @@ pub async fn list_documents(
     Json(ApiResponse::success(response)).into_response()
 }
 
-/// Update document metadata
+// Update document metadata
 pub async fn update_document(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<i64>,
@@ -523,7 +523,7 @@ pub async fn update_document(
     }
 }
 
-/// Delete document
+// Delete document
 pub async fn delete_document(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
@@ -572,7 +572,7 @@ pub async fn delete_document(
 // Search
 // ============================================================================
 
-/// Search documents
+// Search documents
 pub async fn search_documents(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<SearchRequest>,
@@ -645,7 +645,7 @@ pub async fn search_documents(
 // Indexing
 // ============================================================================
 
-/// Index a single document
+// Index a single document
 pub async fn index_document(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<IndexDocumentRequest>,
@@ -666,7 +666,7 @@ pub async fn index_document(
     Json(ApiResponse::success(response)).into_response()
 }
 
-/// Batch index documents
+// Batch index documents
 pub async fn batch_index_documents(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<BatchIndexRequest>,
@@ -696,7 +696,7 @@ pub async fn batch_index_documents(
     (StatusCode::ACCEPTED, Json(ApiResponse::success(response))).into_response()
 }
 
-/// Get indexing job status
+// Get indexing job status
 pub async fn get_index_job_status(
     State(state): State<Arc<ApiState>>,
     Path(job_id): Path<String>,
@@ -730,7 +730,7 @@ pub async fn get_index_job_status(
     }
 }
 
-/// List all indexing jobs
+// List all indexing jobs
 pub async fn list_index_jobs(State(state): State<Arc<ApiState>>) -> impl IntoResponse {
     let jobs = state.job_queue.list_jobs().await;
 
@@ -751,7 +751,7 @@ pub async fn list_index_jobs(State(state): State<Arc<ApiState>>) -> impl IntoRes
     Json(ApiResponse::success(job_summaries)).into_response()
 }
 
-/// Cancel an indexing job
+// Cancel an indexing job
 pub async fn cancel_index_job(
     State(state): State<Arc<ApiState>>,
     Path(job_id): Path<String>,

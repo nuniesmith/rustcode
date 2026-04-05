@@ -1,46 +1,46 @@
-//! Bash command validation submodules.
-//!
-//! Ports the upstream `BashTool` validation pipeline:
-//! - `readOnlyValidation` — block write-like commands in read-only mode
-//! - `destructiveCommandWarning` — flag dangerous destructive commands
-//! - `modeValidation` — enforce permission mode constraints on commands
-//! - `sedValidation` — validate sed expressions before execution
-//! - `pathValidation` — detect suspicious path patterns
-//! - `commandSemantics` — classify command intent
+// Bash command validation submodules.
+//
+// Ports the upstream `BashTool` validation pipeline:
+// - `readOnlyValidation` — block write-like commands in read-only mode
+// - `destructiveCommandWarning` — flag dangerous destructive commands
+// - `modeValidation` — enforce permission mode constraints on commands
+// - `sedValidation` — validate sed expressions before execution
+// - `pathValidation` — detect suspicious path patterns
+// - `commandSemantics` — classify command intent
 
 use std::path::Path;
 
 use crate::permissions::PermissionMode;
 
-/// Result of validating a bash command before execution.
+// Result of validating a bash command before execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationResult {
-    /// Command is safe to execute.
+    // Command is safe to execute.
     Allow,
-    /// Command should be blocked with the given reason.
+    // Command should be blocked with the given reason.
     Block { reason: String },
-    /// Command requires user confirmation with the given warning.
+    // Command requires user confirmation with the given warning.
     Warn { message: String },
 }
 
-/// Semantic classification of a bash command's intent.
+// Semantic classification of a bash command's intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandIntent {
-    /// Read-only operations: ls, cat, grep, find, etc.
+    // Read-only operations: ls, cat, grep, find, etc.
     ReadOnly,
-    /// File system writes: cp, mv, mkdir, touch, tee, etc.
+    // File system writes: cp, mv, mkdir, touch, tee, etc.
     Write,
-    /// Destructive operations: rm, shred, truncate, etc.
+    // Destructive operations: rm, shred, truncate, etc.
     Destructive,
-    /// Network operations: curl, wget, ssh, etc.
+    // Network operations: curl, wget, ssh, etc.
     Network,
-    /// Process management: kill, pkill, etc.
+    // Process management: kill, pkill, etc.
     ProcessManagement,
-    /// Package management: apt, brew, pip, npm, etc.
+    // Package management: apt, brew, pip, npm, etc.
     PackageManagement,
-    /// System administration: sudo, chmod, chown, mount, etc.
+    // System administration: sudo, chmod, chown, mount, etc.
     SystemAdmin,
-    /// Unknown or unclassifiable command.
+    // Unknown or unclassifiable command.
     Unknown,
 }
 
@@ -48,13 +48,13 @@ pub enum CommandIntent {
 // readOnlyValidation
 // ---------------------------------------------------------------------------
 
-/// Commands that perform write operations and should be blocked in read-only mode.
+// Commands that perform write operations and should be blocked in read-only mode.
 const WRITE_COMMANDS: &[&str] = &[
     "cp", "mv", "rm", "mkdir", "rmdir", "touch", "chmod", "chown", "chgrp", "ln", "install", "tee",
     "truncate", "shred", "mkfifo", "mknod", "dd",
 ];
 
-/// Commands that modify system state and should be blocked in read-only mode.
+// Commands that modify system state and should be blocked in read-only mode.
 const STATE_MODIFYING_COMMANDS: &[&str] = &[
     "apt",
     "apt-get",
@@ -93,12 +93,12 @@ const STATE_MODIFYING_COMMANDS: &[&str] = &[
     "at",
 ];
 
-/// Shell redirection operators that indicate writes.
+// Shell redirection operators that indicate writes.
 const WRITE_REDIRECTIONS: &[&str] = &[">", ">>", ">&"];
 
-/// Validate that a command is allowed under read-only mode.
-///
-/// Corresponds to upstream `tools/BashTool/readOnlyValidation.ts`.
+// Validate that a command is allowed under read-only mode.
+//
+// Corresponds to upstream `tools/BashTool/readOnlyValidation.ts`.
 #[must_use]
 pub fn validate_read_only(command: &str, mode: PermissionMode) -> ValidationResult {
     if mode != PermissionMode::ReadOnly {
@@ -159,7 +159,7 @@ pub fn validate_read_only(command: &str, mode: PermissionMode) -> ValidationResu
     ValidationResult::Allow
 }
 
-/// Git subcommands that are read-only safe.
+// Git subcommands that are read-only safe.
 const GIT_READ_ONLY_SUBCOMMANDS: &[&str] = &[
     "status",
     "log",
@@ -202,7 +202,7 @@ fn validate_git_read_only(command: &str) -> ValidationResult {
 // destructiveCommandWarning
 // ---------------------------------------------------------------------------
 
-/// Patterns that indicate potentially destructive commands.
+// Patterns that indicate potentially destructive commands.
 const DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
     (
         "rm -rf /",
@@ -231,12 +231,12 @@ const DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
     (":(){ :|:& };:", "Fork bomb — will crash the system"),
 ];
 
-/// Commands that are always destructive regardless of arguments.
+// Commands that are always destructive regardless of arguments.
 const ALWAYS_DESTRUCTIVE_COMMANDS: &[&str] = &["shred", "wipefs"];
 
-/// Warn if a command looks destructive.
-///
-/// Corresponds to upstream `tools/BashTool/destructiveCommandWarning.ts`.
+// Warn if a command looks destructive.
+//
+// Corresponds to upstream `tools/BashTool/destructiveCommandWarning.ts`.
 #[must_use]
 pub fn check_destructive(command: &str) -> ValidationResult {
     // Check known destructive patterns.
@@ -277,9 +277,9 @@ pub fn check_destructive(command: &str) -> ValidationResult {
 // modeValidation
 // ---------------------------------------------------------------------------
 
-/// Validate that a command is consistent with the given permission mode.
-///
-/// Corresponds to upstream `tools/BashTool/modeValidation.ts`.
+// Validate that a command is consistent with the given permission mode.
+//
+// Corresponds to upstream `tools/BashTool/modeValidation.ts`.
 #[must_use]
 pub fn validate_mode(command: &str, mode: PermissionMode) -> ValidationResult {
     match mode {
@@ -302,7 +302,7 @@ pub fn validate_mode(command: &str, mode: PermissionMode) -> ValidationResult {
     }
 }
 
-/// Heuristic: does the command reference absolute paths outside typical workspace dirs?
+// Heuristic: does the command reference absolute paths outside typical workspace dirs?
 fn command_targets_outside_workspace(command: &str) -> bool {
     let system_paths = [
         "/etc/", "/usr/", "/var/", "/boot/", "/sys/", "/proc/", "/dev/", "/sbin/", "/lib/", "/opt/",
@@ -329,9 +329,9 @@ fn command_targets_outside_workspace(command: &str) -> bool {
 // sedValidation
 // ---------------------------------------------------------------------------
 
-/// Validate sed expressions for safety.
-///
-/// Corresponds to upstream `tools/BashTool/sedValidation.ts`.
+// Validate sed expressions for safety.
+//
+// Corresponds to upstream `tools/BashTool/sedValidation.ts`.
 #[must_use]
 pub fn validate_sed(command: &str, mode: PermissionMode) -> ValidationResult {
     let first = extract_first_command(command);
@@ -353,9 +353,9 @@ pub fn validate_sed(command: &str, mode: PermissionMode) -> ValidationResult {
 // pathValidation
 // ---------------------------------------------------------------------------
 
-/// Validate that command paths don't include suspicious traversal patterns.
-///
-/// Corresponds to upstream `tools/BashTool/pathValidation.ts`.
+// Validate that command paths don't include suspicious traversal patterns.
+//
+// Corresponds to upstream `tools/BashTool/pathValidation.ts`.
 #[must_use]
 pub fn validate_paths(command: &str, workspace: &Path) -> ValidationResult {
     // Check for directory traversal attempts.
@@ -385,7 +385,7 @@ pub fn validate_paths(command: &str, workspace: &Path) -> ValidationResult {
 // commandSemantics
 // ---------------------------------------------------------------------------
 
-/// Commands that are read-only (no filesystem or state modification).
+// Commands that are read-only (no filesystem or state modification).
 const SEMANTIC_READ_ONLY_COMMANDS: &[&str] = &[
     "ls",
     "cat",
@@ -456,7 +456,7 @@ const SEMANTIC_READ_ONLY_COMMANDS: &[&str] = &[
     "sed",
 ];
 
-/// Commands that perform network operations.
+// Commands that perform network operations.
 const NETWORK_COMMANDS: &[&str] = &[
     "curl",
     "wget",
@@ -481,19 +481,19 @@ const NETWORK_COMMANDS: &[&str] = &[
     "nmap",
 ];
 
-/// Commands that manage processes.
+// Commands that manage processes.
 const PROCESS_COMMANDS: &[&str] = &[
     "kill", "pkill", "killall", "ps", "top", "htop", "bg", "fg", "jobs", "nohup", "disown", "wait",
     "nice", "renice",
 ];
 
-/// Commands that manage packages.
+// Commands that manage packages.
 const PACKAGE_COMMANDS: &[&str] = &[
     "apt", "apt-get", "yum", "dnf", "pacman", "brew", "pip", "pip3", "npm", "yarn", "pnpm", "bun",
     "cargo", "gem", "go", "rustup", "snap", "flatpak",
 ];
 
-/// Commands that require system administrator privileges.
+// Commands that require system administrator privileges.
 const SYSTEM_ADMIN_COMMANDS: &[&str] = &[
     "sudo",
     "su",
@@ -526,9 +526,9 @@ const SYSTEM_ADMIN_COMMANDS: &[&str] = &[
     "visudo",
 ];
 
-/// Classify the semantic intent of a bash command.
-///
-/// Corresponds to upstream `tools/BashTool/commandSemantics.ts`.
+// Classify the semantic intent of a bash command.
+//
+// Corresponds to upstream `tools/BashTool/commandSemantics.ts`.
 #[must_use]
 pub fn classify_command(command: &str) -> CommandIntent {
     let first = extract_first_command(command);
@@ -587,9 +587,9 @@ fn classify_git_command(command: &str) -> CommandIntent {
 // Pipeline: run all validations
 // ---------------------------------------------------------------------------
 
-/// Run the full validation pipeline on a bash command.
-///
-/// Returns the first non-Allow result, or Allow if all validations pass.
+// Run the full validation pipeline on a bash command.
+//
+// Returns the first non-Allow result, or Allow if all validations pass.
 #[must_use]
 pub fn validate_command(command: &str, mode: PermissionMode, workspace: &Path) -> ValidationResult {
     // 1. Mode-level validation (includes read-only checks).
@@ -618,7 +618,7 @@ pub fn validate_command(command: &str, mode: PermissionMode, workspace: &Path) -
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the first bare command from a pipeline/chain, stripping env vars and sudo.
+// Extract the first bare command from a pipeline/chain, stripping env vars and sudo.
 fn extract_first_command(command: &str) -> String {
     let trimmed = command.trim();
 
@@ -654,7 +654,7 @@ fn extract_first_command(command: &str) -> String {
         .to_string()
 }
 
-/// Extract the command following "sudo" (skip sudo flags).
+// Extract the command following "sudo" (skip sudo flags).
 fn extract_sudo_inner(command: &str) -> &str {
     let parts: Vec<&str> = command.split_whitespace().collect();
     let sudo_idx = parts.iter().position(|&p| p == "sudo");
@@ -675,7 +675,7 @@ fn extract_sudo_inner(command: &str) -> &str {
     }
 }
 
-/// Find the end of a value in `KEY=value rest` (handles basic quoting).
+// Find the end of a value in `KEY=value rest` (handles basic quoting).
 fn find_end_of_value(s: &str) -> Option<usize> {
     let s = s.trim_start();
     if s.is_empty() {

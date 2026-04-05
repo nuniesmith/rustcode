@@ -1,5 +1,5 @@
-//! Permission enforcement layer that gates tool execution based on the
-//! active `PermissionPolicy`.
+// Permission enforcement layer that gates tool execution based on the
+// active `PermissionPolicy`.
 
 use crate::permissions::{PermissionMode, PermissionOutcome, PermissionPolicy};
 use serde::{Deserialize, Serialize};
@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome")]
 pub enum EnforcementResult {
-    /// Tool execution is allowed.
+    // Tool execution is allowed.
     Allowed,
-    /// Tool execution was denied due to insufficient permissions.
+    // Tool execution was denied due to insufficient permissions.
     Denied {
         tool: String,
         active_mode: String,
@@ -29,8 +29,8 @@ impl PermissionEnforcer {
         Self { policy }
     }
 
-    /// Check whether a tool can be executed under the current permission policy.
-    /// Auto-denies when prompting is required but no prompter is provided.
+    // Check whether a tool can be executed under the current permission policy.
+    // Auto-denies when prompting is required but no prompter is provided.
     pub fn check(&self, tool_name: &str, input: &str) -> EnforcementResult {
         // When the active mode is Prompt, defer to the caller's interactive
         // prompt flow rather than hard-denying (the enforcer has no prompter).
@@ -65,7 +65,7 @@ impl PermissionEnforcer {
         self.policy.active_mode()
     }
 
-    /// Classify a file operation against workspace boundaries.
+    // Classify a file operation against workspace boundaries.
     pub fn check_file_write(&self, path: &str, workspace_root: &str) -> EnforcementResult {
         let mode = self.policy.active_mode();
 
@@ -102,7 +102,7 @@ impl PermissionEnforcer {
         }
     }
 
-    /// Check if a bash command should be allowed based on current mode.
+    // Check if a bash command should be allowed based on current mode.
     pub fn check_bash(&self, command: &str) -> EnforcementResult {
         let mode = self.policy.active_mode();
 
@@ -134,7 +134,7 @@ impl PermissionEnforcer {
     }
 }
 
-/// Simple workspace boundary check via string prefix.
+// Simple workspace boundary check via string prefix.
 fn is_within_workspace(path: &str, workspace_root: &str) -> bool {
     let normalized = if path.starts_with('/') {
         path.to_owned()
@@ -151,7 +151,7 @@ fn is_within_workspace(path: &str, workspace_root: &str) -> bool {
     normalized.starts_with(&root) || normalized == workspace_root.trim_end_matches('/')
 }
 
-/// Conservative heuristic: is this bash command read-only?
+// Conservative heuristic: is this bash command read-only?
 fn is_read_only_command(command: &str) -> bool {
     let first_token = command
         .split_whitespace()

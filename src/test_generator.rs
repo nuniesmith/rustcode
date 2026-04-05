@@ -1,33 +1,33 @@
-//! # Test Generator Module
-//!
-//! AI-powered test generation from existing code.
-//!
-//! ## Features
-//!
-//! - Generate unit tests from functions
-//! - Identify test gaps in coverage
-//! - Create test fixtures and mock data
-//! - Support for multiple test frameworks
-//! - Property-based test suggestions
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::test_generator::TestGenerator;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustcode.db").await?;
-//!     let generator = TestGenerator::new(db).await?;
-//!
-//!     // Generate tests for a file
-//!     let tests = generator.generate_tests_for_file("src/utils.rs").await?;
-//!     println!("{}", tests.format_as_code());
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Test Generator Module
+//
+// AI-powered test generation from existing code.
+//
+// ## Features
+//
+// - Generate unit tests from functions
+// - Identify test gaps in coverage
+// - Create test fixtures and mock data
+// - Support for multiple test frameworks
+// - Property-based test suggestions
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::test_generator::TestGenerator;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("data/rustcode.db").await?;
+//     let generator = TestGenerator::new(db).await?;
+//
+//     // Generate tests for a file
+//     let tests = generator.generate_tests_for_file("src/utils.rs").await?;
+//     println!("{}", tests.format_as_code());
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::grok_client::GrokClient;
@@ -35,132 +35,132 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Test generator with AI-powered analysis
+// Test generator with AI-powered analysis
 pub struct TestGenerator {
     grok_client: GrokClient,
 }
 
-/// Generated test suite for a file or function
+// Generated test suite for a file or function
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneratedTests {
-    /// Source file path
+    // Source file path
     pub source_file: String,
-    /// Target function (if specific)
+    // Target function (if specific)
     pub target_function: Option<String>,
-    /// Generated test cases
+    // Generated test cases
     pub test_cases: Vec<TestCase>,
-    /// Test framework recommendation
+    // Test framework recommendation
     pub framework: TestFramework,
-    /// Additional setup code needed
+    // Additional setup code needed
     pub setup_code: Option<String>,
-    /// Fixture data needed
+    // Fixture data needed
     pub fixtures: Vec<Fixture>,
-    /// Estimated coverage improvement
+    // Estimated coverage improvement
     pub coverage_improvement: f64,
 }
 
-/// Individual test case
+// Individual test case
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestCase {
-    /// Test name
+    // Test name
     pub name: String,
-    /// Test description/purpose
+    // Test description/purpose
     pub description: String,
-    /// Test code
+    // Test code
     pub code: String,
-    /// Test type
+    // Test type
     pub test_type: TestType,
-    /// Expected assertions
+    // Expected assertions
     pub assertions: Vec<String>,
-    /// Dependencies/mocks needed
+    // Dependencies/mocks needed
     pub dependencies: Vec<String>,
 }
 
-/// Type of test
+// Type of test
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TestType {
-    /// Unit test
+    // Unit test
     Unit,
-    /// Integration test
+    // Integration test
     Integration,
-    /// Property-based test
+    // Property-based test
     Property,
-    /// Edge case test
+    // Edge case test
     EdgeCase,
-    /// Error handling test
+    // Error handling test
     ErrorHandling,
-    /// Performance test
+    // Performance test
     Performance,
 }
 
-/// Test framework
+// Test framework
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TestFramework {
-    /// Built-in Rust test framework
+    // Built-in Rust test framework
     RustTest,
-    /// Tokio test for async
+    // Tokio test for async
     TokioTest,
-    /// Proptest for property-based testing
+    // Proptest for property-based testing
     Proptest,
-    /// Criterion for benchmarking
+    // Criterion for benchmarking
     Criterion,
 }
 
-/// Test fixture data
+// Test fixture data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fixture {
-    /// Fixture name
+    // Fixture name
     pub name: String,
-    /// Fixture type
+    // Fixture type
     pub fixture_type: String,
-    /// Sample data
+    // Sample data
     pub sample_data: String,
-    /// Creation code
+    // Creation code
     pub creation_code: String,
 }
 
-/// Test gap analysis result
+// Test gap analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestGapAnalysis {
-    /// File analyzed
+    // File analyzed
     pub file_path: String,
-    /// Total functions
+    // Total functions
     pub total_functions: usize,
-    /// Tested functions
+    // Tested functions
     pub tested_functions: usize,
-    /// Untested functions
+    // Untested functions
     pub untested_functions: Vec<UntestFunction>,
-    /// Missing test types
+    // Missing test types
     pub missing_test_types: Vec<TestType>,
-    /// Coverage estimate
+    // Coverage estimate
     pub estimated_coverage: f64,
-    /// Recommendations
+    // Recommendations
     pub recommendations: Vec<String>,
 }
 
-/// Untested function details
+// Untested function details
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UntestFunction {
-    /// Function name
+    // Function name
     pub name: String,
-    /// Function signature
+    // Function signature
     pub signature: String,
-    /// Complexity score (higher = more important to test)
+    // Complexity score (higher = more important to test)
     pub complexity: u32,
-    /// Public visibility
+    // Public visibility
     pub is_public: bool,
-    /// Recommended test cases
+    // Recommended test cases
     pub recommended_tests: Vec<String>,
 }
 
 impl TestGenerator {
-    /// Create a new test generator
+    // Create a new test generator
     pub async fn new(db: Database) -> Result<Self> {
         let grok_client = GrokClient::from_env(db).await?;
         Ok(Self { grok_client })
     }
 
-    /// Generate tests for a file
+    // Generate tests for a file
     pub async fn generate_tests_for_file(
         &self,
         file_path: impl AsRef<Path>,
@@ -173,7 +173,7 @@ impl TestGenerator {
             .await
     }
 
-    /// Generate tests for a specific function
+    // Generate tests for a specific function
     pub async fn generate_tests_for_function(
         &self,
         file_path: impl AsRef<Path>,
@@ -191,7 +191,7 @@ impl TestGenerator {
         .await
     }
 
-    /// Generate tests from code content
+    // Generate tests from code content
     async fn generate_tests_from_content(
         &self,
         file_path: String,
@@ -209,7 +209,7 @@ impl TestGenerator {
         self.parse_test_response(&response, file_path, target_function)
     }
 
-    /// Analyze test gaps in a file or directory
+    // Analyze test gaps in a file or directory
     pub async fn analyze_test_gaps(&self, path: impl AsRef<Path>) -> Result<Vec<TestGapAnalysis>> {
         let path = path.as_ref();
         let mut analyses = Vec::new();
@@ -225,7 +225,7 @@ impl TestGenerator {
         Ok(analyses)
     }
 
-    /// Analyze test gaps for a single file
+    // Analyze test gaps for a single file
     async fn analyze_file_test_gaps(&self, file_path: &Path) -> Result<Option<TestGapAnalysis>> {
         if !self.is_source_file(file_path) {
             return Ok(None);
@@ -272,7 +272,7 @@ Focus on:
         self.parse_gap_analysis(&response, file_path.to_string_lossy().to_string())
     }
 
-    /// Analyze test gaps for a directory
+    // Analyze test gaps for a directory
     async fn analyze_directory_test_gaps(&self, dir_path: &Path) -> Result<Vec<TestGapAnalysis>> {
         let mut analyses = Vec::new();
 
@@ -293,7 +293,7 @@ Focus on:
         Ok(analyses)
     }
 
-    /// Generate test fixtures for data structures
+    // Generate test fixtures for data structures
     pub async fn generate_fixtures(&self, file_path: impl AsRef<Path>) -> Result<Vec<Fixture>> {
         let file_path = file_path.as_ref();
         let content = std::fs::read_to_string(file_path)
@@ -328,7 +328,7 @@ Generate fixtures for:
         self.parse_fixtures(&response)
     }
 
-    /// Build test generation prompt
+    // Build test generation prompt
     fn build_test_generation_prompt(&self, content: &str, target_function: Option<&str>) -> String {
         let focus = if let Some(func) = target_function {
             format!(
@@ -392,7 +392,7 @@ Make tests:
         )
     }
 
-    /// Parse test generation response
+    // Parse test generation response
     fn parse_test_response(
         &self,
         response: &str,
@@ -490,7 +490,7 @@ Make tests:
         }
     }
 
-    /// Parse gap analysis response
+    // Parse gap analysis response
     fn parse_gap_analysis(
         &self,
         response: &str,
@@ -558,7 +558,7 @@ Make tests:
         }
     }
 
-    /// Parse fixtures response
+    // Parse fixtures response
     fn parse_fixtures(&self, response: &str) -> Result<Vec<Fixture>> {
         let json_str = self.extract_json(response);
 
@@ -584,7 +584,7 @@ Make tests:
         }
     }
 
-    /// Extract JSON from response (handles code blocks)
+    // Extract JSON from response (handles code blocks)
     fn extract_json(&self, response: &str) -> String {
         // Try to find JSON in code blocks
         if let Some(start) = response.find("```json") {
@@ -611,7 +611,7 @@ Make tests:
         response.to_string()
     }
 
-    /// Parse test type from string
+    // Parse test type from string
     fn parse_test_type(&self, s: &str) -> TestType {
         match s.to_lowercase().as_str() {
             "unit" => TestType::Unit,
@@ -624,7 +624,7 @@ Make tests:
         }
     }
 
-    /// Parse test framework from string
+    // Parse test framework from string
     fn parse_framework(&self, s: &str) -> TestFramework {
         match s.to_lowercase().as_str() {
             "rust_test" | "test" => TestFramework::RustTest,
@@ -635,7 +635,7 @@ Make tests:
         }
     }
 
-    /// Check if file is a source file
+    // Check if file is a source file
     fn is_source_file(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             matches!(ext.to_str().unwrap_or(""), "rs" | "py" | "js" | "ts")
@@ -646,7 +646,7 @@ Make tests:
 }
 
 impl GeneratedTests {
-    /// Format tests as compilable Rust code
+    // Format tests as compilable Rust code
     pub fn format_as_code(&self) -> String {
         let mut output = String::new();
 
@@ -696,7 +696,7 @@ impl GeneratedTests {
         output
     }
 
-    /// Format as markdown documentation
+    // Format as markdown documentation
     pub fn format_as_markdown(&self) -> String {
         let mut output = String::new();
 
@@ -747,7 +747,7 @@ impl GeneratedTests {
 }
 
 impl TestGapAnalysis {
-    /// Format gap analysis as markdown report
+    // Format gap analysis as markdown report
     pub fn format_as_markdown(&self) -> String {
         let mut output = String::new();
 

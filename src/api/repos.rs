@@ -39,13 +39,13 @@ pub struct RepoAppState {
     pub sync_service: Arc<RwLock<RepoSyncService>>,
     pub model_router: Arc<ModelRouter>,
     pub ollama_client: Arc<OllamaClient>,
-    /// Optional Grok client for remote completions — `None` when XAI_API_KEY is unset.
+    // Optional Grok client for remote completions — `None` when XAI_API_KEY is unset.
     pub grok_client: Option<Arc<crate::grok_client::GrokClient>>,
-    /// Multi-tier cache (in-memory LRU + optional Redis).
+    // Multi-tier cache (in-memory LRU + optional Redis).
     pub cache: Arc<CacheLayer>,
 }
 
-/// Chat response cache TTL in seconds (1 hour).
+// Chat response cache TTL in seconds (1 hour).
 const CHAT_CACHE_TTL_SECS: u64 = 3600;
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ pub struct RegisterRepoRequest {
     pub local_path: String,
     pub remote_url: Option<String>,
     pub branch: Option<String>,
-    /// If true, immediately run a sync after registration.
+    // If true, immediately run a sync after registration.
     pub sync_on_register: Option<bool>,
 }
 
@@ -97,13 +97,13 @@ pub struct RegisterRepoResponse {
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     pub message: String,
-    /// Optional: inject context from a specific registered repo.
+    // Optional: inject context from a specific registered repo.
     pub repo_id: Option<String>,
-    /// If true, force the remote model regardless of task classification.
+    // If true, force the remote model regardless of task classification.
     pub force_remote: Option<bool>,
-    /// Conversation history for multi-turn chat.
+    // Conversation history for multi-turn chat.
     pub history: Option<Vec<ChatMessage>>,
-    /// If true, bypass cache and always call the model.
+    // If true, bypass cache and always call the model.
     pub no_cache: Option<bool>,
 }
 
@@ -121,7 +121,7 @@ pub struct ChatResponse {
     pub used_fallback: bool,
     pub repo_context_injected: bool,
     pub tokens_used: Option<u32>,
-    /// True when this response was served from cache.
+    // True when this response was served from cache.
     pub cached: bool,
 }
 
@@ -516,9 +516,9 @@ async fn dispatch_completion(
 // Cache key builder
 // ---------------------------------------------------------------------------
 
-/// Build a deterministic, URL-safe cache key for a chat request.
-/// Format: `chat:<hex16>` where hex16 is the first 16 chars of
-/// SHA-256( target_label | "\0" | prompt | "\0" | repo_id ).
+// Build a deterministic, URL-safe cache key for a chat request.
+// Format: `chat:<hex16>` where hex16 is the first 16 chars of
+// SHA-256( target_label | "\0" | prompt | "\0" | repo_id ).
 fn build_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&str>) -> String {
     let target_label = match target {
         ModelTarget::Local { model, .. } => format!("local:{}", model),
@@ -584,11 +584,11 @@ where
 // ---------------------------------------------------------------------------
 
 impl RepoAppState {
-    /// Construct a `RepoAppState` wiring all clients from environment variables.
-    ///
-    /// * `sync_service` — caller-owned `Arc<RwLock<RepoSyncService>>`
-    /// * `model_router` — caller-owned `Arc<ModelRouter>`
-    /// * `grok_client`  — `None` when `XAI_API_KEY` is unset (local-only mode)
+    // Construct a `RepoAppState` wiring all clients from environment variables.
+    //
+    // * `sync_service` — caller-owned `Arc<RwLock<RepoSyncService>>`
+    // * `model_router` — caller-owned `Arc<ModelRouter>`
+    // * `grok_client`  — `None` when `XAI_API_KEY` is unset (local-only mode)
     pub async fn from_env(
         sync_service: Arc<RwLock<RepoSyncService>>,
         model_router: Arc<ModelRouter>,

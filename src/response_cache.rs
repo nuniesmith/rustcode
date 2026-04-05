@@ -1,53 +1,53 @@
-//! # Response Cache Module
-//!
-//! Caches LLM API responses to avoid redundant calls and reduce costs.
-//!
-//! ## Features
-//!
-//! - Content-based caching using SHA-256 hashes
-//! - TTL-based cache invalidation
-//! - SQLite storage for persistence
-//! - Cache statistics and metrics
-//! - Automatic cleanup of expired entries
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::response_cache::ResponseCache;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let cache = ResponseCache::new("cache.db").await?;
-//!
-//!     // Check cache before API call
-//!     let prompt = "analyze this code...";
-//!     if let Some(cached) = cache.get(prompt, "file_scoring").await? {
-//!         println!("Cache hit! Using cached response.");
-//!         return Ok(());
-//!     }
-//!
-//!     // Make API call and cache result (example only)
-//!     let response = "API response here";
-//!     cache.set(prompt, "file_scoring", response, None).await?;
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Response Cache Module
+//
+// Caches LLM API responses to avoid redundant calls and reduce costs.
+//
+// ## Features
+//
+// - Content-based caching using SHA-256 hashes
+// - TTL-based cache invalidation
+// - SQLite storage for persistence
+// - Cache statistics and metrics
+// - Automatic cleanup of expired entries
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::response_cache::ResponseCache;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let cache = ResponseCache::new("cache.db").await?;
+//
+//     // Check cache before API call
+//     let prompt = "analyze this code...";
+//     if let Some(cached) = cache.get(prompt, "file_scoring").await? {
+//         println!("Cache hit! Using cached response.");
+//         return Ok(());
+//     }
+//
+//     // Make API call and cache result (example only)
+//     let response = "API response here";
+//     cache.set(prompt, "file_scoring", response, None).await?;
+//
+//     Ok(())
+// }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// Default cache TTL in hours (24 hours)
+// Default cache TTL in hours (24 hours)
 const DEFAULT_TTL_HOURS: i64 = 24;
 
-/// Response cache for LLM API calls
+// Response cache for LLM API calls
 pub struct ResponseCache {
     pool: sqlx::SqlitePool,
 }
 
-/// Cached response entry
+// Cached response entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
     pub id: i64,
@@ -60,7 +60,7 @@ pub struct CachedResponse {
     pub last_accessed: DateTime<Utc>,
 }
 
-/// Cache statistics
+// Cache statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStats {
     pub total_entries: i64,
@@ -72,7 +72,7 @@ pub struct CacheStats {
 }
 
 impl ResponseCache {
-    /// Create a new response cache
+    // Create a new response cache
     pub async fn new(database_path: &str) -> Result<Self> {
         let database_url = format!("sqlite:{}?mode=rwc", database_path);
         let pool = sqlx::SqlitePool::connect(&database_url)
@@ -85,7 +85,7 @@ impl ResponseCache {
         Ok(cache)
     }
 
-    /// Initialize the cache schema
+    // Initialize the cache schema
     async fn initialize_schema(&self) -> Result<()> {
         sqlx::query(
             r#"
@@ -124,7 +124,7 @@ impl ResponseCache {
         Ok(())
     }
 
-    /// Generate content hash from prompt and operation
+    // Generate content hash from prompt and operation
     fn generate_hash(prompt: &str, operation: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(prompt.as_bytes());
@@ -132,7 +132,7 @@ impl ResponseCache {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Get cached response if available and not expired
+    // Get cached response if available and not expired
     pub async fn get(&self, prompt: &str, operation: &str) -> Result<Option<String>> {
         let hash = Self::generate_hash(prompt, operation);
 
@@ -174,7 +174,7 @@ impl ResponseCache {
         }
     }
 
-    /// Store response in cache
+    // Store response in cache
     pub async fn set(
         &self,
         prompt: &str,
@@ -210,7 +210,7 @@ impl ResponseCache {
         Ok(())
     }
 
-    /// Clear expired cache entries
+    // Clear expired cache entries
     pub async fn clear_expired(&self) -> Result<u64> {
         let result = sqlx::query(
             r#"
@@ -230,7 +230,7 @@ impl ResponseCache {
         Ok(rows_deleted)
     }
 
-    /// Clear all cache entries
+    // Clear all cache entries
     pub async fn clear_all(&self) -> Result<u64> {
         let result = sqlx::query("DELETE FROM response_cache")
             .execute(&self.pool)
@@ -243,7 +243,7 @@ impl ResponseCache {
         Ok(rows_deleted)
     }
 
-    /// Clear cache entries for a specific operation
+    // Clear cache entries for a specific operation
     pub async fn clear_operation(&self, operation: &str) -> Result<u64> {
         let result = sqlx::query(
             r#"
@@ -262,7 +262,7 @@ impl ResponseCache {
         Ok(rows_deleted)
     }
 
-    /// Get cache statistics
+    // Get cache statistics
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let (total_entries,) = sqlx::query_as::<_, (i64,)>(
             "SELECT COUNT(*) FROM response_cache WHERE expires_at > datetime('now')",
@@ -319,7 +319,7 @@ impl ResponseCache {
         })
     }
 
-    /// Get cache entries by operation
+    // Get cache entries by operation
     pub async fn get_entries_by_operation(&self, operation: &str) -> Result<Vec<CachedResponse>> {
         let entries = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, String)>(
             r#"
@@ -369,7 +369,7 @@ impl ResponseCache {
             .collect())
     }
 
-    /// Get most frequently accessed cache entries
+    // Get most frequently accessed cache entries
     pub async fn get_hot_entries(&self, limit: i64) -> Result<Vec<CachedResponse>> {
         let entries = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, String)>(
             r#"
@@ -419,7 +419,7 @@ impl ResponseCache {
             .collect())
     }
 
-    /// Estimate cost savings from cache
+    // Estimate cost savings from cache
     pub async fn calculate_savings(&self, cost_per_query: f64) -> Result<f64> {
         let stats = self.get_stats().await?;
         Ok(stats.total_hits as f64 * cost_per_query)

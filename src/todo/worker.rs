@@ -1,59 +1,59 @@
-//! Todo worker — execute a single gameplan batch
-//!
-//! This module is the backend for `rustcode todo-work <batch-json>`.
-//! It reads a [`GamePlanBatch`] JSON file, generates code changes via the
-//! xAI LLM, applies them to disk, and updates the `todo.md` status markers.
-//!
-//! # Workflow
-//!
-//! ```text
-//! 1. Load batch JSON  →  GamePlanBatch
-//! 2. For each BatchWorkItem:
-//!    a. Read referenced source files
-//!    b. Build a targeted LLM prompt (file content + description + approach)
-//!    c. Parse LLM response into FileChange list
-//!    d. Validate changes (syntax check where possible, size guard)
-//!    e. Write changes to disk (backup originals)
-//! 3. Update todo.md — mark batch items ✅ Done (or ⚠️ partial on failure)
-//! 4. Emit WorkResult JSON for the caller / workflow
-//! ```
-//!
-//! # Dry-run mode
-//!
-//! When `WorkConfig::dry_run` is `true` the worker performs every step
-//! except actually writing files or updating `todo.md`.  It still returns a
-//! fully populated `WorkResult` so the caller can inspect what *would* happen.
-//!
-//! # Output shape
-//!
-//! ```json
-//! {
-//!   "batch_id": "batch-001",
-//!   "executed_at": "2024-01-01T00:00:00Z",
-//!   "dry_run": false,
-//!   "items_attempted": 2,
-//!   "items_succeeded": 2,
-//!   "items_failed": 0,
-//!   "file_changes": [
-//!     {
-//!       "file": "src/api/mod.rs",
-//!       "change_type": "modified",
-//!       "lines_added": 3,
-//!       "lines_removed": 1,
-//!       "backed_up_to": ".rustcode/backups/src_api_mod.rs.bak"
-//!     }
-//!   ],
-//!   "item_results": [
-//!     {
-//!       "todo_id": "deadbeef",
-//!       "status": "success",
-//!       "message": "Applied 1 change to src/api/mod.rs",
-//!       "files_changed": ["src/api/mod.rs"]
-//!     }
-//!   ],
-//!   "errors": []
-//! }
-//! ```
+// Todo worker — execute a single gameplan batch
+//
+// This module is the backend for `rustcode todo-work <batch-json>`.
+// It reads a [`GamePlanBatch`] JSON file, generates code changes via the
+// xAI LLM, applies them to disk, and updates the `todo.md` status markers.
+//
+// # Workflow
+//
+// ```text
+// 1. Load batch JSON  →  GamePlanBatch
+// 2. For each BatchWorkItem:
+//    a. Read referenced source files
+//    b. Build a targeted LLM prompt (file content + description + approach)
+//    c. Parse LLM response into FileChange list
+//    d. Validate changes (syntax check where possible, size guard)
+//    e. Write changes to disk (backup originals)
+// 3. Update todo.md — mark batch items ✅ Done (or ⚠️ partial on failure)
+// 4. Emit WorkResult JSON for the caller / workflow
+// ```
+//
+// # Dry-run mode
+//
+// When `WorkConfig::dry_run` is `true` the worker performs every step
+// except actually writing files or updating `todo.md`.  It still returns a
+// fully populated `WorkResult` so the caller can inspect what *would* happen.
+//
+// # Output shape
+//
+// ```json
+// {
+//   "batch_id": "batch-001",
+//   "executed_at": "2024-01-01T00:00:00Z",
+//   "dry_run": false,
+//   "items_attempted": 2,
+//   "items_succeeded": 2,
+//   "items_failed": 0,
+//   "file_changes": [
+//     {
+//       "file": "src/api/mod.rs",
+//       "change_type": "modified",
+//       "lines_added": 3,
+//       "lines_removed": 1,
+//       "backed_up_to": ".rustcode/backups/src_api_mod.rs.bak"
+//     }
+//   ],
+//   "item_results": [
+//     {
+//       "todo_id": "deadbeef",
+//       "status": "success",
+//       "message": "Applied 1 change to src/api/mod.rs",
+//       "files_changed": ["src/api/mod.rs"]
+//     }
+//   ],
+//   "errors": []
+// }
+// ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -70,35 +70,35 @@ use crate::todo::todo_file::TodoFile;
 // Configuration
 // ============================================================================
 
-/// Configuration for the todo worker
+// Configuration for the todo worker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkConfig {
-    /// When `true`, generate and validate changes but do NOT write to disk
+    // When `true`, generate and validate changes but do NOT write to disk
     pub dry_run: bool,
-    /// Root of the repository being modified
+    // Root of the repository being modified
     pub repo_root: PathBuf,
-    /// Path to `todo.md` to update after successful items
+    // Path to `todo.md` to update after successful items
     pub todo_md_path: PathBuf,
-    /// Directory used for backup files (relative to `repo_root`)
+    // Directory used for backup files (relative to `repo_root`)
     pub backup_dir: PathBuf,
-    /// Maximum number of lines the LLM may change per file in one pass
+    // Maximum number of lines the LLM may change per file in one pass
     pub max_lines_changed: usize,
-    /// Maximum raw bytes of a single source file to send to the LLM
+    // Maximum raw bytes of a single source file to send to the LLM
     pub max_file_bytes: u64,
-    /// LLM temperature for code generation
+    // LLM temperature for code generation
     pub temperature: f32,
-    /// Whether to create backups of files before modifying them
+    // Whether to create backups of files before modifying them
     pub create_backups: bool,
-    /// Maximum token budget for a single LLM code-generation call
+    // Maximum token budget for a single LLM code-generation call
     pub max_tokens: Option<u32>,
-    /// When `true`, skip the automatic `todo.md` update after a successful
-    /// work run.  Set this when you intend to run `todo-sync` as a separate
-    /// step — keeping the IDs stable so the syncer can find the items.
+    // When `true`, skip the automatic `todo.md` update after a successful
+    // work run.  Set this when you intend to run `todo-sync` as a separate
+    // step — keeping the IDs stable so the syncer can find the items.
     pub skip_todo_md_update: bool,
 }
 
 impl WorkConfig {
-    /// Create a default config pointing at the current working directory
+    // Create a default config pointing at the current working directory
     pub fn for_repo(repo_root: impl AsRef<Path>) -> Self {
         let repo_root = repo_root.as_ref().to_path_buf();
         let todo_md_path = repo_root.join("todo.md");
@@ -120,14 +120,14 @@ impl WorkConfig {
         }
     }
 
-    /// Produce a dry-run variant of this config
+    // Produce a dry-run variant of this config
     pub fn as_dry_run(mut self) -> Self {
         self.dry_run = true;
         self
     }
 
-    /// Instruct the worker to skip the automatic `todo.md` update so that a
-    /// subsequent `todo-sync` run can find items by their original IDs.
+    // Instruct the worker to skip the automatic `todo.md` update so that a
+    // subsequent `todo-sync` run can find items by their original IDs.
     pub fn with_skip_todo_md_update(mut self) -> Self {
         self.skip_todo_md_update = true;
         self
@@ -138,16 +138,16 @@ impl WorkConfig {
 // Work batch input
 // ============================================================================
 
-/// A single work batch to execute (loaded from the gameplan JSON)
+// A single work batch to execute (loaded from the gameplan JSON)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkBatch {
     pub batch: GamePlanBatch,
-    /// Optional path to the gameplan JSON file this batch came from
+    // Optional path to the gameplan JSON file this batch came from
     pub source_file: Option<PathBuf>,
 }
 
 impl WorkBatch {
-    /// Load a `WorkBatch` from a JSON file that contains a single `GamePlanBatch`
+    // Load a `WorkBatch` from a JSON file that contains a single `GamePlanBatch`
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path).map_err(AuditError::Io)?;
@@ -159,7 +159,7 @@ impl WorkBatch {
         })
     }
 
-    /// Load from a full gameplan JSON file by batch ID
+    // Load from a full gameplan JSON file by batch ID
     pub fn load_from_gameplan(gameplan_path: impl AsRef<Path>, batch_id: &str) -> Result<Self> {
         use crate::todo::planner::GamePlan;
         let plan = GamePlan::load(gameplan_path)?;
@@ -181,7 +181,7 @@ impl WorkBatch {
 // Work result output
 // ============================================================================
 
-/// Outcome of a single `BatchWorkItem`
+// Outcome of a single `BatchWorkItem`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemStatus {
@@ -208,37 +208,37 @@ impl std::fmt::Display for ItemStatus {
     }
 }
 
-/// Result for a single `BatchWorkItem`
+// Result for a single `BatchWorkItem`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemResult {
-    /// Stable ID from the gameplan
+    // Stable ID from the gameplan
     pub todo_id: String,
-    /// Outcome
+    // Outcome
     pub status: ItemStatus,
-    /// Human-readable summary of what happened
+    // Human-readable summary of what happened
     pub message: String,
-    /// Files that were changed (or would be, in dry-run)
+    // Files that were changed (or would be, in dry-run)
     pub files_changed: Vec<String>,
-    /// Any error message on failure
+    // Any error message on failure
     pub error: Option<String>,
 }
 
-/// Describes a single file change applied (or planned) by the worker
+// Describes a single file change applied (or planned) by the worker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileChange {
-    /// Relative path to the file
+    // Relative path to the file
     pub file: String,
-    /// Type of change
+    // Type of change
     pub change_type: FileChangeType,
-    /// Approximate lines added
+    // Approximate lines added
     pub lines_added: usize,
-    /// Approximate lines removed
+    // Approximate lines removed
     pub lines_removed: usize,
-    /// Path to the backup file, if one was created
+    // Path to the backup file, if one was created
     pub backed_up_to: Option<String>,
 }
 
-/// The kind of change applied to a file
+// The kind of change applied to a file
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileChangeType {
@@ -247,7 +247,7 @@ pub enum FileChangeType {
     Deleted,
 }
 
-/// Aggregated result of executing one `WorkBatch`
+// Aggregated result of executing one `WorkBatch`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkResult {
     pub batch_id: String,
@@ -280,19 +280,19 @@ impl WorkResult {
         }
     }
 
-    /// Serialise to pretty-printed JSON
+    // Serialise to pretty-printed JSON
     pub fn to_json_pretty(&self) -> Result<String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Serialise to compact JSON
+    // Serialise to compact JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self)
             .map_err(|e| AuditError::other(format!("JSON serialisation failed: {}", e)))
     }
 
-    /// Whether the batch completed with all items successful
+    // Whether the batch completed with all items successful
     pub fn is_fully_successful(&self) -> bool {
         self.items_failed == 0 && self.items_skipped == 0 && self.items_succeeded > 0
     }
@@ -302,19 +302,19 @@ impl WorkResult {
 // LLM response types
 // ============================================================================
 
-/// A single file change proposed by the LLM
+// A single file change proposed by the LLM
 #[derive(Debug, Clone, Deserialize)]
 struct LlmFileChange {
-    /// Relative path to the file
+    // Relative path to the file
     file: String,
-    /// The complete new content of the file (preferred) …
+    // The complete new content of the file (preferred) …
     new_content: Option<String>,
-    /// … or a list of hunks to apply
+    // … or a list of hunks to apply
     hunks: Option<Vec<LlmHunk>>,
-    /// Type of operation
+    // Type of operation
     #[serde(default = "default_op")]
     operation: String,
-    /// Brief explanation of the change
+    // Brief explanation of the change
     #[allow(dead_code)]
     explanation: Option<String>,
 }
@@ -323,16 +323,16 @@ fn default_op() -> String {
     "modify".to_string()
 }
 
-/// A search-and-replace hunk from the LLM
+// A search-and-replace hunk from the LLM
 #[derive(Debug, Clone, Deserialize)]
 struct LlmHunk {
-    /// The exact text to search for (must match verbatim)
+    // The exact text to search for (must match verbatim)
     search: String,
-    /// The replacement text
+    // The replacement text
     replace: String,
 }
 
-/// Top-level structure of the LLM code-generation response
+// Top-level structure of the LLM code-generation response
 #[derive(Debug, Clone, Deserialize)]
 struct LlmCodeResponse {
     changes: Vec<LlmFileChange>,
@@ -345,14 +345,14 @@ struct LlmCodeResponse {
 // Worker
 // ============================================================================
 
-/// Executes a single `WorkBatch` by generating and applying code changes
+// Executes a single `WorkBatch` by generating and applying code changes
 pub struct TodoWorker {
     config: WorkConfig,
     client: GrokClient,
 }
 
 impl TodoWorker {
-    /// Create a worker from environment (`XAI_API_KEY`)
+    // Create a worker from environment (`XAI_API_KEY`)
     pub async fn from_env(config: WorkConfig, db: crate::db::Database) -> Result<Self> {
         let client = GrokClient::from_env(db)
             .await
@@ -360,7 +360,7 @@ impl TodoWorker {
         Ok(Self { config, client })
     }
 
-    /// Create a worker with an explicit `GrokClient`
+    // Create a worker with an explicit `GrokClient`
     pub fn new(config: WorkConfig, client: GrokClient) -> Self {
         Self { config, client }
     }
@@ -369,9 +369,9 @@ impl TodoWorker {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Execute all items in a `WorkBatch`.
-    ///
-    /// Returns a `WorkResult` regardless of individual item outcomes.
+    // Execute all items in a `WorkBatch`.
+    //
+    // Returns a `WorkResult` regardless of individual item outcomes.
     pub async fn execute(&self, work_batch: &WorkBatch) -> Result<WorkResult> {
         let batch = &work_batch.batch;
         let mut result = WorkResult::new(batch.id.clone(), self.config.dry_run);
@@ -998,7 +998,7 @@ impl TodoWorker {
 // Helpers
 // ============================================================================
 
-/// Strip markdown code fences from LLM output
+// Strip markdown code fences from LLM output
 fn strip_markdown_fences(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_fence = false;

@@ -9,14 +9,14 @@ use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-/// Maximum file size that can be read (10 MB).
+// Maximum file size that can be read (10 MB).
 const MAX_READ_SIZE: u64 = 10 * 1024 * 1024;
 
-/// Maximum file size that can be written (10 MB).
+// Maximum file size that can be written (10 MB).
 const MAX_WRITE_SIZE: usize = 10 * 1024 * 1024;
 
-/// Check whether a file appears to contain binary content by examining
-/// the first chunk for NUL bytes.
+// Check whether a file appears to contain binary content by examining
+// the first chunk for NUL bytes.
 fn is_binary_file(path: &Path) -> io::Result<bool> {
     use std::io::Read;
     let mut file = fs::File::open(path)?;
@@ -25,9 +25,9 @@ fn is_binary_file(path: &Path) -> io::Result<bool> {
     Ok(buffer[..bytes_read].contains(&0))
 }
 
-/// Validate that a resolved path stays within the given workspace root.
-/// Returns the canonical path on success, or an error if the path escapes
-/// the workspace boundary (e.g. via `../` traversal or symlink).
+// Validate that a resolved path stays within the given workspace root.
+// Returns the canonical path on success, or an error if the path escapes
+// the workspace boundary (e.g. via `../` traversal or symlink).
 fn validate_workspace_boundary(resolved: &Path, workspace_root: &Path) -> io::Result<()> {
     if !resolved.starts_with(workspace_root) {
         return Err(io::Error::new(
@@ -42,7 +42,7 @@ fn validate_workspace_boundary(resolved: &Path, workspace_root: &Path) -> io::Re
     Ok(())
 }
 
-/// Text payload returned by file-reading operations.
+// Text payload returned by file-reading operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TextFilePayload {
     #[serde(rename = "filePath")]
@@ -56,7 +56,7 @@ pub struct TextFilePayload {
     pub total_lines: usize,
 }
 
-/// Output envelope for the `read_file` tool.
+// Output envelope for the `read_file` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReadFileOutput {
     #[serde(rename = "type")]
@@ -64,7 +64,7 @@ pub struct ReadFileOutput {
     pub file: TextFilePayload,
 }
 
-/// Structured patch hunk emitted by write and edit operations.
+// Structured patch hunk emitted by write and edit operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StructuredPatchHunk {
     #[serde(rename = "oldStart")]
@@ -78,7 +78,7 @@ pub struct StructuredPatchHunk {
     pub lines: Vec<String>,
 }
 
-/// Output envelope for full-file write operations.
+// Output envelope for full-file write operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WriteFileOutput {
     #[serde(rename = "type")]
@@ -94,7 +94,7 @@ pub struct WriteFileOutput {
     pub git_diff: Option<serde_json::Value>,
 }
 
-/// Output envelope for targeted string-replacement edits.
+// Output envelope for targeted string-replacement edits.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EditFileOutput {
     #[serde(rename = "filePath")]
@@ -115,7 +115,7 @@ pub struct EditFileOutput {
     pub git_diff: Option<serde_json::Value>,
 }
 
-/// Result of a glob-based filename search.
+// Result of a glob-based filename search.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GlobSearchOutput {
     #[serde(rename = "durationMs")]
@@ -126,7 +126,7 @@ pub struct GlobSearchOutput {
     pub truncated: bool,
 }
 
-/// Parameters accepted by the grep-style search tool.
+// Parameters accepted by the grep-style search tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GrepSearchInput {
     pub pattern: String,
@@ -152,7 +152,7 @@ pub struct GrepSearchInput {
     pub multiline: Option<bool>,
 }
 
-/// Result payload returned by the grep-style search tool.
+// Result payload returned by the grep-style search tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GrepSearchOutput {
     pub mode: Option<String>,
@@ -170,7 +170,7 @@ pub struct GrepSearchOutput {
     pub applied_offset: Option<usize>,
 }
 
-/// Reads a text file and returns a line-windowed payload.
+// Reads a text file and returns a line-windowed payload.
 pub fn read_file(
     path: &str,
     offset: Option<usize>,
@@ -219,7 +219,7 @@ pub fn read_file(
     })
 }
 
-/// Replaces a file's contents and returns patch metadata.
+// Replaces a file's contents and returns patch metadata.
 pub fn write_file(path: &str, content: &str) -> io::Result<WriteFileOutput> {
     if content.len() > MAX_WRITE_SIZE {
         return Err(io::Error::new(
@@ -253,7 +253,7 @@ pub fn write_file(path: &str, content: &str) -> io::Result<WriteFileOutput> {
     })
 }
 
-/// Performs an in-file string replacement and returns patch metadata.
+// Performs an in-file string replacement and returns patch metadata.
 pub fn edit_file(
     path: &str,
     old_string: &str,
@@ -294,7 +294,7 @@ pub fn edit_file(
     })
 }
 
-/// Expands a glob pattern and returns matching filenames.
+// Expands a glob pattern and returns matching filenames.
 pub fn glob_search(pattern: &str, path: Option<&str>) -> io::Result<GlobSearchOutput> {
     let started = Instant::now();
     let base_dir = path
@@ -338,7 +338,7 @@ pub fn glob_search(pattern: &str, path: Option<&str>) -> io::Result<GlobSearchOu
     })
 }
 
-/// Runs a regex search over workspace files with optional context lines.
+// Runs a regex search over workspace files with optional context lines.
 pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
     let base_path = input
         .path
@@ -556,7 +556,7 @@ fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
     Ok(candidate)
 }
 
-/// Read a file with workspace boundary enforcement.
+// Read a file with workspace boundary enforcement.
 pub fn read_file_in_workspace(
     path: &str,
     offset: Option<usize>,
@@ -571,7 +571,7 @@ pub fn read_file_in_workspace(
     read_file(path, offset, limit)
 }
 
-/// Write a file with workspace boundary enforcement.
+// Write a file with workspace boundary enforcement.
 pub fn write_file_in_workspace(
     path: &str,
     content: &str,
@@ -585,7 +585,7 @@ pub fn write_file_in_workspace(
     write_file(path, content)
 }
 
-/// Edit a file with workspace boundary enforcement.
+// Edit a file with workspace boundary enforcement.
 pub fn edit_file_in_workspace(
     path: &str,
     old_string: &str,
@@ -601,7 +601,7 @@ pub fn edit_file_in_workspace(
     edit_file(path, old_string, new_string, replace_all)
 }
 
-/// Check whether a path is a symlink that resolves outside the workspace.
+// Check whether a path is a symlink that resolves outside the workspace.
 pub fn is_symlink_escape(path: &Path, workspace_root: &Path) -> io::Result<bool> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_symlink() {

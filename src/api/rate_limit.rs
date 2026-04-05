@@ -1,4 +1,4 @@
-//! Rate limiting middleware using token bucket algorithm
+// Rate limiting middleware using token bucket algorithm
 
 use axum::{
     extract::{Request, State},
@@ -15,14 +15,14 @@ use tokio::sync::Mutex;
 // Configuration
 // ============================================================================
 
-/// Rate limit configuration
+// Rate limit configuration
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
-    /// Maximum requests per window
+    // Maximum requests per window
     pub max_requests: u32,
-    /// Time window in seconds
+    // Time window in seconds
     pub window_seconds: u64,
-    /// Whether to enable rate limiting
+    // Whether to enable rate limiting
     pub enabled: bool,
 }
 
@@ -74,7 +74,7 @@ impl RateLimitConfig {
 // Token Bucket
 // ============================================================================
 
-/// Token bucket for rate limiting
+// Token bucket for rate limiting
 #[derive(Debug, Clone)]
 struct TokenBucket {
     tokens: f64,
@@ -93,7 +93,7 @@ impl TokenBucket {
         }
     }
 
-    /// Refill tokens based on elapsed time
+    // Refill tokens based on elapsed time
     fn refill(&mut self) {
         let now = Utc::now();
         let elapsed = (now - self.last_refill).num_milliseconds() as f64 / 1000.0;
@@ -105,7 +105,7 @@ impl TokenBucket {
         }
     }
 
-    /// Try to consume a token
+    // Try to consume a token
     fn try_consume(&mut self) -> bool {
         self.refill();
 
@@ -117,13 +117,13 @@ impl TokenBucket {
         }
     }
 
-    /// Get remaining tokens
+    // Get remaining tokens
     fn remaining(&mut self) -> u32 {
         self.refill();
         self.tokens.floor() as u32
     }
 
-    /// Get time until next token (in seconds)
+    // Get time until next token (in seconds)
     fn time_until_next_token(&self) -> f64 {
         if self.tokens >= 1.0 {
             0.0
@@ -137,7 +137,7 @@ impl TokenBucket {
 // Rate Limiter
 // ============================================================================
 
-/// Rate limiter state
+// Rate limiter state
 pub struct RateLimiter {
     config: RateLimitConfig,
     buckets: Arc<Mutex<HashMap<String, TokenBucket>>>,
@@ -151,7 +151,7 @@ impl RateLimiter {
         }
     }
 
-    /// Check if request is allowed for the given identifier
+    // Check if request is allowed for the given identifier
     pub async fn check_rate_limit(&self, identifier: &str) -> RateLimitResult {
         if !self.config.enabled {
             return RateLimitResult::Allowed {
@@ -181,7 +181,7 @@ impl RateLimiter {
         }
     }
 
-    /// Clean up old buckets
+    // Clean up old buckets
     pub async fn cleanup(&self) {
         let mut buckets = self.buckets.lock().await;
         let cutoff = Utc::now() - chrono::Duration::seconds(self.config.window_seconds as i64 * 2);
@@ -189,7 +189,7 @@ impl RateLimiter {
         buckets.retain(|_, bucket| bucket.last_refill > cutoff);
     }
 
-    /// Get stats
+    // Get stats
     pub async fn get_stats(&self) -> RateLimitStats {
         let buckets = self.buckets.lock().await;
         RateLimitStats {
@@ -199,14 +199,14 @@ impl RateLimiter {
     }
 }
 
-/// Rate limit check result
+// Rate limit check result
 #[derive(Debug, Clone)]
 pub enum RateLimitResult {
     Allowed { remaining: u32, reset_after: u64 },
     RateLimited { retry_after: u64 },
 }
 
-/// Rate limiter stats
+// Rate limiter stats
 #[derive(Debug, Clone)]
 pub struct RateLimitStats {
     pub total_clients: usize,
@@ -217,7 +217,7 @@ pub struct RateLimitStats {
 // Middleware
 // ============================================================================
 
-/// Rate limiting middleware
+// Rate limiting middleware
 pub async fn rate_limit_middleware(
     State(limiter): State<Arc<RateLimiter>>,
     request: Request,
@@ -269,7 +269,7 @@ pub async fn rate_limit_middleware(
     }
 }
 
-/// Extract identifier from request
+// Extract identifier from request
 fn extract_identifier(request: &Request) -> String {
     // Try to get API key from headers first
     if let Some(api_key) = request

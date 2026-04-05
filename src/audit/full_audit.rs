@@ -1,21 +1,21 @@
-//! Full Audit Engine
-//!
-//! Orchestrates a complete, file-by-file LLM audit of a repository.
-//! Progress is written to the `audit_runs` database table so the API can
-//! poll for live updates.  The final report (Markdown + JSON) is stored in the
-//! same row so it can be rendered without touching the filesystem.
-//!
-//! # Pipeline
-//!
-//! 1. Insert an `audit_runs` row with `status = 'running'`
-//! 2. Collect every source file (respecting skip config)
-//! 3. For each file: read → LLM score → accumulate findings → update DB progress
-//! 4. When all files are processed: call LLM for the master synthesis report
-//! 5. Render Markdown report, store in `audit_runs.report_markdown` + `report_json`
-//! 6. Update `status = 'completed'`
-//!
-//! On any unrecoverable error the row is updated to `status = 'failed'` with an
-//! `error_message` so the UI can surface it.
+// Full Audit Engine
+//
+// Orchestrates a complete, file-by-file LLM audit of a repository.
+// Progress is written to the `audit_runs` database table so the API can
+// poll for live updates.  The final report (Markdown + JSON) is stored in the
+// same row so it can be rendered without touching the filesystem.
+//
+// # Pipeline
+//
+// 1. Insert an `audit_runs` row with `status = 'running'`
+// 2. Collect every source file (respecting skip config)
+// 3. For each file: read → LLM score → accumulate findings → update DB progress
+// 4. When all files are processed: call LLM for the master synthesis report
+// 5. Render Markdown report, store in `audit_runs.report_markdown` + `report_json`
+// 6. Update `status = 'completed'`
+//
+// On any unrecoverable error the row is updated to `status = 'failed'` with an
+// `error_message` so the UI can surface it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,7 +34,7 @@ use crate::grok_client::{FileScoreResult, GrokClient};
 // Public types
 // ============================================================================
 
-/// Severity bucket for a single file finding.
+// Severity bucket for a single file finding.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileSeverity {
@@ -83,30 +83,30 @@ impl std::fmt::Display for FileSeverity {
     }
 }
 
-/// The per-file analysis result stored in the final report.
+// The per-file analysis result stored in the final report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAuditResult {
-    /// Relative path inside the repo.
+    // Relative path inside the repo.
     pub path: String,
-    /// Overall score 0-100 (higher = better).
+    // Overall score 0-100 (higher = better).
     pub overall_score: f64,
-    /// Security sub-score.
+    // Security sub-score.
     pub security_score: f64,
-    /// Code quality sub-score.
+    // Code quality sub-score.
     pub quality_score: f64,
-    /// Complexity sub-score.
+    // Complexity sub-score.
     pub complexity_score: f64,
-    /// Maintainability sub-score.
+    // Maintainability sub-score.
     pub maintainability_score: f64,
-    /// Derived severity from `overall_score`.
+    // Derived severity from `overall_score`.
     pub severity: FileSeverity,
-    /// LLM-generated one-paragraph summary.
+    // LLM-generated one-paragraph summary.
     pub summary: String,
-    /// Concrete issues found.
+    // Concrete issues found.
     pub issues: Vec<String>,
-    /// Improvement suggestions.
+    // Improvement suggestions.
     pub suggestions: Vec<String>,
-    /// Whether this file was actually scored by the LLM (vs. static-only).
+    // Whether this file was actually scored by the LLM (vs. static-only).
     pub llm_scored: bool,
 }
 
@@ -128,7 +128,7 @@ impl FileAuditResult {
         }
     }
 
-    /// Placeholder result used when a file is skipped or cannot be read.
+    // Placeholder result used when a file is skipped or cannot be read.
     fn skipped(path: String, reason: &str) -> Self {
         Self {
             path,
@@ -146,7 +146,7 @@ impl FileAuditResult {
     }
 }
 
-/// Final synthesized report written to `audit_runs`.
+// Final synthesized report written to `audit_runs`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullAuditReport {
     pub run_id: String,
@@ -191,7 +191,7 @@ pub struct FullAuditReport {
 }
 
 impl FullAuditReport {
-    /// Compute aggregate stats from the per-file results.
+    // Compute aggregate stats from the per-file results.
     fn compute_aggregates(files: &[FileAuditResult]) -> (f64, f64, f64, f64, f64) {
         if files.is_empty() {
             return (75.0, 75.0, 75.0, 75.0, 75.0);
@@ -207,7 +207,7 @@ impl FullAuditReport {
         )
     }
 
-    /// Render the report as a Markdown document.
+    // Render the report as a Markdown document.
     pub fn render_markdown(&self) -> String {
         let mut md = String::with_capacity(16 * 1024);
 
@@ -483,7 +483,7 @@ Be specific and actionable. Name actual files. Keep each list item concise (one 
     )
 }
 
-/// Intermediate JSON shape returned by the LLM for the master synthesis.
+// Intermediate JSON shape returned by the LLM for the master synthesis.
 #[derive(Debug, Deserialize, Default)]
 struct MasterSynthesisResponse {
     #[serde(default)]
@@ -518,18 +518,18 @@ fn default_health() -> f64 {
 // Engine
 // ============================================================================
 
-/// Configuration for a single full-audit run.
+// Configuration for a single full-audit run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullAuditConfig {
-    /// Maximum number of files to send to the LLM (most-valuable first).
+    // Maximum number of files to send to the LLM (most-valuable first).
     pub max_llm_files: usize,
-    /// Hard cost cap for LLM calls in this run.
+    // Hard cost cap for LLM calls in this run.
     pub max_cost_usd: f64,
-    /// File extensions to skip.
+    // File extensions to skip.
     pub skip_extensions: Vec<String>,
-    /// Path fragments to skip.
+    // Path fragments to skip.
     pub skip_paths: Vec<String>,
-    /// Maximum file size in bytes to read.
+    // Maximum file size in bytes to read.
     pub max_file_bytes: u64,
 }
 
@@ -549,13 +549,13 @@ impl Default for FullAuditConfig {
 }
 
 impl FullAuditConfig {
-    /// Serialise to JSON string for storage in `audit_runs.config_json`.
+    // Serialise to JSON string for storage in `audit_runs.config_json`.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
     }
 }
 
-/// The public entry point — drives the whole audit and persists results to DB.
+// The public entry point — drives the whole audit and persists results to DB.
 pub struct FullAuditEngine {
     pool: PgPool,
     grok: Option<Arc<GrokClient>>,
@@ -576,9 +576,9 @@ impl FullAuditEngine {
         self
     }
 
-    /// Launch an audit run in the background; returns the `run_id` immediately.
-    ///
-    /// The caller can poll `GET /audit/:run_id/status` for progress.
+    // Launch an audit run in the background; returns the `run_id` immediately.
+    //
+    // The caller can poll `GET /audit/:run_id/status` for progress.
     pub async fn start_background(
         self: Arc<Self>,
         repo_id: Option<String>,
@@ -900,7 +900,7 @@ impl FullAuditEngine {
     // Helpers
     // ------------------------------------------------------------------
 
-    /// Collect all source files under `repo_path` respecting skip config.
+    // Collect all source files under `repo_path` respecting skip config.
     fn collect_files(&self, repo_path: &Path) -> Result<Vec<PathBuf>> {
         use walkdir::WalkDir;
 
@@ -955,7 +955,7 @@ impl FullAuditEngine {
         Ok(files)
     }
 
-    /// Increment the appropriate per-severity counter in the DB.
+    // Increment the appropriate per-severity counter in the DB.
     async fn increment_severity_counter(&self, run_id: &str, sev: &FileSeverity) {
         let col = match sev {
             FileSeverity::Critical => "findings_critical",
@@ -975,8 +975,8 @@ impl FullAuditEngine {
 // Static heuristic scorer (fallback when no LLM is available)
 // ============================================================================
 
-/// Produce a basic `FileScoreResult` from simple text heuristics when the LLM
-/// is not available (no API key, cost cap reached, etc.).
+// Produce a basic `FileScoreResult` from simple text heuristics when the LLM
+// is not available (no API key, cost cap reached, etc.).
 fn static_heuristic_score(_path: &str, content: &str) -> FileScoreResult {
     let lines: Vec<&str> = content.lines().collect();
     let loc = lines.len() as f64;
@@ -997,7 +997,7 @@ fn static_heuristic_score(_path: &str, content: &str) -> FileScoreResult {
         .iter()
         .filter(|l| {
             let t = l.trim();
-            t.starts_with("//") || t.starts_with("///") || t.starts_with("/*") || t.starts_with('#')
+            t.starts_with("//") || t.starts_with("//") || t.starts_with("/*") || t.starts_with('#')
         })
         .count() as f64;
     let comment_ratio = if loc > 0.0 { comment_lines / loc } else { 0.0 };
@@ -1098,7 +1098,7 @@ fn static_heuristic_score(_path: &str, content: &str) -> FileScoreResult {
 // Helpers
 // ============================================================================
 
-/// Strip ```json ... ``` fences that some models add around JSON responses.
+// Strip ```json ... ``` fences that some models add around JSON responses.
 fn strip_json_fences(s: &str) -> String {
     let s = s.trim();
     // Remove leading ```json or ``` with optional newline
@@ -1118,7 +1118,7 @@ fn strip_json_fences(s: &str) -> String {
 // DB query helpers (used by the web handler)
 // ============================================================================
 
-/// Snapshot of an audit run's live state — used for polling.
+// Snapshot of an audit run's live state — used for polling.
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AuditRunStatus {
     pub id: String,
@@ -1140,7 +1140,7 @@ pub struct AuditRunStatus {
     pub completed_at: Option<i64>,
 }
 
-/// Summary row for the audit list page (no large report_json/markdown).
+// Summary row for the audit list page (no large report_json/markdown).
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AuditRunSummary {
     pub id: String,

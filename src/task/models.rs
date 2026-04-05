@@ -1,7 +1,7 @@
-//! Simplified Task Model
-//!
-//! Consolidates QueueItem, FileAnalysis, and TodoItem into a single Task type.
-//! Designed for easy LLM processing and IDE export.
+// Simplified Task Model
+//
+// Consolidates QueueItem, FileAnalysis, and TodoItem into a single Task type.
+// Designed for easy LLM processing and IDE export.
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
@@ -203,7 +203,7 @@ impl TaskGroup {
         }
     }
 
-    /// Format for Zed IDE chat paste
+    // Format for Zed IDE chat paste
     pub fn format_for_zed(&self) -> String {
         let mut output = String::new();
 
@@ -255,7 +255,7 @@ impl TaskGroup {
         output
     }
 
-    /// Format as markdown for documentation
+    // Format as markdown for documentation
     pub fn format_as_markdown(&self) -> String {
         let mut output = String::new();
 

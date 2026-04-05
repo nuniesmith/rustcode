@@ -1,13 +1,13 @@
-//! Tree State Tracking Module
-//!
-//! Tracks file system state changes between audit runs:
-//! - New files added
-//! - Modified files (content hash changed)
-//! - Deleted files
-//! - Audit tag changes
-//! - TODO/FIXME changes
-//!
-//! Integrates with `.audit-cache` for persistence and CI/CD workflows.
+// Tree State Tracking Module
+//
+// Tracks file system state changes between audit runs:
+// - New files added
+// - Modified files (content hash changed)
+// - Deleted files
+// - Audit tag changes
+// - TODO/FIXME changes
+//
+// Integrates with `.audit-cache` for persistence and CI/CD workflows.
 
 use crate::cache::CACHE_DIR;
 use crate::error::{AuditError, Result};
@@ -18,72 +18,72 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-/// Tree state file name
+// Tree state file name
 pub const TREE_STATE_FILE: &str = "tree_state.json";
 
-/// Audit tags index file name
+// Audit tags index file name
 pub const AUDIT_TAGS_INDEX_FILE: &str = "audit_tags_index.json";
 
-/// TODOs index file name
+// TODOs index file name
 pub const TODOS_INDEX_FILE: &str = "todos_index.json";
 
-/// File state snapshot
+// File state snapshot
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileState {
-    /// Relative path from project root
+    // Relative path from project root
     pub path: String,
 
-    /// SHA-256 hash of file content
+    // SHA-256 hash of file content
     pub content_hash: String,
 
-    /// File size in bytes
+    // File size in bytes
     pub size: usize,
 
-    /// Lines of code
+    // Lines of code
     pub lines: usize,
 
-    /// Last modified timestamp (Unix epoch seconds)
+    // Last modified timestamp (Unix epoch seconds)
     pub last_modified: i64,
 
-    /// Number of audit tags in this file
+    // Number of audit tags in this file
     pub audit_tag_count: usize,
 
-    /// Number of TODOs in this file
+    // Number of TODOs in this file
     pub todo_count: usize,
 
-    /// Category (audit, clients, execution, janus)
+    // Category (audit, clients, execution, janus)
     pub category: FileCategory,
 
-    /// File importance score (from scoring module)
+    // File importance score (from scoring module)
     pub importance_score: Option<f64>,
 
-    /// LLM analysis hash (if analyzed)
+    // LLM analysis hash (if analyzed)
     pub llm_analysis_hash: Option<String>,
 }
 
-/// File category for organization
+// File category for organization
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FileCategory {
-    /// Audit service code
+    // Audit service code
     Audit,
-    /// KMP client code
+    // KMP client code
     Clients,
-    /// Rust execution app
+    // Rust execution app
     Execution,
-    /// Janus trading/ML system
+    // Janus trading/ML system
     Janus,
-    /// Configuration files
+    // Configuration files
     Config,
-    /// Documentation
+    // Documentation
     Docs,
-    /// Test files
+    // Test files
     Tests,
-    /// Unknown/Other
+    // Unknown/Other
     Other,
 }
 
 impl FileCategory {
-    /// Detect category from file path
+    // Detect category from file path
     pub fn from_path(path: &Path) -> Self {
         let path_str = path.to_string_lossy().to_lowercase();
 
@@ -119,7 +119,7 @@ impl FileCategory {
         }
     }
 
-    /// Get display name
+    // Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
             FileCategory::Audit => "Audit",
@@ -134,55 +134,55 @@ impl FileCategory {
     }
 }
 
-/// Change type for a file
+// Change type for a file
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ChangeType {
-    /// Newly added file
+    // Newly added file
     Added,
-    /// Modified file (content changed)
+    // Modified file (content changed)
     Modified {
-        /// Previous content hash
+        // Previous content hash
         previous_hash: String,
-        /// Lines added
+        // Lines added
         lines_added: i32,
-        /// Lines removed
+        // Lines removed
         lines_removed: i32,
     },
-    /// Deleted file
+    // Deleted file
     Deleted,
-    /// Unchanged
+    // Unchanged
     Unchanged,
 }
 
-/// File change record
+// File change record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileChange {
-    /// File path
+    // File path
     pub path: String,
 
-    /// Change type
+    // Change type
     pub change_type: ChangeType,
 
-    /// Category
+    // Category
     pub category: FileCategory,
 
-    /// Current state (None if deleted)
+    // Current state (None if deleted)
     pub current_state: Option<FileState>,
 
-    /// Previous state (None if new)
+    // Previous state (None if new)
     pub previous_state: Option<FileState>,
 
-    /// Tag changes
+    // Tag changes
     pub tag_changes: TagChanges,
 
-    /// TODO changes
+    // TODO changes
     pub todo_changes: TodoChanges,
 
-    /// Needs LLM re-analysis
+    // Needs LLM re-analysis
     pub needs_llm_analysis: bool,
 }
 
-/// Tag changes summary
+// Tag changes summary
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TagChanges {
     pub added: Vec<String>,
@@ -190,7 +190,7 @@ pub struct TagChanges {
     pub modified: Vec<String>,
 }
 
-/// TODO changes summary
+// TODO changes summary
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TodoChanges {
     pub added: i32,
@@ -198,116 +198,116 @@ pub struct TodoChanges {
     pub net_change: i32,
 }
 
-/// Tree state snapshot
+// Tree state snapshot
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeState {
-    /// Snapshot timestamp
+    // Snapshot timestamp
     pub timestamp: String,
 
-    /// Git commit hash (if available)
+    // Git commit hash (if available)
     pub commit_hash: Option<String>,
 
-    /// Git branch name
+    // Git branch name
     pub branch: Option<String>,
 
-    /// CI/CD run ID (if in CI)
+    // CI/CD run ID (if in CI)
     pub ci_run_id: Option<String>,
 
-    /// All file states
+    // All file states
     pub files: HashMap<String, FileState>,
 
-    /// Summary statistics
+    // Summary statistics
     pub summary: TreeSummaryStats,
 }
 
-/// Summary statistics for tree state
+// Summary statistics for tree state
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TreeSummaryStats {
-    /// Total files
+    // Total files
     pub total_files: usize,
 
-    /// Total lines of code
+    // Total lines of code
     pub total_lines: usize,
 
-    /// Files by category
+    // Files by category
     pub files_by_category: HashMap<String, usize>,
 
-    /// Lines by category
+    // Lines by category
     pub lines_by_category: HashMap<String, usize>,
 
-    /// Total audit tags
+    // Total audit tags
     pub total_audit_tags: usize,
 
-    /// Total TODOs
+    // Total TODOs
     pub total_todos: usize,
 
-    /// Files needing LLM analysis
+    // Files needing LLM analysis
     pub files_pending_llm: usize,
 }
 
-/// Diff between two tree states
+// Diff between two tree states
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeDiff {
-    /// Timestamp of comparison
+    // Timestamp of comparison
     pub compared_at: String,
 
-    /// Previous state timestamp
+    // Previous state timestamp
     pub previous_timestamp: Option<String>,
 
-    /// Current state timestamp
+    // Current state timestamp
     pub current_timestamp: String,
 
-    /// Git commit range (if available)
+    // Git commit range (if available)
     pub commit_range: Option<String>,
 
-    /// All file changes
+    // All file changes
     pub changes: Vec<FileChange>,
 
-    /// Summary of changes
+    // Summary of changes
     pub summary: DiffSummary,
 }
 
-/// Summary of changes between states
+// Summary of changes between states
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiffSummary {
-    /// Files added
+    // Files added
     pub files_added: usize,
 
-    /// Files modified
+    // Files modified
     pub files_modified: usize,
 
-    /// Files deleted
+    // Files deleted
     pub files_deleted: usize,
 
-    /// Files unchanged
+    // Files unchanged
     pub files_unchanged: usize,
 
-    /// Lines added (net)
+    // Lines added (net)
     pub lines_added: i32,
 
-    /// Lines removed (net)
+    // Lines removed (net)
     pub lines_removed: i32,
 
-    /// Tags added
+    // Tags added
     pub tags_added: usize,
 
-    /// Tags removed
+    // Tags removed
     pub tags_removed: usize,
 
-    /// TODOs added (net)
+    // TODOs added (net)
     pub todos_added: i32,
 
-    /// TODOs removed (net)
+    // TODOs removed (net)
     pub todos_removed: i32,
 
-    /// Files needing LLM re-analysis
+    // Files needing LLM re-analysis
     pub files_needing_analysis: usize,
 
-    /// Changes by category
+    // Changes by category
     pub changes_by_category: HashMap<String, CategoryChangeSummary>,
 }
 
-/// Change summary per category
+// Change summary per category
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CategoryChangeSummary {
     pub added: usize,
@@ -316,23 +316,23 @@ pub struct CategoryChangeSummary {
     pub lines_changed: i32,
 }
 
-/// Tree state manager
+// Tree state manager
 pub struct TreeStateManager {
-    /// Project root
+    // Project root
     root: PathBuf,
 
-    /// Cache directory
+    // Cache directory
     cache_dir: PathBuf,
 
-    /// Exclude patterns
+    // Exclude patterns
     exclude_patterns: Vec<String>,
 
-    /// Include patterns (file extensions)
+    // Include patterns (file extensions)
     include_extensions: Vec<String>,
 }
 
 impl TreeStateManager {
-    /// Create a new tree state manager
+    // Create a new tree state manager
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
         let cache_dir = root.join(CACHE_DIR);
@@ -370,7 +370,7 @@ impl TreeStateManager {
         }
     }
 
-    /// Ensure cache directory exists
+    // Ensure cache directory exists
     fn ensure_cache_dir(&self) -> Result<()> {
         if !self.cache_dir.exists() {
             fs::create_dir_all(&self.cache_dir)
@@ -379,7 +379,7 @@ impl TreeStateManager {
         Ok(())
     }
 
-    /// Build current tree state
+    // Build current tree state
     pub fn build_current_state(&self) -> Result<TreeState> {
         info!("Building current tree state from: {}", self.root.display());
 
@@ -407,7 +407,7 @@ impl TreeStateManager {
         })
     }
 
-    /// Scan directory recursively
+    // Scan directory recursively
     fn scan_directory(
         &self,
         dir: &Path,
@@ -464,7 +464,7 @@ impl TreeStateManager {
         Ok(())
     }
 
-    /// Build state for a single file
+    // Build state for a single file
     fn build_file_state(&self, path: &Path) -> Result<FileState> {
         let content = fs::read_to_string(path)
             .map_err(|e| AuditError::other(format!("Failed to read file: {}", e)))?;
@@ -506,7 +506,7 @@ impl TreeStateManager {
         })
     }
 
-    /// Count audit tags and TODOs in content
+    // Count audit tags and TODOs in content
     fn count_tags_and_todos(&self, content: &str) -> (usize, usize) {
         let mut audit_tags = 0;
         let mut todos = 0;
@@ -536,14 +536,14 @@ impl TreeStateManager {
         (audit_tags, todos)
     }
 
-    /// Hash content with SHA-256
+    // Hash content with SHA-256
     fn hash_content(content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
-    /// Check if path should be excluded
+    // Check if path should be excluded
     fn should_exclude(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         self.exclude_patterns
@@ -551,7 +551,7 @@ impl TreeStateManager {
             .any(|pattern| path_str.contains(pattern))
     }
 
-    /// Check if file should be included
+    // Check if file should be included
     fn should_include(&self, path: &Path) -> bool {
         if !path.is_file() {
             return false;
@@ -563,7 +563,7 @@ impl TreeStateManager {
             .unwrap_or(false)
     }
 
-    /// Get git information
+    // Get git information
     fn get_git_info(&self) -> (Option<String>, Option<String>) {
         let commit_hash = std::process::Command::new("git")
             .args(["rev-parse", "HEAD"])
@@ -586,7 +586,7 @@ impl TreeStateManager {
         (commit_hash, branch)
     }
 
-    /// Load previous tree state from cache
+    // Load previous tree state from cache
     pub fn load_previous_state(&self) -> Result<Option<TreeState>> {
         let state_file = self.cache_dir.join(TREE_STATE_FILE);
 
@@ -603,7 +603,7 @@ impl TreeStateManager {
         Ok(Some(state))
     }
 
-    /// Save tree state to cache
+    // Save tree state to cache
     pub fn save_state(&self, state: &TreeState) -> Result<()> {
         self.ensure_cache_dir()?;
 
@@ -618,7 +618,7 @@ impl TreeStateManager {
         Ok(())
     }
 
-    /// Compare current state with previous state
+    // Compare current state with previous state
     pub fn diff(&self, previous: &TreeState, current: &TreeState) -> TreeDiff {
         let mut changes = Vec::new();
         let mut summary = DiffSummary::default();
@@ -792,7 +792,7 @@ impl TreeStateManager {
         }
     }
 
-    /// Update category summary helper
+    // Update category summary helper
     fn update_category_summary(
         summary: &mut DiffSummary,
         category: FileCategory,
@@ -809,7 +809,7 @@ impl TreeStateManager {
         entry.lines_changed += lines_changed;
     }
 
-    /// Get files that need LLM analysis (new or modified)
+    // Get files that need LLM analysis (new or modified)
     pub fn get_files_needing_analysis(&self, diff: &TreeDiff) -> Vec<FileState> {
         diff.changes
             .iter()
@@ -818,7 +818,7 @@ impl TreeStateManager {
             .collect()
     }
 
-    /// Get files by category
+    // Get files by category
     pub fn get_files_by_category<'a>(
         &self,
         state: &'a TreeState,
@@ -831,14 +831,14 @@ impl TreeStateManager {
             .collect()
     }
 
-    /// Update file with LLM analysis result
+    // Update file with LLM analysis result
     pub fn mark_file_analyzed(&self, state: &mut TreeState, path: &str, analysis_hash: String) {
         if let Some(file) = state.files.get_mut(path) {
             file.llm_analysis_hash = Some(analysis_hash);
         }
     }
 
-    /// Generate CI/CD summary report
+    // Generate CI/CD summary report
     pub fn generate_ci_summary(&self, diff: &TreeDiff) -> String {
         let mut report = String::new();
 
@@ -966,7 +966,7 @@ impl TreeStateManager {
         report
     }
 
-    /// Print summary to console
+    // Print summary to console
     pub fn print_summary(&self, state: &TreeState) {
         println!("\n📁 Tree State Summary");
         println!("  Timestamp: {}", state.timestamp);
@@ -992,7 +992,7 @@ impl TreeStateManager {
         }
     }
 
-    /// Print diff summary to console
+    // Print diff summary to console
     pub fn print_diff(&self, diff: &TreeDiff) {
         println!("\n📊 Tree State Diff");
         println!("  Compared at: {}", diff.compared_at);

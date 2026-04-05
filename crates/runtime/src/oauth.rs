@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::OAuthConfig;
 
-/// Persisted OAuth access token bundle used by the CLI.
+// Persisted OAuth access token bundle used by the CLI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthTokenSet {
     pub access_token: String,
@@ -18,7 +18,7 @@ pub struct OAuthTokenSet {
     pub scopes: Vec<String>,
 }
 
-/// PKCE verifier/challenge pair generated for an OAuth authorization flow.
+// PKCE verifier/challenge pair generated for an OAuth authorization flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PkceCodePair {
     pub verifier: String,
@@ -26,7 +26,7 @@ pub struct PkceCodePair {
     pub challenge_method: PkceChallengeMethod,
 }
 
-/// Challenge algorithms supported by the local PKCE helpers.
+// Challenge algorithms supported by the local PKCE helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PkceChallengeMethod {
     S256,
@@ -41,7 +41,7 @@ impl PkceChallengeMethod {
     }
 }
 
-/// Parameters needed to build an authorization URL for browser-based login.
+// Parameters needed to build an authorization URL for browser-based login.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthAuthorizationRequest {
     pub authorize_url: String,
@@ -54,7 +54,7 @@ pub struct OAuthAuthorizationRequest {
     pub extra_params: BTreeMap<String, String>,
 }
 
-/// Request body for exchanging an OAuth authorization code for tokens.
+// Request body for exchanging an OAuth authorization code for tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthTokenExchangeRequest {
     pub grant_type: &'static str,
@@ -65,7 +65,7 @@ pub struct OAuthTokenExchangeRequest {
     pub state: String,
 }
 
-/// Request body for refreshing an existing OAuth token set.
+// Request body for refreshing an existing OAuth token set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthRefreshRequest {
     pub grant_type: &'static str,
@@ -74,7 +74,7 @@ pub struct OAuthRefreshRequest {
     pub scopes: Vec<String>,
 }
 
-/// Parsed query parameters returned to the local OAuth callback endpoint.
+// Parsed query parameters returned to the local OAuth callback endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthCallbackParams {
     pub code: Option<String>,

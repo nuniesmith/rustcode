@@ -1,33 +1,33 @@
-//! Code formatting and auto-fix utilities
-//!
-//! This module provides functionality to automatically format code across different
-//! languages and tools, integrating with CI/CD pipelines for automated code quality.
+// Code formatting and auto-fix utilities
+//
+// This module provides functionality to automatically format code across different
+// languages and tools, integrating with CI/CD pipelines for automated code quality.
 
 use crate::error::AuditError;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{debug, info, warn};
 
-/// Supported formatters
+// Supported formatters
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Formatter {
-    /// Rust: cargo fmt
+    // Rust: cargo fmt
     RustFmt,
-    /// Kotlin: ktlint
+    // Kotlin: ktlint
     KtLint,
-    /// TypeScript/JavaScript: prettier
+    // TypeScript/JavaScript: prettier
     Prettier,
-    /// Python: black
+    // Python: black
     Black,
 }
 
 impl Formatter {
-    /// Get all available formatters
+    // Get all available formatters
     pub fn all() -> Vec<Self> {
         vec![Self::RustFmt, Self::KtLint, Self::Prettier, Self::Black]
     }
 
-    /// Get formatter name
+    // Get formatter name
     pub fn name(&self) -> &'static str {
         match self {
             Self::RustFmt => "cargo-fmt",
@@ -37,7 +37,7 @@ impl Formatter {
         }
     }
 
-    /// Get file extensions this formatter handles
+    // Get file extensions this formatter handles
     pub fn extensions(&self) -> &[&str] {
         match self {
             Self::RustFmt => &["rs"],
@@ -47,7 +47,7 @@ impl Formatter {
         }
     }
 
-    /// Check if formatter is available on the system
+    // Check if formatter is available on the system
     pub fn is_available(&self) -> bool {
         match self {
             Self::RustFmt => Command::new("cargo")
@@ -74,34 +74,34 @@ impl Formatter {
     }
 }
 
-/// Formatting operation mode
+// Formatting operation mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatMode {
-    /// Check formatting without making changes
+    // Check formatting without making changes
     Check,
-    /// Apply formatting changes
+    // Apply formatting changes
     Fix,
 }
 
-/// Result of a formatting operation
+// Result of a formatting operation
 #[derive(Debug, Clone)]
 pub struct FormatResult {
-    /// Formatter used
+    // Formatter used
     pub formatter: Formatter,
-    /// Files that were checked/formatted
+    // Files that were checked/formatted
     pub files_processed: usize,
-    /// Files that needed formatting (in check mode) or were formatted (in fix mode)
+    // Files that needed formatting (in check mode) or were formatted (in fix mode)
     pub files_changed: usize,
-    /// Whether formatting passed (check mode) or succeeded (fix mode)
+    // Whether formatting passed (check mode) or succeeded (fix mode)
     pub success: bool,
-    /// Any errors encountered
+    // Any errors encountered
     pub errors: Vec<String>,
-    /// Warnings (e.g., formatter not available)
+    // Warnings (e.g., formatter not available)
     pub warnings: Vec<String>,
 }
 
 impl FormatResult {
-    /// Create a successful result
+    // Create a successful result
     pub fn success(formatter: Formatter, files_processed: usize, files_changed: usize) -> Self {
         Self {
             formatter,
@@ -113,7 +113,7 @@ impl FormatResult {
         }
     }
 
-    /// Create a failed result
+    // Create a failed result
     pub fn failed(formatter: Formatter, error: String) -> Self {
         Self {
             formatter,
@@ -125,7 +125,7 @@ impl FormatResult {
         }
     }
 
-    /// Create a skipped result (formatter not available)
+    // Create a skipped result (formatter not available)
     pub fn skipped(formatter: Formatter, reason: String) -> Self {
         Self {
             formatter,
@@ -138,21 +138,21 @@ impl FormatResult {
     }
 }
 
-/// Batch formatting results
+// Batch formatting results
 #[derive(Debug, Clone)]
 pub struct BatchFormatResult {
-    /// Individual formatter results
+    // Individual formatter results
     pub results: Vec<FormatResult>,
-    /// Total files processed
+    // Total files processed
     pub total_files: usize,
-    /// Total files changed
+    // Total files changed
     pub total_changed: usize,
-    /// Overall success
+    // Overall success
     pub success: bool,
 }
 
 impl BatchFormatResult {
-    /// Create from individual results
+    // Create from individual results
     pub fn from_results(results: Vec<FormatResult>) -> Self {
         let total_files = results.iter().map(|r| r.files_processed).sum();
         let total_changed = results.iter().map(|r| r.files_changed).sum();
@@ -166,7 +166,7 @@ impl BatchFormatResult {
         }
     }
 
-    /// Get summary string
+    // Get summary string
     pub fn summary(&self) -> String {
         format!(
             "Processed {} files, {} needed formatting. Status: {}",
@@ -176,7 +176,7 @@ impl BatchFormatResult {
         )
     }
 
-    /// Get all errors
+    // Get all errors
     pub fn all_errors(&self) -> Vec<String> {
         self.results
             .iter()
@@ -184,7 +184,7 @@ impl BatchFormatResult {
             .collect()
     }
 
-    /// Get all warnings
+    // Get all warnings
     pub fn all_warnings(&self) -> Vec<String> {
         self.results
             .iter()
@@ -193,18 +193,18 @@ impl BatchFormatResult {
     }
 }
 
-/// Main formatter orchestrator
+// Main formatter orchestrator
 pub struct CodeFormatter {
-    /// Root directory to format
+    // Root directory to format
     root: PathBuf,
-    /// Formatters to use (empty = all available)
+    // Formatters to use (empty = all available)
     formatters: Vec<Formatter>,
-    /// Formatting mode
+    // Formatting mode
     mode: FormatMode,
 }
 
 impl CodeFormatter {
-    /// Create a new code formatter
+    // Create a new code formatter
     pub fn new(root: impl AsRef<Path>, mode: FormatMode) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
@@ -213,13 +213,13 @@ impl CodeFormatter {
         }
     }
 
-    /// Set specific formatters to use
+    // Set specific formatters to use
     pub fn with_formatters(mut self, formatters: Vec<Formatter>) -> Self {
         self.formatters = formatters;
         self
     }
 
-    /// Run formatting on all configured formatters
+    // Run formatting on all configured formatters
     pub fn run(&self) -> Result<BatchFormatResult, AuditError> {
         let formatters = if self.formatters.is_empty() {
             Formatter::all()
@@ -262,7 +262,7 @@ impl CodeFormatter {
         Ok(BatchFormatResult::from_results(results))
     }
 
-    /// Format Rust code using cargo fmt
+    // Format Rust code using cargo fmt
     fn format_rust(&self) -> Result<FormatResult, AuditError> {
         debug!("Looking for Rust workspace in {:?}", self.root);
 
@@ -328,7 +328,7 @@ impl CodeFormatter {
         ))
     }
 
-    /// Format Kotlin code using ktlint
+    // Format Kotlin code using ktlint
     fn format_kotlin(&self) -> Result<FormatResult, AuditError> {
         debug!("Looking for Kotlin files in {:?}", self.root);
 
@@ -389,7 +389,7 @@ impl CodeFormatter {
         ))
     }
 
-    /// Format code using prettier
+    // Format code using prettier
     fn format_prettier(&self) -> Result<FormatResult, AuditError> {
         debug!(
             "Looking for files that prettier can format in {:?}",
@@ -440,7 +440,7 @@ impl CodeFormatter {
         ))
     }
 
-    /// Format Python code using black
+    // Format Python code using black
     fn format_python(&self) -> Result<FormatResult, AuditError> {
         debug!("Looking for Python files in {:?}", self.root);
 
@@ -486,11 +486,11 @@ impl CodeFormatter {
         ))
     }
 
-    /// Find root Cargo workspaces (not workspace members)
-    ///
-    /// This finds Cargo.toml files that are either:
-    /// 1. Workspace roots (contain [workspace] section)
-    /// 2. Standalone crates (not part of a parent workspace)
+    // Find root Cargo workspaces (not workspace members)
+    //
+    // This finds Cargo.toml files that are either:
+    // 1. Workspace roots (contain [workspace] section)
+    // 2. Standalone crates (not part of a parent workspace)
     fn find_cargo_workspaces(&self) -> Result<Vec<PathBuf>, AuditError> {
         let mut workspace_roots = Vec::new();
         let mut all_cargo_dirs = Vec::new();
@@ -558,7 +558,7 @@ impl CodeFormatter {
         Ok(final_dirs)
     }
 
-    /// Find all files with given extensions
+    // Find all files with given extensions
     fn find_files_by_extension(&self, extensions: &[&str]) -> Result<Vec<PathBuf>, AuditError> {
         let mut files = Vec::new();
 

@@ -1,43 +1,50 @@
-//! # RustCode - Developer Workflow Management System
-//!
-//! A Rust-based workflow manager for solo developers to track repos, capture ideas,
-//! and leverage LLM-powered insights.
-//!
-//! ## Features
-//!
-//! - **Note & Thought Capture**: Quick note input with tag-based categorization
-//! - **Repository Management**: Track GitHub repos with cached directory trees
-//! - **LLM-Powered Analysis**: Grok 4.1 API integration for code insights
-//! - **File Scoring**: Quality, security, and complexity assessment
-//! - **Task Generation**: Automatically generate actionable tasks
-//! - **Solo Dev Workflow**: Research → Planning → Prototype → Production
-//! - **RAG System**: Git-friendly vector storage for semantic search
-//! - **Cost Management**: Efficient LLM usage with budget controls
-//!
-//! ## Architecture
-//!
-//! - Static analysis for fast pattern detection
-//! - LLM integration for deep code insights
-//! - Git operations for repository tracking
-//! - Vector storage for RAG system
-//! - RESTful API and CLI interface
+// # RustCode - Developer Workflow Management System
+//
+// A Rust-based workflow manager for solo developers to track repos, capture ideas,
+// and leverage LLM-powered insights.
+//
+// ## Features
+//
+// - **Note & Thought Capture**: Quick note input with tag-based categorization
+// - **Repository Management**: Track GitHub repos with cached directory trees
+// - **LLM-Powered Analysis**: Grok 4.1 API integration for code insights
+// - **File Scoring**: Quality, security, and complexity assessment
+// - **Task Generation**: Automatically generate actionable tasks
+// - **Solo Dev Workflow**: Research → Planning → Prototype → Production
+// - **RAG System**: Git-friendly vector storage for semantic search
+// - **Cost Management**: Efficient LLM usage with budget controls
+//
+// ## Architecture
+//
+// - Static analysis for fast pattern detection
+// - LLM integration for deep code insights
+// - Git operations for repository tracking
+// - Vector storage for RAG system
+// - RESTful API and CLI interface
 
 pub mod api;
 pub mod audit;
-pub mod auto_scanner;
 pub mod backup;
+pub mod cli;
+pub mod db;
+pub mod github;
+pub mod llm;
+pub mod queue;
+pub mod research;
+pub mod scanner;
+pub mod task;
+pub mod todo;
+pub mod auto_scanner;
 pub mod cache;
 pub mod cache_layer;
 pub mod cache_migrate;
 pub mod chunking;
-pub mod cli;
 pub mod code_chunker;
 pub mod code_review;
 pub mod config;
-pub mod context;
-pub mod context_builder;
+pub mod context_llm;
+pub mod context_rag;
 pub mod cost_tracker;
-pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
 pub mod embeddings;
@@ -45,11 +52,9 @@ pub mod enhanced_scanner;
 pub mod error;
 pub mod formatter;
 pub mod git;
-pub mod github;
 pub mod grok_client;
 pub mod grok_reasoning;
 pub mod indexing;
-pub mod llm;
 pub mod llm_audit;
 pub mod llm_config;
 pub mod metrics;
@@ -62,16 +67,13 @@ pub mod prompt_router;
 pub mod query_analytics;
 pub mod query_router;
 pub mod query_templates;
-pub mod queue;
 pub mod refactor_assistant;
 pub mod repo_analysis;
 pub mod repo_cache;
 pub mod repo_cache_sql;
 pub mod repo_manager;
 pub mod repo_sync;
-pub mod research;
 pub mod response_cache;
-pub mod scanner;
 pub mod scoring;
 pub mod search;
 pub mod server;
@@ -79,12 +81,10 @@ pub mod static_analysis;
 pub mod sync_scheduler;
 pub mod tag_schema;
 pub mod tags;
-pub mod task;
 pub mod tasks;
 pub mod telemetry;
 pub mod test_generator;
 pub mod tests_runner;
-pub mod todo;
 pub mod todo_scanner;
 pub mod token_budget;
 pub mod tree_state;
@@ -117,8 +117,8 @@ pub use code_review::{
     CodeReview, CodeReviewer, FileReview, IssueSeverity, ReviewIssue, ReviewStats,
 };
 pub use config::Config;
-pub use context::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
-pub use context_builder::{Context, ContextBuilder, ContextFile, QueryBuilder};
+pub use context_llm::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
+pub use context_rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
 pub use cost_tracker::{
     BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
     TokenUsage,
@@ -222,7 +222,7 @@ pub use tag_schema::{
 };
 pub use tags::TagScanner;
 pub use tasks::TaskGenerator;
-pub use telemetry::{init_telemetry, shutdown_telemetry, TelemetryConfig};
+pub use telemetry::{init_telemetry, TelemetryConfig};
 pub use test_generator::{
     Fixture, GeneratedTests, TestCase, TestFramework, TestGapAnalysis, TestGenerator, TestType,
     UntestFunction,
@@ -244,7 +244,7 @@ pub use webhooks::{
     WebhookPayload,
 };
 
-/// Re-export commonly used types
+// Re-export commonly used types
 pub mod prelude {
     pub use crate::api::{
         create_api_router, create_default_api_router, ApiConfig, ApiResponse, ApiState, AuthConfig,
@@ -255,8 +255,8 @@ pub mod prelude {
         ChunkerConfig, ChunkingStats, CodeChunk, CodeChunker, DedupIndex, EntityType,
     };
     pub use crate::config::Config;
-    pub use crate::context::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
-    pub use crate::context_builder::{Context, ContextBuilder, ContextFile, QueryBuilder};
+    pub use crate::context_llm::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
+    pub use crate::context_rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
     pub use crate::cost_tracker::{
         BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
         TokenUsage,

@@ -1,7 +1,7 @@
-//! Database Configuration
-//!
-//! Handles PostgreSQL connection pool configuration and initialization.
-//! Reads DATABASE_URL from the environment (set via .env or docker-compose).
+// Database Configuration
+//
+// Handles PostgreSQL connection pool configuration and initialization.
+// Reads DATABASE_URL from the environment (set via .env or docker-compose).
 
 use anyhow::{Context, Result};
 use sqlx::PgPool;
@@ -12,17 +12,17 @@ use tracing::info;
 // Configuration
 // ============================================================================
 
-/// Database configuration loaded from environment
+// Database configuration loaded from environment
 #[derive(Debug, Clone)]
 pub struct DatabaseConfig {
-    /// Full Postgres connection URL
-    /// e.g. postgresql://rustcode:changeme@postgres:5432/rustcode
+    // Full Postgres connection URL
+    // e.g. postgresql://rustcode:changeme@postgres:5432/rustcode
     pub url: String,
-    /// Whether to run migrations on startup
+    // Whether to run migrations on startup
     pub auto_migrate: bool,
-    /// Maximum connections in pool
+    // Maximum connections in pool
     pub max_connections: u32,
-    /// Whether this is a development environment
+    // Whether this is a development environment
     pub is_dev: bool,
 }
 
@@ -38,7 +38,7 @@ impl Default for DatabaseConfig {
 }
 
 impl DatabaseConfig {
-    /// Load configuration from environment variables
+    // Load configuration from environment variables
     pub fn from_env() -> Self {
         let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| get_default_db_url());
 
@@ -68,11 +68,11 @@ impl DatabaseConfig {
 // URL Resolution
 // ============================================================================
 
-/// Get the default Postgres URL.
-/// Precedence:
-///   1. DATABASE_URL env var (handled in from_env)
-///   2. Compose default (postgres service on localhost)
-///   3. Local dev fallback
+// Get the default Postgres URL.
+// Precedence:
+//   1. DATABASE_URL env var (handled in from_env)
+//   2. Compose default (postgres service on localhost)
+//   3. Local dev fallback
 fn get_default_db_url() -> String {
     // Try compose-style env vars as a fallback construction
     if let (Ok(user), Ok(password), Ok(host), Ok(db)) = (
@@ -96,10 +96,10 @@ fn get_default_db_url() -> String {
 // Pool Creation
 // ============================================================================
 
-/// Initialize the PostgreSQL connection pool.
-///
-/// Connects using DATABASE_URL, runs sqlx migrations if `auto_migrate` is set,
-/// and returns a ready-to-use `PgPool`.
+// Initialize the PostgreSQL connection pool.
+//
+// Connects using DATABASE_URL, runs sqlx migrations if `auto_migrate` is set,
+// and returns a ready-to-use `PgPool`.
 pub async fn init_pool(config: &DatabaseConfig) -> Result<PgPool> {
     info!(url = %redact_url(&config.url), "Connecting to PostgreSQL");
 
@@ -126,10 +126,10 @@ pub async fn init_pool(config: &DatabaseConfig) -> Result<PgPool> {
     Ok(pool)
 }
 
-/// Run all pending sqlx migrations from the `./migrations` directory.
+// Run all pending sqlx migrations from the `./migrations` directory.
 async fn run_migrations(pool: &PgPool) -> Result<()> {
     info!("Running database migrations...");
-    sqlx::migrate!("./migrations")
+    sqlx::migrate!("./sql")
         .run(pool)
         .await
         .context("Failed to run database migrations")?;
@@ -141,9 +141,9 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 // Utilities
 // ============================================================================
 
-/// Redact the password from a database URL for safe logging.
-///
-/// `postgresql://user:secret@host:5432/db` → `postgresql://user:***@host:5432/db`
+// Redact the password from a database URL for safe logging.
+//
+// `postgresql://user:secret@host:5432/db` → `postgresql://user:***@host:5432/db`
 fn redact_url(url: &str) -> String {
     // Quick heuristic: find `:` after `//user` and replace until `@`
     if let Some(at_pos) = url.find('@') {
@@ -161,7 +161,7 @@ fn redact_url(url: &str) -> String {
 // Health Check
 // ============================================================================
 
-/// Check database connectivity and return basic statistics.
+// Check database connectivity and return basic statistics.
 pub async fn health_check(pool: &PgPool) -> Result<DatabaseHealth> {
     let start = std::time::Instant::now();
 
@@ -197,10 +197,10 @@ pub struct DatabaseHealth {
 // Backup Utilities
 // ============================================================================
 
-/// Create a logical backup of the database using pg_dump (shell out).
-///
-/// `backup_path` should end in `.sql` or `.dump`.
-/// Requires `pg_dump` to be available on `PATH`.
+// Create a logical backup of the database using pg_dump (shell out).
+//
+// `backup_path` should end in `.sql` or `.dump`.
+// Requires `pg_dump` to be available on `PATH`.
 pub async fn backup_database(_pool: &PgPool, backup_path: &std::path::Path) -> Result<()> {
     use std::process::Command;
 
@@ -226,7 +226,7 @@ pub async fn backup_database(_pool: &PgPool, backup_path: &std::path::Path) -> R
     Ok(())
 }
 
-/// Get a timestamped backup file path.
+// Get a timestamped backup file path.
 pub fn get_backup_path() -> std::path::PathBuf {
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     std::path::PathBuf::from(format!("./data/backups/rustcode_{}.dump", timestamp))
@@ -236,7 +236,7 @@ pub fn get_backup_path() -> std::path::PathBuf {
 // Environment Variables Documentation
 // ============================================================================
 
-/// Print help for database-related environment variables to stdout.
+// Print help for database-related environment variables to stdout.
 pub fn print_env_help() {
     println!(
         r#"
@@ -280,13 +280,13 @@ DATABASE_URL=postgresql://rustcode:changeme@localhost:5432/rustcode
 // Legacy shim — previously exported from this module
 // ============================================================================
 
-/// Ensure the data directory exists (no-op for Postgres; kept for API compat).
+// Ensure the data directory exists (no-op for Postgres; kept for API compat).
 pub fn ensure_data_dir(_config: &DatabaseConfig) -> Result<()> {
     Ok(())
 }
 
-/// Get the data directory.  Returns `./data` as a conventional location for
-/// non-DB artefacts (logs, backups, cache).
+// Get the data directory.  Returns `./data` as a conventional location for
+// non-DB artefacts (logs, backups, cache).
 pub fn get_data_dir(_config: &DatabaseConfig) -> std::path::PathBuf {
     std::path::PathBuf::from("./data")
 }

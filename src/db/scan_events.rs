@@ -1,6 +1,6 @@
 // src/db/scan_events.rs
-//! Scan events - activity feed for scanner operations and system events.
-//! Provides real-time observability into what the scanner is doing.
+// Scan events - activity feed for scanner operations and system events.
+// Provides real-time observability into what the scanner is doing.
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
@@ -56,7 +56,7 @@ impl ScanProgress {
 // Scan Event CRUD
 // ============================================================================
 
-/// Log a scan event
+// Log a scan event
 pub async fn log_scan_event(
     pool: &PgPool,
     repo_id: Option<&str>,
@@ -86,7 +86,7 @@ pub async fn log_scan_event(
     Ok(row.0)
 }
 
-/// Convenience: log info event
+// Convenience: log info event
 pub async fn log_info(
     pool: &PgPool,
     repo_id: Option<&str>,
@@ -96,7 +96,7 @@ pub async fn log_info(
     log_scan_event(pool, repo_id, event_type, message, None, "info").await
 }
 
-/// Convenience: log error event
+// Convenience: log error event
 pub async fn log_error(
     pool: &PgPool,
     repo_id: Option<&str>,
@@ -115,7 +115,7 @@ pub async fn log_error(
     .await
 }
 
-/// Get recent scan events (for activity feed)
+// Get recent scan events (for activity feed)
 pub async fn get_recent_events(
     pool: &PgPool,
     limit: i64,
@@ -150,7 +150,7 @@ pub async fn get_recent_events(
     }
 }
 
-/// Get events for a specific repo
+// Get events for a specific repo
 pub async fn get_repo_events(
     pool: &PgPool,
     repo_id: &str,
@@ -171,7 +171,7 @@ pub async fn get_repo_events(
     .await
 }
 
-/// Prune old events (keep last N days)
+// Prune old events (keep last N days)
 pub async fn prune_events(pool: &PgPool, keep_days: i64) -> Result<u64, sqlx::Error> {
     let cutoff = chrono::Utc::now().timestamp() - (keep_days * 86400);
     let result = sqlx::query("DELETE FROM scan_events WHERE created_at < $1")
@@ -185,7 +185,7 @@ pub async fn prune_events(pool: &PgPool, keep_days: i64) -> Result<u64, sqlx::Er
 // Scan Progress Updates (on repositories table)
 // ============================================================================
 
-/// Update scan status for a repository
+// Update scan status for a repository
 pub async fn update_scan_status(
     pool: &PgPool,
     repo_id: &str,
@@ -214,7 +214,7 @@ pub async fn update_scan_status(
     Ok(())
 }
 
-/// Mark scan as started
+// Mark scan as started
 pub async fn mark_scan_started(
     pool: &PgPool,
     repo_id: &str,
@@ -232,7 +232,7 @@ pub async fn mark_scan_started(
     Ok(())
 }
 
-/// Update scan file progress
+// Update scan file progress
 pub async fn update_scan_file_progress(
     pool: &PgPool,
     repo_id: &str,
@@ -276,7 +276,7 @@ pub async fn update_scan_file_progress(
     Ok(())
 }
 
-/// Mark scan as complete
+// Mark scan as complete
 pub async fn mark_scan_complete(
     pool: &PgPool,
     repo_id: &str,
@@ -326,7 +326,7 @@ pub async fn mark_scan_complete(
     Ok(())
 }
 
-/// Mark scan as errored
+// Mark scan as errored
 pub async fn mark_scan_error(pool: &PgPool, repo_id: &str, error: &str) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
 

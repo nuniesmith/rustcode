@@ -1,40 +1,40 @@
-//! # Cost Tracker Module
-//!
-//! Tracks LLM API usage and costs for budget monitoring.
-//!
-//! ## Features
-//!
-//! - Per-query cost tracking
-//! - Daily/weekly/monthly aggregations
-//! - Budget alerts
-//! - Cost breakdown by operation type
-//! - Cache hit/miss impact analysis
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::cost_tracker::{CostTracker, TokenUsage};
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     # let pool = rustcode::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
-//!     let tracker = CostTracker::new(pool).await?;
-//!
-//!     // Log an API call
-//!     let usage = TokenUsage {
-//!         input_tokens: 100_000,
-//!         output_tokens: 50_000,
-//!         cached_tokens: 0,
-//!     };
-//!     tracker.log_call("code_review", "grok-4-1-fast-reasoning", usage, false).await?;
-//!
-//!     // Get daily stats
-//!     let stats = tracker.get_daily_stats().await?;
-//!     println!("Today's cost: ${:.2}", stats.total_cost_usd);
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Cost Tracker Module
+//
+// Tracks LLM API usage and costs for budget monitoring.
+//
+// ## Features
+//
+// - Per-query cost tracking
+// - Daily/weekly/monthly aggregations
+// - Budget alerts
+// - Cost breakdown by operation type
+// - Cache hit/miss impact analysis
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::cost_tracker::{CostTracker, TokenUsage};
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     # let pool = rustcode::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
+//     let tracker = CostTracker::new(pool).await?;
+//
+//     // Log an API call
+//     let usage = TokenUsage {
+//         input_tokens: 100_000,
+//         output_tokens: 50_000,
+//         cached_tokens: 0,
+//     };
+//     tracker.log_call("code_review", "grok-4-1-fast-reasoning", usage, false).await?;
+//
+//     // Get daily stats
+//     let stats = tracker.get_daily_stats().await?;
+//     println!("Today's cost: ${:.2}", stats.total_cost_usd);
+//
+//     Ok(())
+// }
+// ```
 
 use crate::error::AuditError;
 use anyhow::{Context, Result};
@@ -43,16 +43,16 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
-/// Grok 4.1 Fast pricing (per million tokens)
+// Grok 4.1 Fast pricing (per million tokens)
 const GROK_COST_PER_MILLION_INPUT: f64 = 0.20;
 const GROK_COST_PER_MILLION_OUTPUT: f64 = 0.50;
 const GROK_COST_PER_MILLION_CACHED: f64 = 0.05;
 
-/// Default budget alert threshold (USD)
+// Default budget alert threshold (USD)
 const DEFAULT_DAILY_BUDGET: f64 = 1.0;
 const DEFAULT_MONTHLY_BUDGET: f64 = 10.0;
 
-/// Token usage for a single API call
+// Token usage for a single API call
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
@@ -60,7 +60,7 @@ pub struct TokenUsage {
     pub cached_tokens: u64,
 }
 
-/// Cost statistics for a time period
+// Cost statistics for a time period
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostStats {
     pub total_queries: u64,
@@ -75,7 +75,7 @@ pub struct CostStats {
     pub period_end: DateTime<Utc>,
 }
 
-/// Cost breakdown by operation type
+// Cost breakdown by operation type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperationCost {
     pub operation: String,
@@ -85,7 +85,7 @@ pub struct OperationCost {
     pub total_tokens: u64,
 }
 
-/// Budget status
+// Budget status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetStatus {
     pub daily_spend: f64,
@@ -99,59 +99,59 @@ pub struct BudgetStatus {
     pub alerts: Vec<String>,
 }
 
-/// Record of a static analysis decision for cost tracking
+// Record of a static analysis decision for cost tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticDecisionRecord {
-    /// File path that was analyzed
+    // File path that was analyzed
     pub file_path: String,
-    /// Repository identifier
+    // Repository identifier
     pub repo_id: String,
-    /// The recommendation from static analysis (SKIP, MINIMAL, STANDARD, DEEP_DIVE)
+    // The recommendation from static analysis (SKIP, MINIMAL, STANDARD, DEEP_DIVE)
     pub recommendation: String,
-    /// Reason for skip (if recommendation was SKIP)
+    // Reason for skip (if recommendation was SKIP)
     pub skip_reason: Option<String>,
-    /// Number of static issues found (without LLM)
+    // Number of static issues found (without LLM)
     pub static_issue_count: i64,
-    /// Estimated LLM value score (0.0-1.0)
+    // Estimated LLM value score (0.0-1.0)
     pub estimated_llm_value: f64,
-    /// Whether an LLM call was actually made
+    // Whether an LLM call was actually made
     pub llm_called: bool,
-    /// Estimated cost saved in USD (if skipped or downgraded)
+    // Estimated cost saved in USD (if skipped or downgraded)
     pub estimated_cost_saved_usd: f64,
-    /// Actual cost if LLM was called
+    // Actual cost if LLM was called
     pub actual_cost_usd: f64,
-    /// Prompt tier used (if LLM was called)
+    // Prompt tier used (if LLM was called)
     pub prompt_tier: Option<String>,
 }
 
-/// Summary of savings from static analysis decisions
+// Summary of savings from static analysis decisions
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SavingsReport {
-    /// Total files processed
+    // Total files processed
     pub total_files: i64,
-    /// Files skipped entirely (no LLM call)
+    // Files skipped entirely (no LLM call)
     pub files_skipped: i64,
-    /// Files that used minimal prompt
+    // Files that used minimal prompt
     pub files_minimal: i64,
-    /// Files that used standard prompt
+    // Files that used standard prompt
     pub files_standard: i64,
-    /// Files that used deep-dive prompt
+    // Files that used deep-dive prompt
     pub files_deep_dive: i64,
-    /// Total estimated cost saved in USD
+    // Total estimated cost saved in USD
     pub total_estimated_savings_usd: f64,
-    /// Total actual cost spent on LLM calls
+    // Total actual cost spent on LLM calls
     pub total_actual_cost_usd: f64,
-    /// Number of LLM calls avoided
+    // Number of LLM calls avoided
     pub llm_calls_avoided: i64,
-    /// Total static issues found across all files
+    // Total static issues found across all files
     pub total_static_issues: i64,
-    /// Savings as a percentage of total possible cost
+    // Savings as a percentage of total possible cost
     pub savings_percent: f64,
-    /// Period for this report
+    // Period for this report
     pub period: String,
 }
 
-/// LLM API cost tracker
+// LLM API cost tracker
 pub struct CostTracker {
     pool: PgPool,
     daily_budget: f64,
@@ -159,7 +159,7 @@ pub struct CostTracker {
 }
 
 impl CostTracker {
-    /// Create a new cost tracker
+    // Create a new cost tracker
     pub async fn new(pool: PgPool) -> Result<Self> {
         let tracker = Self {
             pool,
@@ -172,7 +172,7 @@ impl CostTracker {
         Ok(tracker)
     }
 
-    /// Create with custom budget limits
+    // Create with custom budget limits
     pub async fn with_budgets(
         pool: PgPool,
         daily_budget: f64,
@@ -189,7 +189,7 @@ impl CostTracker {
         Ok(tracker)
     }
 
-    /// Initialize database schema
+    // Initialize database schema
     async fn initialize_schema(&self) -> Result<()> {
         // Acquire a session-level advisory lock so that concurrent test threads
         // don't race on `CREATE TABLE IF NOT EXISTS` + `BIGSERIAL` sequence
@@ -295,7 +295,7 @@ impl CostTracker {
         Ok(())
     }
 
-    /// Log an API call
+    // Log an API call
     pub async fn log_call(
         &self,
         operation: &str,
@@ -343,7 +343,7 @@ impl CostTracker {
         Ok(id)
     }
 
-    /// Calculate cost for token usage
+    // Calculate cost for token usage
     fn calculate_cost(&self, usage: &TokenUsage) -> f64 {
         let input_cost = (usage.input_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_INPUT;
         let output_cost = (usage.output_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_OUTPUT;
@@ -356,11 +356,11 @@ impl CostTracker {
     // Static analysis savings tracking
     // -------------------------------------------------------------------
 
-    /// Log a static analysis decision (skip, minimal, standard, or deep-dive)
-    ///
-    /// Call this for every file processed by the scanner, whether or not an LLM
-    /// call was made. This lets us track and report cost savings from static
-    /// pre-filtering.
+    // Log a static analysis decision (skip, minimal, standard, or deep-dive)
+    //
+    // Call this for every file processed by the scanner, whether or not an LLM
+    // call was made. This lets us track and report cost savings from static
+    // pre-filtering.
     pub async fn log_static_decision(&self, record: &StaticDecisionRecord) -> Result<i64> {
         let row: (i64,) = sqlx::query_as(
             r#"
@@ -400,32 +400,32 @@ impl CostTracker {
         Ok(id)
     }
 
-    /// Get savings report for today
+    // Get savings report for today
     pub async fn get_daily_savings_report(&self) -> Result<SavingsReport> {
         self.get_savings_report_for_period("timestamp::date = CURRENT_DATE", "today")
             .await
     }
 
-    /// Get savings report for the last 7 days
+    // Get savings report for the last 7 days
     pub async fn get_weekly_savings_report(&self) -> Result<SavingsReport> {
         self.get_savings_report_for_period("timestamp >= NOW() - INTERVAL '7 days'", "last 7 days")
             .await
     }
 
-    /// Get savings report for the current month
+    // Get savings report for the current month
     pub async fn get_monthly_savings_report(&self) -> Result<SavingsReport> {
         self.get_savings_report_for_period("timestamp >= DATE_TRUNC('month', NOW())", "this month")
             .await
     }
 
-    /// Get savings report for a specific repo
+    // Get savings report for a specific repo
     pub async fn get_repo_savings_report(&self, repo_id: &str) -> Result<SavingsReport> {
         let where_clause = format!("repo_id = '{}'", repo_id.replace('\'', "''"));
         self.get_savings_report_for_period(&where_clause, &format!("repo: {}", repo_id))
             .await
     }
 
-    /// Internal helper to build a savings report from a WHERE clause
+    // Internal helper to build a savings report from a WHERE clause
     async fn get_savings_report_for_period(
         &self,
         where_clause: &str,
@@ -476,9 +476,9 @@ impl CostTracker {
         })
     }
 
-    /// Estimate what an LLM call would cost for a file of the given size (in chars).
-    /// Used to calculate savings when a file is skipped.
-    /// Based on Grok 4.1 Fast pricing with ~30% output ratio.
+    // Estimate what an LLM call would cost for a file of the given size (in chars).
+    // Used to calculate savings when a file is skipped.
+    // Based on Grok 4.1 Fast pricing with ~30% output ratio.
     pub fn estimate_file_cost(char_count: usize) -> f64 {
         let input_tokens = char_count as f64 / 4.0; // ~4 chars per token
         let output_tokens = input_tokens * 0.3;
@@ -487,13 +487,13 @@ impl CostTracker {
         input_cost + output_cost
     }
 
-    /// Get statistics for all time (useful for testing)
+    // Get statistics for all time (useful for testing)
     pub async fn get_all_time_stats(&self) -> Result<CostStats> {
         self.get_stats_for_period("1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z")
             .await
     }
 
-    /// Get statistics for today
+    // Get statistics for today
     pub async fn get_daily_stats(&self) -> Result<CostStats> {
         let today = Utc::now().date_naive();
         let start = today.and_hms_opt(0, 0, 0).unwrap().and_utc().to_rfc3339();
@@ -506,7 +506,7 @@ impl CostTracker {
         self.get_stats_for_period(&start, &end).await
     }
 
-    /// Get statistics for this week
+    // Get statistics for this week
     pub async fn get_weekly_stats(&self) -> Result<CostStats> {
         let now = Utc::now();
         let start = (now - Duration::days(7)).to_rfc3339();
@@ -515,7 +515,7 @@ impl CostTracker {
         self.get_stats_for_period(&start, &end).await
     }
 
-    /// Get statistics for this month
+    // Get statistics for this month
     pub async fn get_monthly_stats(&self) -> Result<CostStats> {
         let now = Utc::now();
         let year = now.year();
@@ -528,7 +528,7 @@ impl CostTracker {
         self.get_stats_for_period(&start_dt, &end).await
     }
 
-    /// Get statistics for a custom period
+    // Get statistics for a custom period
     async fn get_stats_for_period(&self, start: &str, end: &str) -> Result<CostStats> {
         let (
             total_queries,
@@ -600,7 +600,7 @@ impl CostTracker {
         })
     }
 
-    /// Get cost breakdown by operation type
+    // Get cost breakdown by operation type
     pub async fn get_operation_breakdown(
         &self,
         start: &str,
@@ -644,7 +644,7 @@ impl CostTracker {
             .collect())
     }
 
-    /// Get budget status
+    // Get budget status
     pub async fn get_budget_status(&self) -> Result<BudgetStatus> {
         let daily_stats = self.get_daily_stats().await?;
         let monthly_stats = self.get_monthly_stats().await?;
@@ -694,7 +694,7 @@ impl CostTracker {
         })
     }
 
-    /// Check budget and emit warnings
+    // Check budget and emit warnings
     async fn check_budget_alerts(&self) -> Result<()> {
         let status = self.get_budget_status().await?;
 
@@ -705,7 +705,7 @@ impl CostTracker {
         Ok(())
     }
 
-    /// Generate daily report (now includes static analysis savings)
+    // Generate daily report (now includes static analysis savings)
     pub async fn daily_report(&self) -> Result<String> {
         let stats = self.get_daily_stats().await?;
         let status = self.get_budget_status().await?;
@@ -774,7 +774,7 @@ impl CostTracker {
         Ok(report)
     }
 
-    /// Get top expensive queries
+    // Get top expensive queries
     pub async fn get_expensive_queries(&self, limit: i64) -> Result<Vec<(String, f64, i64)>> {
         let rows = sqlx::query_as::<_, (String, f64, String)>(
             r#"
@@ -798,7 +798,7 @@ impl CostTracker {
             .collect())
     }
 
-    /// Clear old records (for cleanup)
+    // Clear old records (for cleanup)
     pub async fn clear_old_records(&self, days: i64) -> Result<u64> {
         let cutoff = (Utc::now() - Duration::days(days)).to_rfc3339();
 
@@ -819,7 +819,7 @@ impl CostTracker {
         Ok(deleted)
     }
 
-    /// Clear old static decision records
+    // Clear old static decision records
     pub async fn clear_old_static_decisions(&self, days: i64) -> Result<u64> {
         let cutoff = (Utc::now() - Duration::days(days)).to_rfc3339();
 
@@ -845,7 +845,7 @@ impl CostTracker {
         Ok(deleted)
     }
 
-    /// Get combined daily report as structured data (for API/UI consumption)
+    // Get combined daily report as structured data (for API/UI consumption)
     pub async fn get_combined_daily_report(
         &self,
     ) -> Result<(CostStats, SavingsReport, BudgetStatus)> {
@@ -857,7 +857,7 @@ impl CostTracker {
 }
 
 impl SavingsReport {
-    /// Format as a human-readable summary
+    // Format as a human-readable summary
     pub fn format_summary(&self) -> String {
         format!(
             "Static Analysis Savings ({}): {} files ({} skipped, {} minimal, {} std, {} deep) | \

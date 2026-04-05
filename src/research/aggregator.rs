@@ -1,6 +1,6 @@
-//! Research Aggregator
-//!
-//! Synthesizes findings from multiple workers into a coherent report.
+// Research Aggregator
+//
+// Synthesizes findings from multiple workers into a coherent report.
 
 use super::{ResearchRequest, WorkerResult};
 use crate::llm::GrokClient;
@@ -50,7 +50,7 @@ impl Aggregator {
         }
     }
 
-    /// Aggregate worker results into a final report
+    // Aggregate worker results into a final report
     pub async fn aggregate(
         &self,
         request: &ResearchRequest,
@@ -98,7 +98,7 @@ impl Aggregator {
         })
     }
 
-    /// Use LLM to synthesize findings
+    // Use LLM to synthesize findings
     async fn synthesize(
         &self,
         request: &ResearchRequest,
@@ -172,7 +172,7 @@ Recommendations should be practical next steps based on the research."#,
 // ============================================================================
 
 impl ResearchReport {
-    /// Format as markdown
+    // Format as markdown
     pub fn to_markdown(&self) -> String {
         let mut md = String::new();
 
@@ -211,12 +211,12 @@ impl ResearchReport {
         md
     }
 
-    /// Format as JSON
+    // Format as JSON
     pub fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    /// Format for Zed IDE paste
+    // Format for Zed IDE paste
     pub fn to_zed_format(&self) -> String {
         let mut output = String::new();
 

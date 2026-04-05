@@ -1,7 +1,7 @@
-//! Backup System
-//!
-//! Handles database and cache backup to Google Drive using rclone.
-//! No API keys needed - uses rclone's OAuth flow.
+// Backup System
+//
+// Handles database and cache backup to Google Drive using rclone.
+// No API keys needed - uses rclone's OAuth flow.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -15,19 +15,19 @@ use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct BackupConfig {
-    /// Local data directory to backup
+    // Local data directory to backup
     pub data_dir: PathBuf,
 
-    /// rclone remote name (e.g., "gdrive")
+    // rclone remote name (e.g., "gdrive")
     pub remote_name: String,
 
-    /// Remote path for backups
+    // Remote path for backups
     pub remote_path: String,
 
-    /// Number of backups to keep
+    // Number of backups to keep
     pub retention_count: usize,
 
-    /// Backup schedule (cron format)
+    // Backup schedule (cron format)
     pub schedule: Option<String>,
 }
 
@@ -77,7 +77,7 @@ impl BackupManager {
         Self { config }
     }
 
-    /// Check if rclone is installed and configured
+    // Check if rclone is installed and configured
     pub fn check_rclone(&self) -> Result<bool> {
         let output = Command::new("rclone").args(["version"]).output().context(
             "rclone not found. Install with: curl https://rclone.org/install.sh | sudo bash",
@@ -103,7 +103,7 @@ impl BackupManager {
         Ok(remote_exists)
     }
 
-    /// Create a backup of the data directory
+    // Create a backup of the data directory
     pub fn create_backup(&self) -> Result<BackupResult> {
         info!("Starting backup to {}", self.config.remote_name);
 
@@ -153,7 +153,7 @@ impl BackupManager {
         })
     }
 
-    /// Create a local snapshot of databases
+    // Create a local snapshot of databases
     fn create_snapshot(&self, timestamp: &str) -> Result<PathBuf> {
         let snapshot_dir = std::env::temp_dir()
             .join("rustcode-backup")
@@ -202,7 +202,7 @@ impl BackupManager {
         Ok(snapshot_dir)
     }
 
-    /// Get size of remote backup
+    // Get size of remote backup
     fn get_remote_size(&self, remote_path: &str) -> Result<u64> {
         let output = Command::new("rclone")
             .args(["size", remote_path, "--json"])
@@ -216,7 +216,7 @@ impl BackupManager {
         }
     }
 
-    /// Remove old backups beyond retention count
+    // Remove old backups beyond retention count
     fn cleanup_old_backups(&self) -> Result<()> {
         let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
@@ -254,7 +254,7 @@ impl BackupManager {
         Ok(())
     }
 
-    /// List available backups
+    // List available backups
     pub fn list_backups(&self) -> Result<Vec<BackupInfo>> {
         let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
@@ -288,7 +288,7 @@ impl BackupManager {
         Ok(backups)
     }
 
-    /// Restore from a specific backup
+    // Restore from a specific backup
     pub fn restore(&self, backup_name: &str) -> Result<()> {
         info!("Restoring from backup: {}", backup_name);
 

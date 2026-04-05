@@ -1,6 +1,6 @@
-//! LLM module
-//!
-//! Provides LLM integration for code analysis and content processing.
+// LLM module
+//
+// Provides LLM integration for code analysis and content processing.
 
 pub mod compat;
 pub mod grok;

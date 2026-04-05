@@ -1,23 +1,23 @@
-//! Grok 4.20 Integration Tests — RC-CRATES-G
-//!
-//! Validates the full xAI API stack end-to-end:
-//!   1. `api::OpenAiCompatClient` (via `llm::simple_client::GrokClient`) completes a prompt
-//!   2. `ModelRouter` correctly classifies 5 distinct prompt types and routes them
-//!   3. RAG injection: repo context is included and `rag_chunks_used > 0`
-//!   4. Cache: identical request hits `ResponseCache` on the second call
-//!   5. Smoke: flip to Anthropic/Claude and verify provider detection switches cleanly
-//!
-//! These tests require live network access and valid API keys.
-//! They are gated behind the `integration` feature flag and must **never** run
-//! in CI unless explicitly opted-in.
-//!
-//! # Running
-//! ```bash
-//! XAI_API_KEY=xai-... cargo test --features integration --test test_grok_integration -- --nocapture
-//!
-//! # For the Claude smoke test (task G-5):
-//! ANTHROPIC_API_KEY=sk-ant-... cargo test --features integration test_claude_switch -- --nocapture
-//! ```
+// Grok 4.20 Integration Tests — RC-CRATES-G
+//
+// Validates the full xAI API stack end-to-end:
+//   1. `api::OpenAiCompatClient` (via `llm::simple_client::GrokClient`) completes a prompt
+//   2. `ModelRouter` correctly classifies 5 distinct prompt types and routes them
+//   3. RAG injection: repo context is included and `rag_chunks_used > 0`
+//   4. Cache: identical request hits `ResponseCache` on the second call
+//   5. Smoke: flip to Anthropic/Claude and verify provider detection switches cleanly
+//
+// These tests require live network access and valid API keys.
+// They are gated behind the `integration` feature flag and must **never** run
+// in CI unless explicitly opted-in.
+//
+// # Running
+// ```bash
+// XAI_API_KEY=xai-... cargo test --features integration --test test_grok_integration -- --nocapture
+//
+// # For the Claude smoke test (task G-5):
+// ANTHROPIC_API_KEY=sk-ant-... cargo test --features integration test_claude_switch -- --nocapture
+// ```
 
 #![cfg(feature = "integration")]
 
@@ -31,7 +31,7 @@ use rustcode::response_cache::ResponseCache;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Skip a test cleanly when the required environment variable is absent.
+// Skip a test cleanly when the required environment variable is absent.
 macro_rules! require_env {
     ($var:expr) => {
         match std::env::var($var) {
@@ -48,7 +48,7 @@ macro_rules! require_env {
     };
 }
 
-/// Build a `GrokClient` from `XAI_API_KEY`; skip if absent.
+// Build a `GrokClient` from `XAI_API_KEY`; skip if absent.
 fn xai_client() -> GrokClient {
     let key = require_env!("XAI_API_KEY");
     GrokClient::new(key)
@@ -59,8 +59,8 @@ fn xai_client() -> GrokClient {
 // G-1  api::Client::complete() — non-empty response
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Verify that a simple prompt round-trips through `OpenAiCompatClient` and
-/// returns a non-empty, plausible assistant message.
+// Verify that a simple prompt round-trips through `OpenAiCompatClient` and
+// returns a non-empty, plausible assistant message.
 #[tokio::test]
 async fn test_grok_complete_returns_nonempty_response() {
     let client = xai_client();
@@ -92,8 +92,8 @@ async fn test_grok_complete_returns_nonempty_response() {
     eprintln!("[G-1] response ({elapsed:?}): {response:?}");
 }
 
-/// Verify `generate()` respects an explicit `max_tokens` limit (proxy check: no
-/// panic, non-empty output).
+// Verify `generate()` respects an explicit `max_tokens` limit (proxy check: no
+// panic, non-empty output).
 #[tokio::test]
 async fn test_grok_generate_with_explicit_token_limit() {
     let client = xai_client();
@@ -111,8 +111,8 @@ async fn test_grok_generate_with_explicit_token_limit() {
 // G-2  ModelRouter — classifies 5 prompt types correctly + routes to correct provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Map of `(prompt_text, expected_TaskKind)` covering all five distinct categories
-/// required by RC-CRATES-G.
+// Map of `(prompt_text, expected_TaskKind)` covering all five distinct categories
+// required by RC-CRATES-G.
 fn classification_cases() -> Vec<(&'static str, TaskKind)> {
     vec![
         (
@@ -138,7 +138,7 @@ fn classification_cases() -> Vec<(&'static str, TaskKind)> {
     ]
 }
 
-/// G-2a: keyword classifier (sync, no live API needed).
+// G-2a: keyword classifier (sync, no live API needed).
 #[test]
 fn test_model_router_keyword_classification_all_five_kinds() {
     let config = ModelRouterConfig {
@@ -158,9 +158,9 @@ fn test_model_router_keyword_classification_all_five_kinds() {
     }
 }
 
-/// G-2b: async classifier (tries Ollama first, falls back to keywords).
-/// Even without a running Ollama instance the result must match the keyword
-/// heuristic.
+// G-2b: async classifier (tries Ollama first, falls back to keywords).
+// Even without a running Ollama instance the result must match the keyword
+// heuristic.
 #[tokio::test]
 async fn test_model_router_async_classification_matches_keyword_fallback() {
     let _ = require_env!("XAI_API_KEY"); // ensure we have valid credentials
@@ -181,8 +181,8 @@ async fn test_model_router_async_classification_matches_keyword_fallback() {
     }
 }
 
-/// G-2c: verify that `CodeReview` and `ArchitecturalReason` route to the **remote**
-/// Grok provider, while `ScaffoldStub` routes **local**.
+// G-2c: verify that `CodeReview` and `ArchitecturalReason` route to the **remote**
+// Grok provider, while `ScaffoldStub` routes **local**.
 #[test]
 fn test_model_router_routes_to_correct_provider() {
     use rustcode::model_router::ModelTarget;
@@ -221,13 +221,13 @@ fn test_model_router_routes_to_correct_provider() {
 // G-3  RAG injection — rag_chunks_used > 0 when context is populated
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Builds a minimal synthetic RAG context (no DB needed) and checks that the
-/// final prompt passed to the LLM contains the injected snippets, confirming
-/// the RAG path is active.
-///
-/// This test validates the *shape* of the integration rather than a live DB
-/// query, which would require a running Postgres + populated repo.  A
-/// live-DB variant can be enabled with the `RC_RAG_LIVE` env var.
+// Builds a minimal synthetic RAG context (no DB needed) and checks that the
+// final prompt passed to the LLM contains the injected snippets, confirming
+// the RAG path is active.
+//
+// This test validates the *shape* of the integration rather than a live DB
+// query, which would require a running Postgres + populated repo.  A
+// live-DB variant can be enabled with the `RC_RAG_LIVE` env var.
 #[tokio::test]
 async fn test_rag_context_injection_enriches_prompt() {
     let client = xai_client();
@@ -282,8 +282,8 @@ async fn test_rag_context_injection_enriches_prompt() {
 // G-4  ResponseCache — second identical request returns cached = true
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Exercises the full cache read/write cycle against a temp SQLite database.
-/// First call misses, second call hits, and the hit path is faster.
+// Exercises the full cache read/write cycle against a temp SQLite database.
+// First call misses, second call hits, and the hit path is faster.
 #[tokio::test]
 async fn test_response_cache_hit_on_second_identical_request() {
     let _ = require_env!("XAI_API_KEY");
@@ -351,7 +351,7 @@ async fn test_response_cache_hit_on_second_identical_request() {
     let _ = std::fs::remove_file(&db_path);
 }
 
-/// Verify that `clear_expired()` removes only stale entries and preserves valid ones.
+// Verify that `clear_expired()` removes only stale entries and preserves valid ones.
 #[tokio::test]
 async fn test_response_cache_clear_expired_keeps_valid_entries() {
     let db_path = format!(
@@ -394,12 +394,12 @@ async fn test_response_cache_clear_expired_keeps_valid_entries() {
 // G-5  Claude provider switch — ANTHROPIC_API_KEY + detect_provider_kind
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Confirms that swapping from XAI_API_KEY to ANTHROPIC_API_KEY makes the
-/// `api` crate route to `ProviderKind::ClawApi` (Anthropic) rather than Xai.
-///
-/// This is a unit-level smoke test — no live Claude API call is made here
-/// (that would require spending tokens). The test checks that the model alias
-/// resolution and provider detection tables are correct.
+// Confirms that swapping from XAI_API_KEY to ANTHROPIC_API_KEY makes the
+// `api` crate route to `ProviderKind::ClawApi` (Anthropic) rather than Xai.
+//
+// This is a unit-level smoke test — no live Claude API call is made here
+// (that would require spending tokens). The test checks that the model alias
+// resolution and provider detection tables are correct.
 #[test]
 fn test_provider_detection_switches_to_anthropic_for_claude_models() {
     use api::{detect_provider_kind, resolve_model_alias};
@@ -445,9 +445,9 @@ fn test_provider_detection_switches_to_anthropic_for_claude_models() {
     }
 }
 
-/// Live Claude smoke test — only runs when `ANTHROPIC_API_KEY` is set.
-/// Sends a minimal prompt through `api::ClawApiClient` and checks for a
-/// non-empty response, confirming the full switch from xAI → Anthropic works.
+// Live Claude smoke test — only runs when `ANTHROPIC_API_KEY` is set.
+// Sends a minimal prompt through `api::ClawApiClient` and checks for a
+// non-empty response, confirming the full switch from xAI → Anthropic works.
 #[tokio::test]
 async fn test_claude_switch_live_completion() {
     let api_key = match std::env::var("ANTHROPIC_API_KEY") {
@@ -507,8 +507,8 @@ async fn test_claude_switch_live_completion() {
 // G-bonus  api crate — resolve_model_alias unit coverage for Grok 4.20
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Quick sanity-check (no network needed) that all Grok 4.20 aliases resolve
-/// correctly. This is fast enough to run in every `cargo test` pass.
+// Quick sanity-check (no network needed) that all Grok 4.20 aliases resolve
+// correctly. This is fast enough to run in every `cargo test` pass.
 #[test]
 fn test_grok_420_model_alias_resolution() {
     use api::resolve_model_alias;

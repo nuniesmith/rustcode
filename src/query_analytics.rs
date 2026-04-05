@@ -1,42 +1,42 @@
-//! Query Analytics Module
-//!
-//! Provides analytics and insights for search patterns and query behavior.
-//! Tracks search trends, popular queries, and user search patterns.
-//!
-//! # Features
-//!
-//! - **Query Tracking**: Record all search queries with metadata
-//! - **Pattern Analysis**: Identify common search patterns
-//! - **Performance Metrics**: Track query performance over time
-//! - **Trend Detection**: Identify trending searches
-//! - **User Insights**: Analyze search behavior per user
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::query_analytics::{QueryAnalytics, AnalyticsConfig};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let config = AnalyticsConfig::default();
-//! let analytics = QueryAnalytics::new(config).await?;
-//!
-//! // Track a search
-//! analytics.track_search(
-//!     "rust async patterns",
-//!     "semantic",
-//!     10,
-//!     45,
-//!     Some("user-123")
-//! ).await?;
-//!
-//! // Get popular queries
-//! let popular = analytics.get_popular_queries(10).await?;
-//! for query in popular {
-//!     println!("{}: {} searches", query.query, query.count);
-//! }
-//! # Ok(())
-//! # }
-//! ```
+// Query Analytics Module
+//
+// Provides analytics and insights for search patterns and query behavior.
+// Tracks search trends, popular queries, and user search patterns.
+//
+// # Features
+//
+// - **Query Tracking**: Record all search queries with metadata
+// - **Pattern Analysis**: Identify common search patterns
+// - **Performance Metrics**: Track query performance over time
+// - **Trend Detection**: Identify trending searches
+// - **User Insights**: Analyze search behavior per user
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::query_analytics::{QueryAnalytics, AnalyticsConfig};
+//
+// # async fn example() -> anyhow::Result<()> {
+// let config = AnalyticsConfig::default();
+// let analytics = QueryAnalytics::new(config).await?;
+//
+// // Track a search
+// analytics.track_search(
+//     "rust async patterns",
+//     "semantic",
+//     10,
+//     45,
+//     Some("user-123")
+// ).await?;
+//
+// // Get popular queries
+// let popular = analytics.get_popular_queries(10).await?;
+// for query in popular {
+//     println!("{}: {} searches", query.query, query.count);
+// }
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
@@ -50,22 +50,22 @@ use tokio::sync::RwLock;
 // Configuration
 // ============================================================================
 
-/// Analytics configuration
+// Analytics configuration
 #[derive(Debug, Clone)]
 pub struct AnalyticsConfig {
-    /// Enable analytics tracking
+    // Enable analytics tracking
     pub enabled: bool,
 
-    /// Database pool
+    // Database pool
     pub db_pool: Option<PgPool>,
 
-    /// Retention period in days
+    // Retention period in days
     pub retention_days: i64,
 
-    /// Enable in-memory aggregation
+    // Enable in-memory aggregation
     pub enable_memory_cache: bool,
 
-    /// Aggregate interval in seconds
+    // Aggregate interval in seconds
     pub aggregate_interval_secs: u64,
 }
 
@@ -85,7 +85,7 @@ impl Default for AnalyticsConfig {
 // Data Structures
 // ============================================================================
 
-/// Search analytics entry
+// Search analytics entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchAnalytics {
     pub id: i64,
@@ -98,7 +98,7 @@ pub struct SearchAnalytics {
     pub timestamp: DateTime<Utc>,
 }
 
-/// Query pattern statistics
+// Query pattern statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryPattern {
     pub query: String,
@@ -110,7 +110,7 @@ pub struct QueryPattern {
     pub search_types: Vec<String>,
 }
 
-/// Time-based analytics
+// Time-based analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeSeriesPoint {
     pub timestamp: DateTime<Utc>,
@@ -119,7 +119,7 @@ pub struct TimeSeriesPoint {
     pub unique_queries: i64,
 }
 
-/// User search behavior
+// User search behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserSearchBehavior {
     pub user_id: String,
@@ -130,7 +130,7 @@ pub struct UserSearchBehavior {
     pub most_searched_terms: Vec<(String, i64)>,
 }
 
-/// Analytics statistics
+// Analytics statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyticsStats {
     pub total_searches: i64,
@@ -161,7 +161,7 @@ struct MemoryCache {
 }
 
 impl QueryAnalytics {
-    /// Create new query analytics instance
+    // Create new query analytics instance
     pub async fn new(config: AnalyticsConfig) -> Result<Self> {
         let db_pool = config
             .db_pool
@@ -187,7 +187,7 @@ impl QueryAnalytics {
         Ok(analytics)
     }
 
-    /// Initialize analytics tables
+    // Initialize analytics tables
     async fn init_tables(pool: &PgPool) -> Result<()> {
         // Acquire a session-level advisory lock so that concurrent test threads
         // don't race on `CREATE TABLE IF NOT EXISTS` + `BIGSERIAL` sequence
@@ -259,7 +259,7 @@ impl QueryAnalytics {
         Ok(())
     }
 
-    /// Track a search query
+    // Track a search query
     pub async fn track_search(
         &self,
         query: &str,
@@ -302,7 +302,7 @@ impl QueryAnalytics {
         Ok(id)
     }
 
-    /// Track search with filters
+    // Track search with filters
     pub async fn track_search_with_filters(
         &self,
         query: &str,
@@ -339,7 +339,7 @@ impl QueryAnalytics {
         Ok(id)
     }
 
-    /// Get popular queries
+    // Get popular queries
     pub async fn get_popular_queries(&self, limit: i64) -> Result<Vec<QueryPattern>> {
         let patterns = sqlx::query_as::<_, (String, i64, f64, f64, DateTime<Utc>, DateTime<Utc>)>(
             r#"
@@ -390,7 +390,7 @@ impl QueryAnalytics {
         Ok(results)
     }
 
-    /// Get trending queries (increasing in popularity)
+    // Get trending queries (increasing in popularity)
     pub async fn get_trending_queries(&self, limit: i64) -> Result<Vec<QueryPattern>> {
         let patterns =
             sqlx::query_as::<_, (String, i64, i64, f64, f64, DateTime<Utc>, DateTime<Utc>)>(
@@ -457,7 +457,7 @@ impl QueryAnalytics {
         Ok(results)
     }
 
-    /// Get user search behavior
+    // Get user search behavior
     pub async fn get_user_behavior(&self, user_id: &str) -> Result<Option<UserSearchBehavior>> {
         let row = sqlx::query_as::<_, (i64, i64, f64)>(
             r#"
@@ -519,7 +519,7 @@ impl QueryAnalytics {
         }))
     }
 
-    /// Get time series data
+    // Get time series data
     pub async fn get_time_series(
         &self,
         start: DateTime<Utc>,
@@ -564,7 +564,7 @@ impl QueryAnalytics {
         Ok(results)
     }
 
-    /// Get overall analytics statistics
+    // Get overall analytics statistics
     pub async fn get_stats(&self, days: i64) -> Result<AnalyticsStats> {
         let start = Utc::now() - Duration::days(days);
         let end = Utc::now();
@@ -619,7 +619,7 @@ impl QueryAnalytics {
         })
     }
 
-    /// Cleanup old analytics data
+    // Cleanup old analytics data
     pub async fn cleanup_old_data(&self) -> Result<u64> {
         let cutoff = Utc::now() - Duration::days(self.config.retention_days);
 
@@ -636,7 +636,7 @@ impl QueryAnalytics {
         Ok(result.rows_affected())
     }
 
-    /// Start background cleanup task
+    // Start background cleanup task
     fn start_cleanup_task(&self) {
         let db_pool = self.db_pool.clone();
         let retention_days = self.config.retention_days;
@@ -660,7 +660,7 @@ impl QueryAnalytics {
         });
     }
 
-    /// Export analytics data for reporting
+    // Export analytics data for reporting
     pub async fn export_data(
         &self,
         start: DateTime<Utc>,

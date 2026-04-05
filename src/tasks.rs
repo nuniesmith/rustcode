@@ -1,4 +1,4 @@
-//! Task generator for converting audit findings into actionable tasks
+// Task generator for converting audit findings into actionable tasks
 
 use crate::error::{AuditError, Result};
 use crate::types::{
@@ -6,16 +6,16 @@ use crate::types::{
 };
 use std::collections::HashMap;
 
-/// Task generator
+// Task generator
 pub struct TaskGenerator {
-    /// Task ID counter
+    // Task ID counter
     counter: usize,
-    /// Generated tasks
+    // Generated tasks
     tasks: Vec<Task>,
 }
 
 impl TaskGenerator {
-    /// Create a new task generator
+    // Create a new task generator
     pub fn new() -> Self {
         Self {
             counter: 0,
@@ -23,7 +23,7 @@ impl TaskGenerator {
         }
     }
 
-    /// Generate tasks from audit tags
+    // Generate tasks from audit tags
     pub fn generate_from_tags(&mut self, tags: &[AuditTag]) -> Result<Vec<Task>> {
         for tag in tags {
             match tag.tag_type {
@@ -50,7 +50,7 @@ impl TaskGenerator {
         Ok(self.tasks.clone())
     }
 
-    /// Generate tasks from file analyses
+    // Generate tasks from file analyses
     pub fn generate_from_analyses(&mut self, analyses: &[FileAnalysis]) -> Result<Vec<Task>> {
         for analysis in analyses {
             // Check for frozen code violations first
@@ -94,7 +94,7 @@ impl TaskGenerator {
         Ok(self.tasks.clone())
     }
 
-    /// Add a TODO task
+    // Add a TODO task
     fn add_todo_task(&mut self, tag: &AuditTag) -> Result<()> {
         let task = Task::new(
             format!("TODO: {}", tag.value),
@@ -112,7 +112,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Add an incomplete implementation task
+    // Add an incomplete implementation task
     fn add_incomplete_task(&mut self, tag: &AuditTag) -> Result<()> {
         let task = Task::new(
             format!("Complete implementation: {}", tag.file.display()),
@@ -131,7 +131,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Add a security task
+    // Add a security task
     fn add_security_task(&mut self, tag: &AuditTag) -> Result<()> {
         let task = Task::new(
             format!("Security: {}", tag.value),
@@ -153,7 +153,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Add a review task
+    // Add a review task
     fn add_review_task(&mut self, tag: &AuditTag) -> Result<()> {
         let task = Task::new(
             format!("Review: {}", tag.value),
@@ -171,7 +171,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Add a task from an issue
+    // Add a task from an issue
     fn add_issue_task(&mut self, issue: &Issue, category: &Category) -> Result<()> {
         let priority = match issue.severity {
             IssueSeverity::Critical => TaskPriority::Critical,
@@ -201,7 +201,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Add a documentation task
+    // Add a documentation task
     fn add_documentation_task(&mut self, analysis: &FileAnalysis) -> Result<()> {
         let task = Task::new(
             format!("Add documentation: {}", analysis.path.display()),
@@ -222,7 +222,7 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Check if a file is critical for the system
+    // Check if a file is critical for the system
     fn is_critical_file(&self, path: &std::path::Path) -> bool {
         let path_str = path.to_string_lossy();
         path_str.contains("kill_switch")
@@ -236,7 +236,7 @@ impl TaskGenerator {
             || path_str.ends_with("main.py")
     }
 
-    /// Add a task for frozen code violations
+    // Add a task for frozen code violations
     fn add_frozen_violation_task(&mut self, analysis: &FileAnalysis) -> Result<()> {
         let task = Task::new(
             format!("FROZEN CODE VIOLATION: {}", analysis.path.display()),
@@ -263,12 +263,12 @@ impl TaskGenerator {
         Ok(())
     }
 
-    /// Get all tasks
+    // Get all tasks
     pub fn tasks(&self) -> &[Task] {
         &self.tasks
     }
 
-    /// Get tasks by priority
+    // Get tasks by priority
     pub fn tasks_by_priority(&self, priority: TaskPriority) -> Vec<&Task> {
         self.tasks
             .iter()
@@ -276,7 +276,7 @@ impl TaskGenerator {
             .collect()
     }
 
-    /// Get tasks by category
+    // Get tasks by category
     pub fn tasks_by_category(&self, category: Category) -> Vec<&Task> {
         self.tasks
             .iter()
@@ -284,7 +284,7 @@ impl TaskGenerator {
             .collect()
     }
 
-    /// Get task statistics
+    // Get task statistics
     pub fn statistics(&self) -> TaskStatistics {
         let mut stats = TaskStatistics {
             total: self.tasks.len(),
@@ -305,12 +305,12 @@ impl TaskGenerator {
         stats
     }
 
-    /// Export tasks to JSON
+    // Export tasks to JSON
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string_pretty(&self.tasks).map_err(AuditError::Json)
     }
 
-    /// Export tasks to CSV
+    // Export tasks to CSV
     pub fn to_csv(&self) -> Result<String> {
         let mut csv = String::from("ID,Title,File,Line,Priority,Category,Tags\n");
 
@@ -332,7 +332,7 @@ impl TaskGenerator {
         Ok(csv)
     }
 
-    /// Clear all tasks
+    // Clear all tasks
     pub fn clear(&mut self) {
         self.tasks.clear();
         self.counter = 0;
@@ -345,25 +345,25 @@ impl Default for TaskGenerator {
     }
 }
 
-/// Task statistics
+// Task statistics
 #[derive(Debug, Clone, Default)]
 pub struct TaskStatistics {
-    /// Total tasks
+    // Total tasks
     pub total: usize,
-    /// Critical priority
+    // Critical priority
     pub critical: usize,
-    /// High priority
+    // High priority
     pub high: usize,
-    /// Medium priority
+    // Medium priority
     pub medium: usize,
-    /// Low priority
+    // Low priority
     pub low: usize,
-    /// Tasks by category
+    // Tasks by category
     pub by_category: HashMap<Category, usize>,
 }
 
 impl TaskStatistics {
-    /// Get a summary string
+    // Get a summary string
     pub fn summary(&self) -> String {
         format!(
             "Total: {}, Critical: {}, High: {}, Medium: {}, Low: {}",

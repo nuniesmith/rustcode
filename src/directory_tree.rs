@@ -1,10 +1,10 @@
-//! Directory tree builder for visualizing codebase structure with audit tags
-//!
-//! Creates a hierarchical view of the codebase with:
-//! - Tag distribution
-//! - Issue counts
-//! - Code statistics
-//! - Age/status indicators
+// Directory tree builder for visualizing codebase structure with audit tags
+//
+// Creates a hierarchical view of the codebase with:
+// - Tag distribution
+// - Issue counts
+// - Code statistics
+// - Age/status indicators
 
 use crate::error::Result;
 use crate::tag_schema::{
@@ -15,18 +15,18 @@ use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Directory tree builder
+// Directory tree builder
 pub struct DirectoryTreeBuilder {
-    /// Root path
+    // Root path
     root: PathBuf,
-    /// Issue detector
+    // Issue detector
     issue_detector: SimpleIssueDetector,
-    /// Exclude patterns
+    // Exclude patterns
     exclude_patterns: Vec<String>,
 }
 
 impl DirectoryTreeBuilder {
-    /// Create a new directory tree builder
+    // Create a new directory tree builder
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
@@ -43,19 +43,19 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Build the directory tree
+    // Build the directory tree
     pub fn build(&self) -> Result<DirectoryNode> {
         self.build_node(&self.root)
     }
 
-    /// Build the tree with tags
+    // Build the tree with tags
     pub fn build_with_tags(&self, tags: &[AuditTag]) -> Result<DirectoryNode> {
         let mut node = self.build_node(&self.root)?;
         self.attach_tags(&mut node, tags);
         Ok(node)
     }
 
-    /// Build a node for a path
+    // Build a node for a path
     fn build_node(&self, path: &Path) -> Result<DirectoryNode> {
         let name = path
             .file_name()
@@ -92,7 +92,7 @@ impl DirectoryTreeBuilder {
         Ok(node)
     }
 
-    /// Analyze a file node
+    // Analyze a file node
     fn analyze_file(&self, node: &mut DirectoryNode) -> Result<()> {
         if !self.is_source_file(&node.path) {
             return Ok(());
@@ -130,7 +130,7 @@ impl DirectoryTreeBuilder {
         Ok(())
     }
 
-    /// Analyze a directory node
+    // Analyze a directory node
     fn analyze_directory(&self, node: &mut DirectoryNode) -> Result<()> {
         let mut children = Vec::new();
 
@@ -183,7 +183,7 @@ impl DirectoryTreeBuilder {
         Ok(())
     }
 
-    /// Detect simple issues in file content
+    // Detect simple issues in file content
     fn detect_issues(&self, content: &str, issues: &mut IssuesSummary) {
         for pattern in self.issue_detector.patterns() {
             if let Ok(re) = Regex::new(pattern.pattern) {
@@ -201,7 +201,7 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Attach audit tags to the tree
+    // Attach audit tags to the tree
     fn attach_tags(&self, node: &mut DirectoryNode, tags: &[AuditTag]) {
         match node.node_type {
             NodeType::File => {
@@ -231,7 +231,7 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Check if path should be excluded
+    // Check if path should be excluded
     fn should_exclude(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         self.exclude_patterns
@@ -239,7 +239,7 @@ impl DirectoryTreeBuilder {
             .any(|pattern| path_str.contains(pattern))
     }
 
-    /// Check if file is a source file
+    // Check if file is a source file
     fn is_source_file(&self, path: &Path) -> bool {
         if !path.is_file() {
             return false;
@@ -260,7 +260,7 @@ impl DirectoryTreeBuilder {
         )
     }
 
-    /// Generate a summary report
+    // Generate a summary report
     pub fn generate_summary(&self, node: &DirectoryNode) -> TreeSummary {
         TreeSummary {
             total_files: node.stats.file_count,
@@ -275,7 +275,7 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Count directories in tree
+    // Count directories in tree
     fn count_directories(&self, node: &DirectoryNode) -> usize {
         match node.node_type {
             NodeType::File => 0,
@@ -289,7 +289,7 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Find nodes with most issues
+    // Find nodes with most issues
     pub fn find_hotspots(&self, node: &DirectoryNode, limit: usize) -> Vec<Hotspot> {
         let mut hotspots = Vec::new();
         self.collect_hotspots(node, &mut hotspots);
@@ -300,7 +300,7 @@ impl DirectoryTreeBuilder {
         hotspots
     }
 
-    /// Collect hotspots recursively
+    // Collect hotspots recursively
     fn collect_hotspots(&self, node: &DirectoryNode, hotspots: &mut Vec<Hotspot>) {
         let total = node.issues.total();
         if total > 0 {
@@ -320,14 +320,14 @@ impl DirectoryTreeBuilder {
         }
     }
 
-    /// Generate ASCII tree visualization
+    // Generate ASCII tree visualization
     pub fn to_ascii_tree(&self, node: &DirectoryNode, max_depth: usize) -> String {
         let mut output = String::new();
         self.render_ascii_node(node, &mut output, "", true, 0, max_depth);
         output
     }
 
-    /// Render a node as ASCII tree
+    // Render a node as ASCII tree
     fn render_ascii_node(
         &self,
         node: &DirectoryNode,
@@ -394,7 +394,7 @@ impl DirectoryTreeBuilder {
     }
 }
 
-/// Tree summary statistics
+// Tree summary statistics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TreeSummary {
     pub total_files: usize,
@@ -408,7 +408,7 @@ pub struct TreeSummary {
     pub directories_analyzed: usize,
 }
 
-/// Code hotspot (file or directory with many issues)
+// Code hotspot (file or directory with many issues)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Hotspot {
     pub path: PathBuf,

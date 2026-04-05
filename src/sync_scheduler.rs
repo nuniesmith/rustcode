@@ -17,11 +17,11 @@ use crate::repo_sync::RepoSyncService;
 
 #[derive(Debug, Clone)]
 pub struct SyncSchedulerConfig {
-    /// How often to run background syncs (default: 5 minutes)
+    // How often to run background syncs (default: 5 minutes)
     pub interval: Duration,
-    /// Max repos to sync concurrently
+    // Max repos to sync concurrently
     pub concurrency: usize,
-    /// Skip repos that were synced within this window
+    // Skip repos that were synced within this window
     pub skip_if_synced_within: Duration,
 }
 
@@ -52,7 +52,7 @@ impl SyncScheduler {
         Self { config, service }
     }
 
-    /// Spawn the background sync loop. Call once at startup.
+    // Spawn the background sync loop. Call once at startup.
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             info!(

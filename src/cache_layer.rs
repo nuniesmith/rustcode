@@ -1,39 +1,39 @@
-//! Caching Layer Module
-//!
-//! Provides multi-tier caching for API responses and search results.
-//! Supports in-memory LRU cache and optional Redis backend.
-//!
-//! # Features
-//!
-//! - **In-Memory Cache**: Fast LRU cache for hot data
-//! - **Redis Support**: Optional distributed caching
-//! - **TTL Support**: Time-based expiration
-//! - **Cache Invalidation**: Manual and automatic invalidation
-//! - **Statistics**: Cache hit/miss tracking
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::cache_layer::{CacheLayer, CacheConfig};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let config = CacheConfig::default();
-//! let cache = CacheLayer::new(config).await?;
-//!
-//! // Set value (must be Serialize; use a String, not a &str literal)
-//! cache.set("key", &"value".to_string(), Some(3600)).await?;
-//!
-//! // Get value
-//! if let Some(value) = cache.get::<String>("key").await? {
-//!     println!("Cached value: {}", value);
-//! }
-//!
-//! // Get stats (stats() is async)
-//! let stats = cache.stats().await;
-//! println!("Hits: {}, Misses: {}", stats.hits, stats.misses);
-//! # Ok(())
-//! # }
-//! ```
+// Caching Layer Module
+//
+// Provides multi-tier caching for API responses and search results.
+// Supports in-memory LRU cache and optional Redis backend.
+//
+// # Features
+//
+// - **In-Memory Cache**: Fast LRU cache for hot data
+// - **Redis Support**: Optional distributed caching
+// - **TTL Support**: Time-based expiration
+// - **Cache Invalidation**: Manual and automatic invalidation
+// - **Statistics**: Cache hit/miss tracking
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::cache_layer::{CacheLayer, CacheConfig};
+//
+// # async fn example() -> anyhow::Result<()> {
+// let config = CacheConfig::default();
+// let cache = CacheLayer::new(config).await?;
+//
+// // Set value (must be Serialize; use a String, not a &str literal)
+// cache.set("key", &"value".to_string(), Some(3600)).await?;
+//
+// // Get value
+// if let Some(value) = cache.get::<String>("key").await? {
+//     println!("Cached value: {}", value);
+// }
+//
+// // Get stats (stats() is async)
+// let stats = cache.stats().await;
+// println!("Hits: {}, Misses: {}", stats.hits, stats.misses);
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
 use redis::AsyncCommands;
@@ -50,25 +50,25 @@ type RedisPool = deadpool_redis::Pool;
 // Configuration
 // ============================================================================
 
-/// Cache configuration
+// Cache configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
-    /// Maximum number of items in memory cache
+    // Maximum number of items in memory cache
     pub max_memory_items: usize,
 
-    /// Default TTL in seconds (None = no expiration)
+    // Default TTL in seconds (None = no expiration)
     pub default_ttl: Option<u64>,
 
-    /// Enable Redis backend
+    // Enable Redis backend
     pub enable_redis: bool,
 
-    /// Redis connection URL
+    // Redis connection URL
     pub redis_url: Option<String>,
 
-    /// Redis key prefix
+    // Redis key prefix
     pub redis_prefix: String,
 
-    /// Enable cache statistics
+    // Enable cache statistics
     pub enable_stats: bool,
 }
 
@@ -86,7 +86,7 @@ impl Default for CacheConfig {
 }
 
 impl CacheConfig {
-    /// Create configuration for development (memory-only)
+    // Create configuration for development (memory-only)
     pub fn development() -> Self {
         Self {
             max_memory_items: 500,
@@ -98,7 +98,7 @@ impl CacheConfig {
         }
     }
 
-    /// Create configuration for production (with Redis)
+    // Create configuration for production (with Redis)
     pub fn production(redis_url: String) -> Self {
         Self {
             max_memory_items: 5000,
@@ -277,7 +277,7 @@ impl CacheStats {
 // Cache Layer
 // ============================================================================
 
-/// Multi-tier caching layer
+// Multi-tier caching layer
 pub struct CacheLayer {
     config: CacheConfig,
     memory_cache: Arc<RwLock<LRUCache<String, Vec<u8>>>>,
@@ -286,7 +286,7 @@ pub struct CacheLayer {
 }
 
 impl CacheLayer {
-    /// Create a new cache layer
+    // Create a new cache layer
     pub async fn new(config: CacheConfig) -> Result<Self> {
         let memory_cache = Arc::new(RwLock::new(LRUCache::new(config.max_memory_items)));
         let stats = Arc::new(RwLock::new(CacheStats::default()));
@@ -319,7 +319,7 @@ impl CacheLayer {
         Ok(cache)
     }
 
-    /// Get a value from cache
+    // Get a value from cache
     pub async fn get<T: DeserializeOwned + serde::Serialize>(
         &self,
         key: &str,
@@ -358,7 +358,7 @@ impl CacheLayer {
         Ok(None)
     }
 
-    /// Set a value in cache
+    // Set a value in cache
     pub async fn set<T: Serialize>(
         &self,
         key: &str,
@@ -394,7 +394,7 @@ impl CacheLayer {
         Ok(())
     }
 
-    /// Delete a value from cache
+    // Delete a value from cache
     pub async fn delete(&self, key: &str) -> Result<bool> {
         let mut memory = self.memory_cache.write().await;
         let removed = memory.remove(&key.to_string());
@@ -407,7 +407,7 @@ impl CacheLayer {
         Ok(removed)
     }
 
-    /// Clear all cached values
+    // Clear all cached values
     pub async fn clear(&self) -> Result<()> {
         let mut memory = self.memory_cache.write().await;
         memory.clear();
@@ -420,20 +420,20 @@ impl CacheLayer {
         Ok(())
     }
 
-    /// Get cache statistics
+    // Get cache statistics
     pub async fn stats(&self) -> CacheStats {
         let mut stats = self.stats.read().await.clone();
         stats.memory_items = self.memory_cache.read().await.len();
         stats
     }
 
-    /// Reset statistics
+    // Reset statistics
     pub async fn reset_stats(&self) {
         let mut stats = self.stats.write().await;
         *stats = CacheStats::default();
     }
 
-    /// Start background cleanup task
+    // Start background cleanup task
     fn start_cleanup_task(&self) {
         let memory_cache = self.memory_cache.clone();
 
@@ -447,7 +447,7 @@ impl CacheLayer {
         });
     }
 
-    /// Get or set with a function
+    // Get or set with a function
     pub async fn get_or_set<T, F, Fut>(
         &self,
         key: &str,
@@ -473,7 +473,7 @@ impl CacheLayer {
         Ok(value)
     }
 
-    /// Invalidate cache by pattern (prefix match)
+    // Invalidate cache by pattern (prefix match)
     pub async fn invalidate_pattern(&self, pattern: &str) -> Result<usize> {
         let mut memory = self.memory_cache.write().await;
         let keys_to_remove: Vec<_> = memory
@@ -501,7 +501,7 @@ impl CacheLayer {
     // Redis Operations
     // ========================================================================
 
-    /// Get value from Redis
+    // Get value from Redis
     async fn get_from_redis<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         let pool = match &self.redis_pool {
             Some(pool) => pool,
@@ -526,7 +526,7 @@ impl CacheLayer {
         }
     }
 
-    /// Set value in Redis
+    // Set value in Redis
     async fn set_in_redis(&self, key: &str, bytes: &[u8], ttl: Option<u64>) -> Result<()> {
         let pool = match &self.redis_pool {
             Some(pool) => pool,
@@ -549,7 +549,7 @@ impl CacheLayer {
         Ok(())
     }
 
-    /// Delete value from Redis
+    // Delete value from Redis
     async fn delete_from_redis(&self, key: &str) -> Result<bool> {
         let pool = match &self.redis_pool {
             Some(pool) => pool,
@@ -567,7 +567,7 @@ impl CacheLayer {
         Ok(removed)
     }
 
-    /// Clear all Redis keys with our prefix
+    // Clear all Redis keys with our prefix
     async fn clear_redis(&self) -> Result<()> {
         let pool = match &self.redis_pool {
             Some(pool) => pool,
@@ -605,7 +605,7 @@ impl CacheLayer {
         Ok(())
     }
 
-    /// Invalidate Redis keys by pattern
+    // Invalidate Redis keys by pattern
     async fn invalidate_redis_pattern(&self, pattern: &str) -> Result<usize> {
         let pool = match &self.redis_pool {
             Some(pool) => pool,
@@ -644,7 +644,7 @@ impl CacheLayer {
         Ok(total_deleted)
     }
 
-    /// Generate full Redis key with prefix
+    // Generate full Redis key with prefix
     fn redis_key(&self, key: &str) -> String {
         format!("{}{}", self.config.redis_prefix, key)
     }
@@ -665,7 +665,7 @@ fn now_timestamp() -> u64 {
 // Cache Key Builders
 // ============================================================================
 
-/// Helper for building cache keys
+// Helper for building cache keys
 pub struct CacheKey;
 
 impl CacheKey {

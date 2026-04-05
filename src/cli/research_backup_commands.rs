@@ -1,4 +1,4 @@
-//! Research and Backup CLI Commands
+// Research and Backup CLI Commands
 
 use crate::backup::{print_rclone_setup_instructions, BackupConfig, BackupManager};
 use crate::llm::GrokClient;
@@ -18,52 +18,52 @@ use sqlx::PgPool;
 
 #[derive(Subcommand)]
 pub enum ResearchCommands {
-    /// Start a new research project
+    // Start a new research project
     Start {
-        /// Topic to research
+        // Topic to research
         topic: String,
 
-        /// Research type: general, code, idea, comparison
+        // Research type: general, code, idea, comparison
         #[arg(short = 't', long, default_value = "general")]
         research_type: String,
 
-        /// Depth: quick, standard, deep
+        // Depth: quick, standard, deep
         #[arg(short, long, default_value = "standard")]
         depth: String,
 
-        /// Description or specific questions
+        // Description or specific questions
         #[arg(short = 'q', long)]
         description: Option<String>,
 
-        /// Repository context (for code research)
+        // Repository context (for code research)
         #[arg(short, long)]
         repo: Option<String>,
 
-        /// File context (for code research)
+        // File context (for code research)
         #[arg(short, long)]
         files: Option<String>,
     },
 
-    /// List research projects
+    // List research projects
     List {
-        /// Max number to show
+        // Max number to show
         #[arg(short, long, default_value = "10")]
         limit: i32,
     },
 
-    /// View a research report
+    // View a research report
     View {
-        /// Research ID
+        // Research ID
         id: String,
 
-        /// Output format: markdown, json, zed
+        // Output format: markdown, json, zed
         #[arg(short, long, default_value = "markdown")]
         format: String,
     },
 
-    /// Quick research (single worker, fast)
+    // Quick research (single worker, fast)
     Quick {
-        /// Question to research
+        // Question to research
         question: String,
     },
 }
@@ -230,22 +230,22 @@ pub async fn handle_research_command(pool: &PgPool, cmd: ResearchCommands) -> Re
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
-    /// Create a new backup
+    // Create a new backup
     Create,
 
-    /// List available backups
+    // List available backups
     List,
 
-    /// Restore from a backup
+    // Restore from a backup
     Restore {
-        /// Backup name (e.g., backup_20240101_120000)
+        // Backup name (e.g., backup_20240101_120000)
         name: String,
     },
 
-    /// Show rclone setup instructions
+    // Show rclone setup instructions
     Setup,
 
-    /// Check backup configuration
+    // Check backup configuration
     Check,
 }
 

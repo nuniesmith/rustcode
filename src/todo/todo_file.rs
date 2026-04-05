@@ -1,22 +1,22 @@
-//! TodoFile — parse, update, and write back `todo.md`
-//!
-//! Handles the full lifecycle of a `todo.md` file:
-//! - Parse sections, items, and status markers
-//! - Update checkbox states ([ ] / [x]) and emoji markers (✅ / ⚠️ / ❌)
-//! - Append new items
-//! - Serialize back to valid Markdown
-//!
-//! # Format understood
-//!
-//! ```text
-//! ## 🔴 High Priority
-//!
-//! ### Some Section
-//! - [ ] pending item
-//! - [x] ~~completed item~~ ✅ Done — note
-//! - [ ] blocked item ❌ reason
-//! - [ ] partial item ⚠️ partial note
-//! ```
+// TodoFile — parse, update, and write back `todo.md`
+//
+// Handles the full lifecycle of a `todo.md` file:
+// - Parse sections, items, and status markers
+// - Update checkbox states ([ ] / [x]) and emoji markers (✅ / ⚠️ / ❌)
+// - Append new items
+// - Serialize back to valid Markdown
+//
+// # Format understood
+//
+// ```text
+// ## 🔴 High Priority
+//
+// ### Some Section
+// - [ ] pending item
+// - [x] ~~completed item~~ ✅ Done — note
+// - [ ] blocked item ❌ reason
+// - [ ] partial item ⚠️ partial note
+// ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -30,12 +30,12 @@ use crate::error::{AuditError, Result};
 // Status Types
 // ============================================================================
 
-/// Checkbox state of a TODO item
+// Checkbox state of a TODO item
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CheckboxState {
-    /// `- [ ]` — unchecked / pending
+    // `- [ ]` — unchecked / pending
     Unchecked,
-    /// `- [x]` — checked / done
+    // `- [x]` — checked / done
     Checked,
 }
 
@@ -48,22 +48,22 @@ impl fmt::Display for CheckboxState {
     }
 }
 
-/// Emoji status marker on an item
+// Emoji status marker on an item
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum StatusMarker {
-    /// No marker
+    // No marker
     #[default]
     None,
-    /// ✅ completed successfully
+    // ✅ completed successfully
     Done,
-    /// ⚠️ partial / needs attention
+    // ⚠️ partial / needs attention
     Partial,
-    /// ❌ blocked / failed
+    // ❌ blocked / failed
     Blocked,
 }
 
 impl StatusMarker {
-    /// Return the emoji string for this marker (empty string for `None`)
+    // Return the emoji string for this marker (empty string for `None`)
     pub fn emoji(self) -> &'static str {
         match self {
             StatusMarker::None => "",
@@ -73,7 +73,7 @@ impl StatusMarker {
         }
     }
 
-    /// Parse a status marker from a line of text
+    // Parse a status marker from a line of text
     fn from_line(line: &str) -> Self {
         if line.contains('✅') {
             StatusMarker::Done
@@ -97,7 +97,7 @@ impl fmt::Display for StatusMarker {
 // Priority
 // ============================================================================
 
-/// Section-level priority derived from the heading emoji
+// Section-level priority derived from the heading emoji
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Priority {
     High,
@@ -136,33 +136,33 @@ impl Priority {
 // Core Data Structures
 // ============================================================================
 
-/// A single item inside a todo section
+// A single item inside a todo section
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoItem {
-    /// Stable ID derived from section + original text hash (hex8)
+    // Stable ID derived from section + original text hash (hex8)
     pub id: String,
-    /// Checkbox state
+    // Checkbox state
     pub checkbox: CheckboxState,
-    /// Emoji status marker
+    // Emoji status marker
     pub marker: StatusMarker,
-    /// The raw item text (without leading `- [x] ` or `- [ ] `)
+    // The raw item text (without leading `- [x] ` or `- [ ] `)
     pub text: String,
-    /// Optional note appended after the marker (e.g. "Done — some explanation")
+    // Optional note appended after the marker (e.g. "Done — some explanation")
     pub note: Option<String>,
-    /// Whether the text is struck-through (`~~…~~`)
+    // Whether the text is struck-through (`~~…~~`)
     pub strikethrough: bool,
-    /// Bold title extracted from `**title**` at the start of text, if any
+    // Bold title extracted from `**title**` at the start of text, if any
     pub title: Option<String>,
-    /// Timestamp of the last status change
+    // Timestamp of the last status change
     pub updated_at: Option<DateTime<Utc>>,
-    /// Indentation level (0 = top-level list item)
+    // Indentation level (0 = top-level list item)
     pub indent: usize,
-    /// Raw original line (preserved for round-trip fidelity when unchanged)
+    // Raw original line (preserved for round-trip fidelity when unchanged)
     pub raw_line: String,
 }
 
 impl TodoItem {
-    /// Render the item back to its Markdown list line
+    // Render the item back to its Markdown list line
     pub fn to_markdown(&self) -> String {
         let indent = " ".repeat(self.indent * 2);
 
@@ -189,7 +189,7 @@ impl TodoItem {
         }
     }
 
-    /// Mark this item as done
+    // Mark this item as done
     pub fn mark_done(&mut self, note: impl Into<String>) {
         self.checkbox = CheckboxState::Checked;
         self.marker = StatusMarker::Done;
@@ -201,7 +201,7 @@ impl TodoItem {
         self.updated_at = Some(Utc::now());
     }
 
-    /// Mark this item as partial
+    // Mark this item as partial
     pub fn mark_partial(&mut self, note: impl Into<String>) {
         self.marker = StatusMarker::Partial;
         let n = note.into();
@@ -211,7 +211,7 @@ impl TodoItem {
         self.updated_at = Some(Utc::now());
     }
 
-    /// Mark this item as blocked
+    // Mark this item as blocked
     pub fn mark_blocked(&mut self, reason: impl Into<String>) {
         self.marker = StatusMarker::Blocked;
         let n = reason.into();
@@ -221,7 +221,7 @@ impl TodoItem {
         self.updated_at = Some(Utc::now());
     }
 
-    /// Reset to unchecked / pending
+    // Reset to unchecked / pending
     pub fn reset(&mut self) {
         self.checkbox = CheckboxState::Unchecked;
         self.marker = StatusMarker::None;
@@ -230,45 +230,45 @@ impl TodoItem {
         self.updated_at = Some(Utc::now());
     }
 
-    /// Whether this item is considered complete
+    // Whether this item is considered complete
     pub fn is_done(&self) -> bool {
         self.checkbox == CheckboxState::Checked || self.marker == StatusMarker::Done
     }
 }
 
-/// A subsection (`###` heading) within a priority section
+// A subsection (`###` heading) within a priority section
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoSection {
-    /// The heading text (without `### `)
+    // The heading text (without `### `)
     pub heading: String,
-    /// Items under this section
+    // Items under this section
     pub items: Vec<TodoItem>,
-    /// Raw lines that appear after the heading but before the first list item
+    // Raw lines that appear after the heading but before the first list item
     pub preamble: Vec<String>,
 }
 
 impl TodoSection {
-    /// Count pending (unchecked / non-done) items
+    // Count pending (unchecked / non-done) items
     pub fn pending_count(&self) -> usize {
         self.items.iter().filter(|i| !i.is_done()).count()
     }
 
-    /// Count completed items
+    // Count completed items
     pub fn done_count(&self) -> usize {
         self.items.iter().filter(|i| i.is_done()).count()
     }
 }
 
-/// A top-level priority group (`##` heading)
+// A top-level priority group (`##` heading)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriorityBlock {
-    /// The full heading line text (without `## `)
+    // The full heading line text (without `## `)
     pub heading: String,
-    /// Derived priority
+    // Derived priority
     pub priority: Priority,
-    /// Sections within this block
+    // Sections within this block
     pub sections: Vec<TodoSection>,
-    /// Lines between the heading and first `###` (block-level prose/notes)
+    // Lines between the heading and first `###` (block-level prose/notes)
     pub preamble: Vec<String>,
 }
 
@@ -276,16 +276,16 @@ pub struct PriorityBlock {
 // TodoFile
 // ============================================================================
 
-/// Parsed representation of a `todo.md` file
+// Parsed representation of a `todo.md` file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoFile {
-    /// Path on disk
+    // Path on disk
     pub path: PathBuf,
-    /// Lines before the first `##` heading (title, blockquote intro, etc.)
+    // Lines before the first `##` heading (title, blockquote intro, etc.)
     pub header: Vec<String>,
-    /// Ordered list of priority blocks
+    // Ordered list of priority blocks
     pub blocks: Vec<PriorityBlock>,
-    /// Lines after the last block (footer notes, etc.)
+    // Lines after the last block (footer notes, etc.)
     pub footer: Vec<String>,
 }
 
@@ -294,7 +294,7 @@ impl TodoFile {
     // Construction
     // -----------------------------------------------------------------------
 
-    /// Load and parse a `todo.md` from disk
+    // Load and parse a `todo.md` from disk
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let content = fs::read_to_string(&path).map_err(AuditError::Io)?;
@@ -303,7 +303,7 @@ impl TodoFile {
         Ok(file)
     }
 
-    /// Parse a `todo.md` from a string
+    // Parse a `todo.md` from a string
     pub fn parse(content: &str) -> Self {
         let lines: Vec<&str> = content.lines().collect();
         let mut file = TodoFile {
@@ -393,7 +393,7 @@ impl TodoFile {
     // Parsing helpers
     // -----------------------------------------------------------------------
 
-    /// Try to parse a single list-item line into a `TodoItem`
+    // Try to parse a single list-item line into a `TodoItem`
     fn parse_item(line: &str) -> Option<TodoItem> {
         // Detect indentation
         let trimmed = line.trim_start();
@@ -469,7 +469,7 @@ impl TodoFile {
         })
     }
 
-    /// Split the note out of the text after a status emoji
+    // Split the note out of the text after a status emoji
     fn split_note(text: &str, marker: StatusMarker) -> (String, Option<String>) {
         let emoji = marker.emoji();
         if emoji.is_empty() {
@@ -490,7 +490,7 @@ impl TodoFile {
     // Querying
     // -----------------------------------------------------------------------
 
-    /// Iterate over every item across all blocks and sections
+    // Iterate over every item across all blocks and sections
     pub fn all_items(&self) -> impl Iterator<Item = &TodoItem> {
         self.blocks
             .iter()
@@ -498,7 +498,7 @@ impl TodoFile {
             .flat_map(|s| s.items.iter())
     }
 
-    /// Iterate mutably over every item
+    // Iterate mutably over every item
     pub fn all_items_mut(&mut self) -> impl Iterator<Item = &mut TodoItem> {
         self.blocks
             .iter_mut()
@@ -506,17 +506,17 @@ impl TodoFile {
             .flat_map(|s| s.items.iter_mut())
     }
 
-    /// Find an item by its stable ID
+    // Find an item by its stable ID
     pub fn find_by_id(&self, id: &str) -> Option<&TodoItem> {
         self.all_items().find(|i| i.id == id)
     }
 
-    /// Find an item mutably by its stable ID
+    // Find an item mutably by its stable ID
     pub fn find_by_id_mut(&mut self, id: &str) -> Option<&mut TodoItem> {
         self.all_items_mut().find(|i| i.id == id)
     }
 
-    /// Find items whose text contains `substr` (case-insensitive)
+    // Find items whose text contains `substr` (case-insensitive)
     pub fn find_by_text(&self, substr: &str) -> Vec<&TodoItem> {
         let lower = substr.to_lowercase();
         self.all_items()
@@ -524,7 +524,7 @@ impl TodoFile {
             .collect()
     }
 
-    /// Total item counts
+    // Total item counts
     pub fn counts(&self) -> TodoCounts {
         let mut counts = TodoCounts::default();
         for item in self.all_items() {
@@ -549,7 +549,7 @@ impl TodoFile {
     // Mutation
     // -----------------------------------------------------------------------
 
-    /// Mark an item done by ID
+    // Mark an item done by ID
     pub fn mark_done(&mut self, id: &str, note: impl Into<String>) -> bool {
         if let Some(item) = self.find_by_id_mut(id) {
             item.mark_done(note);
@@ -559,7 +559,7 @@ impl TodoFile {
         }
     }
 
-    /// Mark an item partial by ID
+    // Mark an item partial by ID
     pub fn mark_partial(&mut self, id: &str, note: impl Into<String>) -> bool {
         if let Some(item) = self.find_by_id_mut(id) {
             item.mark_partial(note);
@@ -569,7 +569,7 @@ impl TodoFile {
         }
     }
 
-    /// Mark an item blocked by ID
+    // Mark an item blocked by ID
     pub fn mark_blocked(&mut self, id: &str, reason: impl Into<String>) -> bool {
         if let Some(item) = self.find_by_id_mut(id) {
             item.mark_blocked(reason);
@@ -579,10 +579,10 @@ impl TodoFile {
         }
     }
 
-    /// Append a new item to a named section (creates section if needed)
-    ///
-    /// `block_heading` should match the text after `## ` (e.g. `"🔴 High Priority"`)
-    /// `section_heading` should match the text after `### ` (e.g. `"API & Data Layer"`)
+    // Append a new item to a named section (creates section if needed)
+    //
+    // `block_heading` should match the text after `## ` (e.g. `"🔴 High Priority"`)
+    // `section_heading` should match the text after `### ` (e.g. `"API & Data Layer"`)
     pub fn append_item(
         &mut self,
         block_heading: &str,
@@ -640,7 +640,7 @@ impl TodoFile {
     // Serialisation
     // -----------------------------------------------------------------------
 
-    /// Render the entire file back to Markdown
+    // Render the entire file back to Markdown
     pub fn to_markdown(&self) -> String {
         let mut out = String::new();
 
@@ -678,7 +678,7 @@ impl TodoFile {
         out
     }
 
-    /// Write the file back to disk (atomic: write to `.tmp` then rename)
+    // Write the file back to disk (atomic: write to `.tmp` then rename)
     pub fn save(&self) -> Result<()> {
         let content = self.to_markdown();
         let tmp = self.path.with_extension("md.tmp");
@@ -687,7 +687,7 @@ impl TodoFile {
         Ok(())
     }
 
-    /// Save to an explicit path (useful for tests / alternate targets)
+    // Save to an explicit path (useful for tests / alternate targets)
     pub fn save_to(&self, path: impl AsRef<Path>) -> Result<()> {
         let content = self.to_markdown();
         let path = path.as_ref();

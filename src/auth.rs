@@ -1,22 +1,22 @@
-//! API key authentication middleware for the RustCode server.
-//!
-//! Reads valid keys from the `RUSTCODE_PROXY_API_KEYS` environment variable
-//! (comma-separated list). When the variable is unset or empty, authentication
-//! is disabled (dev / testing mode).
-//!
-//! Keys are cached in a [`std::sync::OnceLock`] so the environment variable is
-//! read at most once per process lifetime.
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use axum::{Router, middleware, routing::get};
-//! use rustcode::auth::require_api_key;
-//!
-//! let protected = Router::new()
-//!     .route("/api/things", get(handler))
-//!     .layer(middleware::from_fn(require_api_key));
-//! ```
+// API key authentication middleware for the RustCode server.
+//
+// Reads valid keys from the `RUSTCODE_PROXY_API_KEYS` environment variable
+// (comma-separated list). When the variable is unset or empty, authentication
+// is disabled (dev / testing mode).
+//
+// Keys are cached in a [`std::sync::OnceLock`] so the environment variable is
+// read at most once per process lifetime.
+//
+// # Usage
+//
+// ```rust,ignore
+// use axum::{Router, middleware, routing::get};
+// use rustcode::auth::require_api_key;
+//
+// let protected = Router::new()
+//     .route("/api/things", get(handler))
+//     .layer(middleware::from_fn(require_api_key));
+// ```
 
 use axum::{
     extract::Request,
@@ -31,9 +31,9 @@ use std::sync::OnceLock;
 // Cached key store
 // ---------------------------------------------------------------------------
 
-/// Parsed set of valid API keys, loaded once from the environment.
-///
-/// An empty `Vec` means authentication is disabled (dev mode).
+// Parsed set of valid API keys, loaded once from the environment.
+//
+// An empty `Vec` means authentication is disabled (dev mode).
 fn valid_keys() -> &'static Vec<String> {
     static KEYS: OnceLock<Vec<String>> = OnceLock::new();
     KEYS.get_or_init(|| {
@@ -49,7 +49,7 @@ fn valid_keys() -> &'static Vec<String> {
     })
 }
 
-/// Returns `true` when no keys are configured (auth disabled / dev mode).
+// Returns `true` when no keys are configured (auth disabled / dev mode).
 pub fn auth_disabled() -> bool {
     valid_keys().is_empty()
 }
@@ -85,10 +85,10 @@ impl AuthError {
 // Middleware
 // ---------------------------------------------------------------------------
 
-/// Axum middleware that validates the `Authorization: Bearer <key>` header
-/// against the keys stored in `RUSTCODE_PROXY_API_KEYS`.
-///
-/// When no keys are configured the middleware is a no-op (dev mode).
+// Axum middleware that validates the `Authorization: Bearer <key>` header
+// against the keys stored in `RUSTCODE_PROXY_API_KEYS`.
+//
+// When no keys are configured the middleware is a no-op (dev mode).
 pub async fn require_api_key(request: Request, next: Next) -> Result<Response, Response> {
     let keys = valid_keys();
 

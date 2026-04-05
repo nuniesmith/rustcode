@@ -5,7 +5,7 @@ use std::process::Command;
 
 use crate::config::{ConfigError, ConfigLoader, RuntimeConfig};
 
-/// Errors raised while assembling the final system prompt.
+// Errors raised while assembling the final system prompt.
 #[derive(Debug)]
 pub enum PromptBuildError {
     Io(std::io::Error),
@@ -35,21 +35,21 @@ impl From<ConfigError> for PromptBuildError {
     }
 }
 
-/// Marker separating static prompt scaffolding from dynamic runtime context.
+// Marker separating static prompt scaffolding from dynamic runtime context.
 pub const SYSTEM_PROMPT_DYNAMIC_BOUNDARY: &str = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__";
-/// Human-readable default frontier model name embedded into generated prompts.
+// Human-readable default frontier model name embedded into generated prompts.
 pub const FRONTIER_MODEL_NAME: &str = "Claude Opus 4.6";
 const MAX_INSTRUCTION_FILE_CHARS: usize = 4_000;
 const MAX_TOTAL_INSTRUCTION_CHARS: usize = 12_000;
 
-/// Contents of an instruction file included in prompt construction.
+// Contents of an instruction file included in prompt construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextFile {
     pub path: PathBuf,
     pub content: String,
 }
 
-/// Project-local context injected into the rendered system prompt.
+// Project-local context injected into the rendered system prompt.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectContext {
     pub cwd: PathBuf,
@@ -86,7 +86,7 @@ impl ProjectContext {
     }
 }
 
-/// Builder for the runtime system prompt and dynamic environment sections.
+// Builder for the runtime system prompt and dynamic environment sections.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SystemPromptBuilder {
     output_style_name: Option<String>,
@@ -190,7 +190,7 @@ impl SystemPromptBuilder {
     }
 }
 
-/// Formats each item as an indented bullet for prompt sections.
+// Formats each item as an indented bullet for prompt sections.
 #[must_use]
 pub fn prepend_bullets(items: Vec<String>) -> Vec<String> {
     items.into_iter().map(|item| format!(" - {item}")).collect()
@@ -408,7 +408,7 @@ fn collapse_blank_lines(content: &str) -> String {
     result
 }
 
-/// Loads config and project context, then renders the system prompt text.
+// Loads config and project context, then renders the system prompt text.
 pub fn load_system_prompt(
     cwd: impl Into<PathBuf>,
     current_date: impl Into<String>,

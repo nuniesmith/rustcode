@@ -1,7 +1,7 @@
-//! Database module for Rustassistant
-//!
-//! Provides PostgreSQL-based storage for notes, repositories, and tasks.
-//! Uses sqlx for async database operations.
+// Database module for Rustassistant
+//
+// Provides PostgreSQL-based storage for notes, repositories, and tasks.
+// Uses sqlx for async database operations.
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
@@ -32,7 +32,7 @@ pub type DbPool = PgPool;
 // Models
 // ============================================================================
 
-/// A note/thought captured by the user
+// A note/thought captured by the user
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Note {
     pub id: String,
@@ -43,26 +43,26 @@ pub struct Note {
     pub repo_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
-    /// Comma-separated tags — populated from the `notes_with_tags` view when
-    /// queried via tag-aware helpers; NULL when queried from the bare table.
+    // Comma-separated tags — populated from the `notes_with_tags` view when
+    // queried via tag-aware helpers; NULL when queried from the bare table.
     #[sqlx(default)]
     pub tags: Option<String>,
 }
 
 impl Note {
-    /// Get status as a string (legacy API)
+    // Get status as a string (legacy API)
     pub fn status_str(&self) -> &str {
         &self.status
     }
 
-    /// Get formatted created_at timestamp (legacy API)
+    // Get formatted created_at timestamp (legacy API)
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string())
     }
 
-    /// Get formatted updated_at timestamp (legacy API)
+    // Get formatted updated_at timestamp (legacy API)
     pub fn updated_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.updated_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -70,7 +70,7 @@ impl Note {
     }
 }
 
-/// A tag for categorizing notes
+// A tag for categorizing notes
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Tag {
     pub name: String,
@@ -82,7 +82,7 @@ pub struct Tag {
 }
 
 impl Tag {
-    /// Get formatted created_at timestamp
+    // Get formatted created_at timestamp
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -90,7 +90,7 @@ impl Tag {
     }
 }
 
-/// Note-Tag relationship
+// Note-Tag relationship
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct NoteTag {
     pub note_id: String,
@@ -98,7 +98,7 @@ pub struct NoteTag {
     pub created_at: i64,
 }
 
-/// A tracked repository
+// A tracked repository
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Repository {
     pub id: String,
@@ -141,20 +141,20 @@ pub struct Repository {
     pub last_scan_issues_found: Option<i32>,
     #[sqlx(default)]
     pub last_error: Option<String>,
-    /// Flag set via the API to request a project review re-run
+    // Flag set via the API to request a project review re-run
     #[sqlx(default)]
     pub review_requested: Option<bool>,
 }
 
 impl Repository {
-    /// Get formatted created_at timestamp (legacy API)
+    // Get formatted created_at timestamp (legacy API)
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string())
     }
 
-    /// Get scan status display string
+    // Get scan status display string
     pub fn scan_status_display(&self) -> String {
         match self.scan_status.as_deref() {
             Some("scanning") => "🔄 Scanning".to_string(),
@@ -163,7 +163,7 @@ impl Repository {
         }
     }
 
-    /// Get progress percentage (0-100)
+    // Get progress percentage (0-100)
     pub fn progress_percentage(&self) -> i64 {
         match (self.scan_files_processed, self.scan_files_total) {
             (Some(processed), Some(total)) if total > 0 => {
@@ -173,18 +173,18 @@ impl Repository {
         }
     }
 
-    /// Check if auto-scan is enabled
+    // Check if auto-scan is enabled
     pub fn is_auto_scan_enabled(&self) -> bool {
         self.auto_scan_enabled != 0
     }
 }
 
-/// A generated or manual task
+// A generated or manual task
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Task {
     pub id: String,
-    /// Title — may be NULL for rows created by the legacy (migration-001) schema,
-    /// where the equivalent column is `content`.
+    // Title — may be NULL for rows created by the legacy (migration-001) schema,
+    // where the equivalent column is `content`.
     #[sqlx(default)]
     pub title: String,
     #[sqlx(default)]
@@ -205,7 +205,7 @@ pub struct Task {
     pub updated_at: i64,
 }
 
-/// Document model for RAG system
+// Document model for RAG system
 #[derive(Debug, Clone)]
 pub struct Document {
     pub id: String,
@@ -223,27 +223,27 @@ pub struct Document {
     pub created_at: i64,
     pub updated_at: i64,
     pub indexed_at: Option<i64>,
-    /// Whether this document is pinned (surfaced first in listings).
-    /// Defaults to `false`; set via `POST /api/web/docs/:id/pin`.
+    // Whether this document is pinned (surfaced first in listings).
+    // Defaults to `false`; set via `POST /api/web/docs/:id/pin`.
     pub pinned: bool,
 }
 
 impl Document {
-    /// Format created_at timestamp
+    // Format created_at timestamp
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_default()
     }
 
-    /// Format updated_at timestamp
+    // Format updated_at timestamp
     pub fn updated_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.updated_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_default()
     }
 
-    /// Get indexing status
+    // Get indexing status
     pub fn index_status(&self) -> &str {
         match self.indexed_at {
             None => "not_indexed",
@@ -252,7 +252,7 @@ impl Document {
         }
     }
 
-    /// Parse tags into Vec
+    // Parse tags into Vec
     pub fn tag_list(&self) -> Vec<String> {
         self.tags
             .as_ref()
@@ -260,13 +260,13 @@ impl Document {
             .unwrap_or_default()
     }
 
-    /// Return a pin icon string suitable for HTML display.
+    // Return a pin icon string suitable for HTML display.
     pub fn pin_icon(&self) -> &'static str {
         if self.pinned { "📌 " } else { "" }
     }
 }
 
-/// Document chunk for embeddings
+// Document chunk for embeddings
 #[derive(Debug, Clone)]
 pub struct DocumentChunk {
     pub id: String,
@@ -280,7 +280,7 @@ pub struct DocumentChunk {
     pub created_at: i64,
 }
 
-/// Document embedding
+// Document embedding
 #[derive(Debug, Clone)]
 pub struct DocumentEmbedding {
     pub id: String,
@@ -292,12 +292,12 @@ pub struct DocumentEmbedding {
 }
 
 impl DocumentEmbedding {
-    /// Parse embedding from JSON string
+    // Parse embedding from JSON string
     pub fn parse_embedding(&self) -> Result<Vec<f32>, serde_json::Error> {
         serde_json::from_str(&self.embedding)
     }
 
-    /// Create from vector
+    // Create from vector
     pub fn from_vector(chunk_id: String, vector: &[f32], model: String) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -310,7 +310,7 @@ impl DocumentEmbedding {
     }
 }
 
-/// Document tag
+// Document tag
 #[derive(Debug, Clone)]
 pub struct DocumentTag {
     pub document_id: String,
@@ -321,7 +321,7 @@ pub struct DocumentTag {
 // Database initialization
 // ============================================================================
 
-/// Initialize the database connection pool and create tables
+// Initialize the database connection pool and create tables
 pub async fn init_db(database_url: &str) -> DbResult<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -330,7 +330,7 @@ pub async fn init_db(database_url: &str) -> DbResult<PgPool> {
 
     // Run all migrations from the ./migrations directory.
     // This replaces the old inline create_tables() + create_queue_tables() calls.
-    sqlx::migrate!("./migrations")
+    sqlx::migrate!("./sql")
         .run(&pool)
         .await
         .map_err(|e| DbError::Sqlx(e.into()))?;
@@ -342,7 +342,7 @@ pub async fn init_db(database_url: &str) -> DbResult<PgPool> {
 // Note Operations
 // ============================================================================
 
-/// Create a new note with optional tags and repo linking
+// Create a new note with optional tags and repo linking
 pub async fn create_note_with_tags(
     pool: &PgPool,
     content: &str,
@@ -393,7 +393,7 @@ pub async fn create_note_with_tags(
     })
 }
 
-/// Create a new note (legacy API - backward compatible)
+// Create a new note (legacy API - backward compatible)
 pub async fn create_note(
     pool: &PgPool,
     content: &str,
@@ -407,7 +407,7 @@ pub async fn create_note(
     create_note_with_tags(pool, content, &tag_vec, project, None).await
 }
 
-/// Get a note by ID
+// Get a note by ID
 pub async fn get_note(pool: &PgPool, id: &str) -> DbResult<Note> {
     sqlx::query_as::<_, Note>("SELECT * FROM notes WHERE id = $1")
         .bind(id)
@@ -416,7 +416,7 @@ pub async fn get_note(pool: &PgPool, id: &str) -> DbResult<Note> {
         .ok_or_else(|| DbError::NotFound(format!("Note not found: {}", id)))
 }
 
-/// List notes with optional filtering
+// List notes with optional filtering
 pub async fn list_notes(
     pool: &PgPool,
     limit: i64,
@@ -460,7 +460,7 @@ pub async fn list_notes(
     Ok(q.fetch_all(pool).await?)
 }
 
-/// Search notes by content or title
+// Search notes by content or title
 pub async fn search_notes(pool: &PgPool, query: &str, limit: i64) -> DbResult<Vec<Note>> {
     let search_pattern = format!("%{}%", query);
 
@@ -479,7 +479,7 @@ pub async fn search_notes(pool: &PgPool, query: &str, limit: i64) -> DbResult<Ve
     .await?)
 }
 
-/// Update note status
+// Update note status
 pub async fn update_note_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -497,7 +497,7 @@ pub async fn update_note_status(pool: &PgPool, id: &str, status: &str) -> DbResu
     Ok(())
 }
 
-/// Delete a note
+// Delete a note
 pub async fn delete_note(pool: &PgPool, id: &str) -> DbResult<()> {
     let result = sqlx::query("DELETE FROM notes WHERE id = $1")
         .bind(id)
@@ -515,7 +515,7 @@ pub async fn delete_note(pool: &PgPool, id: &str) -> DbResult<()> {
 // Tag Operations
 // ============================================================================
 
-/// Get all tags ordered by usage count
+// Get all tags ordered by usage count
 pub async fn list_tags(pool: &PgPool) -> DbResult<Vec<Tag>> {
     Ok(
         sqlx::query_as::<_, Tag>("SELECT * FROM tags ORDER BY usage_count DESC, name ASC")
@@ -524,7 +524,7 @@ pub async fn list_tags(pool: &PgPool) -> DbResult<Vec<Tag>> {
     )
 }
 
-/// Get a specific tag by name
+// Get a specific tag by name
 pub async fn get_tag(pool: &PgPool, name: &str) -> DbResult<Option<Tag>> {
     Ok(
         sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE name = $1")
@@ -534,7 +534,7 @@ pub async fn get_tag(pool: &PgPool, name: &str) -> DbResult<Option<Tag>> {
     )
 }
 
-/// Create or update a tag
+// Create or update a tag
 pub async fn upsert_tag(
     pool: &PgPool,
     name: &str,
@@ -569,7 +569,7 @@ pub async fn upsert_tag(
         .ok_or_else(|| DbError::NotFound(format!("Tag not found after upsert: {}", name)))
 }
 
-/// Delete a tag (will cascade delete note_tags relationships)
+// Delete a tag (will cascade delete note_tags relationships)
 pub async fn delete_tag(pool: &PgPool, name: &str) -> DbResult<()> {
     let result = sqlx::query("DELETE FROM tags WHERE name = $1")
         .bind(name)
@@ -583,7 +583,7 @@ pub async fn delete_tag(pool: &PgPool, name: &str) -> DbResult<()> {
     Ok(())
 }
 
-/// Add a tag to a note
+// Add a tag to a note
 pub async fn add_tag_to_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -603,7 +603,7 @@ pub async fn add_tag_to_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResul
     Ok(())
 }
 
-/// Remove a tag from a note
+// Remove a tag from a note
 pub async fn remove_tag_from_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM note_tags WHERE note_id = $1 AND tag = $2")
         .bind(note_id)
@@ -614,7 +614,7 @@ pub async fn remove_tag_from_note(pool: &PgPool, note_id: &str, tag: &str) -> Db
     Ok(())
 }
 
-/// Get all tags for a note
+// Get all tags for a note
 pub async fn get_note_tags(pool: &PgPool, note_id: &str) -> DbResult<Vec<String>> {
     let tags = sqlx::query_scalar::<_, String>("SELECT tag FROM note_tags WHERE note_id = $1")
         .bind(note_id)
@@ -624,7 +624,7 @@ pub async fn get_note_tags(pool: &PgPool, note_id: &str) -> DbResult<Vec<String>
     Ok(tags)
 }
 
-/// Set tags for a note (replaces existing tags)
+// Set tags for a note (replaces existing tags)
 pub async fn set_note_tags(pool: &PgPool, note_id: &str, tags: &[&str]) -> DbResult<()> {
     // Start a transaction
     let mut tx = pool.begin().await?;
@@ -656,7 +656,7 @@ pub async fn set_note_tags(pool: &PgPool, note_id: &str, tags: &[&str]) -> DbRes
     Ok(())
 }
 
-/// Search notes by tags (AND logic - note must have all specified tags)
+// Search notes by tags (AND logic - note must have all specified tags)
 pub async fn search_notes_by_tags(pool: &PgPool, tags: &[&str], limit: i64) -> DbResult<Vec<Note>> {
     if tags.is_empty() {
         return list_notes(pool, limit, None, None, None).await;
@@ -702,7 +702,7 @@ pub async fn search_notes_by_tags(pool: &PgPool, tags: &[&str], limit: i64) -> D
     Ok(q.fetch_all(pool).await?)
 }
 
-/// Update note with repo_id
+// Update note with repo_id
 pub async fn update_note_repo(pool: &PgPool, note_id: &str, repo_id: Option<&str>) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -720,7 +720,7 @@ pub async fn update_note_repo(pool: &PgPool, note_id: &str, repo_id: Option<&str
     Ok(())
 }
 
-/// Get notes for a repository
+// Get notes for a repository
 pub async fn get_repo_notes(pool: &PgPool, repo_id: &str, limit: i64) -> DbResult<Vec<Note>> {
     Ok(sqlx::query_as::<_, Note>(
         r#"
@@ -736,7 +736,7 @@ pub async fn get_repo_notes(pool: &PgPool, repo_id: &str, limit: i64) -> DbResul
     .await?)
 }
 
-/// Count notes for a repository
+// Count notes for a repository
 pub async fn count_repo_notes(pool: &PgPool, repo_id: &str) -> DbResult<i64> {
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes WHERE repo_id = $1")
         .bind(repo_id)
@@ -750,7 +750,7 @@ pub async fn count_repo_notes(pool: &PgPool, repo_id: &str) -> DbResult<i64> {
 // Repository Operations
 // ============================================================================
 
-/// Add a repository to track
+// Add a repository to track
 pub async fn add_repository(
     pool: &PgPool,
     path: &str,
@@ -803,7 +803,7 @@ pub async fn add_repository(
     })
 }
 
-/// Get a repository by ID
+// Get a repository by ID
 pub async fn get_repository(pool: &PgPool, id: &str) -> DbResult<Repository> {
     sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE id = $1")
         .bind(id)
@@ -812,7 +812,7 @@ pub async fn get_repository(pool: &PgPool, id: &str) -> DbResult<Repository> {
         .ok_or_else(|| DbError::NotFound(format!("Repository not found: {}", id)))
 }
 
-/// Get a repository by path
+// Get a repository by path
 pub async fn get_repository_by_path(pool: &PgPool, path: &str) -> DbResult<Option<Repository>> {
     Ok(
         sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE local_path = $1")
@@ -822,7 +822,7 @@ pub async fn get_repository_by_path(pool: &PgPool, path: &str) -> DbResult<Optio
     )
 }
 
-/// List all repositories
+// List all repositories
 pub async fn list_repositories(pool: &PgPool) -> DbResult<Vec<Repository>> {
     Ok(
         sqlx::query_as::<_, Repository>("SELECT * FROM repositories ORDER BY name ASC")
@@ -831,7 +831,7 @@ pub async fn list_repositories(pool: &PgPool) -> DbResult<Vec<Repository>> {
     )
 }
 
-/// Update repository analysis timestamp and metadata
+// Update repository analysis timestamp and metadata
 pub async fn update_repository_analysis(
     pool: &PgPool,
     id: &str,
@@ -854,7 +854,7 @@ pub async fn update_repository_analysis(
     Ok(())
 }
 
-/// Remove a repository
+// Remove a repository
 pub async fn remove_repository(pool: &PgPool, id: &str) -> DbResult<()> {
     let result = sqlx::query("DELETE FROM repositories WHERE id = $1")
         .bind(id)
@@ -872,7 +872,7 @@ pub async fn remove_repository(pool: &PgPool, id: &str) -> DbResult<()> {
 // Scan Progress Operations
 // ============================================================================
 
-/// Start a scan - set status to 'scanning' and initialize progress tracking
+// Start a scan - set status to 'scanning' and initialize progress tracking
 pub async fn start_scan(pool: &PgPool, repo_id: &str, total_files: i64) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -917,7 +917,7 @@ pub async fn start_scan(pool: &PgPool, repo_id: &str, total_files: i64) -> DbRes
     Ok(())
 }
 
-/// Update scan progress during scanning
+// Update scan progress during scanning
 pub async fn update_scan_progress(
     pool: &PgPool,
     repo_id: &str,
@@ -959,7 +959,7 @@ pub async fn update_scan_progress(
     Ok(())
 }
 
-/// Complete a scan - set status to 'idle' and record metrics
+// Complete a scan - set status to 'idle' and record metrics
 pub async fn complete_scan(
     pool: &PgPool,
     repo_id: &str,
@@ -1022,7 +1022,7 @@ pub async fn complete_scan(
     Ok(())
 }
 
-/// Mark a scan as failed with error
+// Mark a scan as failed with error
 pub async fn fail_scan(pool: &PgPool, repo_id: &str, error_message: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -1060,7 +1060,7 @@ pub async fn fail_scan(pool: &PgPool, repo_id: &str, error_message: &str) -> DbR
 // Scan Event Logging
 // ============================================================================
 
-/// Log a scan event to the scan_events table
+// Log a scan event to the scan_events table
 pub async fn log_scan_event(
     pool: &PgPool,
     repo_id: &str,
@@ -1087,7 +1087,7 @@ pub async fn log_scan_event(
     Ok(())
 }
 
-/// Get recent scan events for a repository
+// Get recent scan events for a repository
 pub async fn get_scan_events(
     pool: &PgPool,
     repo_id: Option<&str>,
@@ -1122,7 +1122,7 @@ pub async fn get_scan_events(
     Ok(events)
 }
 
-/// Scan event model
+// Scan event model
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ScanEvent {
     pub id: i64,
@@ -1134,14 +1134,14 @@ pub struct ScanEvent {
 }
 
 impl ScanEvent {
-    /// Get formatted created_at timestamp
+    // Get formatted created_at timestamp
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string())
     }
 
-    /// Get a human-readable relative time (e.g., "2 minutes ago")
+    // Get a human-readable relative time (e.g., "2 minutes ago")
     pub fn created_at_relative(&self) -> String {
         let now = chrono::Utc::now().timestamp();
         let diff = now - self.created_at;
@@ -1162,7 +1162,7 @@ impl ScanEvent {
 // Task Operations
 // ============================================================================
 
-/// Create a new task
+// Create a new task
 #[allow(clippy::too_many_arguments)]
 pub async fn create_task(
     pool: &PgPool,
@@ -1222,7 +1222,7 @@ pub async fn create_task(
     })
 }
 
-/// List tasks with optional filtering
+// List tasks with optional filtering
 pub async fn list_tasks(
     pool: &PgPool,
     limit: i64,
@@ -1282,7 +1282,7 @@ pub async fn list_tasks(
     Ok(q.fetch_all(pool).await?)
 }
 
-/// Update task status
+// Update task status
 pub async fn update_task_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
@@ -1300,7 +1300,7 @@ pub async fn update_task_status(pool: &PgPool, id: &str, status: &str) -> DbResu
     Ok(())
 }
 
-/// Get the next recommended task (highest priority pending task)
+// Get the next recommended task (highest priority pending task)
 pub async fn get_next_task(pool: &PgPool) -> DbResult<Option<Task>> {
     Ok(sqlx::query_as::<_, Task>(
         r#"
@@ -1330,7 +1330,7 @@ pub async fn get_next_task(pool: &PgPool) -> DbResult<Option<Task>> {
 // Statistics
 // ============================================================================
 
-/// Get database statistics
+// Get database statistics
 #[derive(Debug, Serialize)]
 pub struct DbStats {
     pub total_notes: i64,
@@ -1386,7 +1386,7 @@ mod tests {
         init_db(&url).await.unwrap()
     }
 
-    /// Ensure a tag exists in the `tags` table so FK inserts into `note_tags` succeed.
+    // Ensure a tag exists in the `tags` table so FK inserts into `note_tags` succeed.
     async fn ensure_tag(pool: &PgPool, name: &str) {
         let now = chrono::Utc::now().timestamp();
         sqlx::query(
@@ -1400,7 +1400,7 @@ mod tests {
         .unwrap();
     }
 
-    /// Generate a short unique suffix so parallel tests don't collide on UNIQUE columns.
+    // Generate a short unique suffix so parallel tests don't collide on UNIQUE columns.
     fn uid() -> String {
         uuid::Uuid::new_v4().to_string()[..8].to_string()
     }
@@ -1612,30 +1612,30 @@ mod tests {
 // This Database struct provides compatibility with existing code that uses
 // the old struct-based API. New code should use the function-based API above.
 
-/// Backward-compatible Database wrapper
+// Backward-compatible Database wrapper
 #[derive(Clone)]
 pub struct Database {
     pub pool: PgPool,
 }
 
 impl Database {
-    /// Create a new database connection (legacy API)
+    // Create a new database connection (legacy API)
     pub async fn new(database_url: &str) -> DbResult<Self> {
         let pool = init_db(database_url).await?;
         Ok(Self { pool })
     }
 
-    /// Create a Database from an existing PgPool
+    // Create a Database from an existing PgPool
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
 
-    /// Get a reference to the pool
+    // Get a reference to the pool
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 
-    /// Create a note (legacy API)
+    // Create a note (legacy API)
     pub async fn create_note(&self, content: &str, status: NoteStatus) -> DbResult<String> {
         let note = create_note(&self.pool, content, None, None).await?;
         if status.as_str() != "inbox" {
@@ -1644,12 +1644,12 @@ impl Database {
         Ok(note.id)
     }
 
-    /// Get a note by ID (legacy API)
+    // Get a note by ID (legacy API)
     pub async fn get_note(&self, id: &str) -> DbResult<Note> {
         get_note(&self.pool, id).await
     }
 
-    /// List notes (legacy API)
+    // List notes (legacy API)
     pub async fn list_notes(
         &self,
         status: Option<NoteStatus>,
@@ -1661,7 +1661,7 @@ impl Database {
         list_notes(&self.pool, limit, status_str, None, None).await
     }
 
-    /// Add a repository (legacy API)
+    // Add a repository (legacy API)
     pub async fn add_repository(
         &self,
         name: &str,
@@ -1673,17 +1673,17 @@ impl Database {
         Ok(repo.id)
     }
 
-    /// Get a repository by ID (legacy API)
+    // Get a repository by ID (legacy API)
     pub async fn get_repository(&self, id: &str) -> DbResult<Repository> {
         get_repository(&self.pool, id).await
     }
 
-    /// List repositories (legacy API)
+    // List repositories (legacy API)
     pub async fn list_repositories(&self) -> DbResult<Vec<Repository>> {
         list_repositories(&self.pool).await
     }
 
-    /// Record LLM cost (legacy API - now a no-op, consider removing calls)
+    // Record LLM cost (legacy API - now a no-op, consider removing calls)
     pub async fn record_llm_cost(
         &self,
         _model: &str,
@@ -1698,20 +1698,20 @@ impl Database {
         Ok(())
     }
 
-    /// Get total LLM cost (legacy API - returns 0.0)
+    // Get total LLM cost (legacy API - returns 0.0)
     pub async fn get_total_llm_cost(&self) -> DbResult<f64> {
         Ok(0.0)
     }
 
-    /// Get LLM cost by period (legacy API - returns 0.0)
+    // Get LLM cost by period (legacy API - returns 0.0)
     pub async fn get_llm_cost_by_period(&self, _hours: i64) -> DbResult<f64> {
         Ok(0.0)
     }
 
-    /// Get cache hit rate from llm_costs table (last 30 days)
-    ///
-    /// Returns the percentage of queries that were cache hits (0-100).
-    /// Returns 0 if no data or if the llm_costs table doesn't exist.
+    // Get cache hit rate from llm_costs table (last 30 days)
+    //
+    // Returns the percentage of queries that were cache hits (0-100).
+    // Returns 0 if no data or if the llm_costs table doesn't exist.
     pub async fn get_cache_hit_rate(&self) -> DbResult<i64> {
         // Query cache hit stats from llm_costs table (created by CostTracker)
         let result = sqlx::query_as::<_, (i64, i64)>(
@@ -1734,29 +1734,29 @@ impl Database {
         }
     }
 
-    /// Get cost by model (legacy API - returns empty map)
+    // Get cost by model (legacy API - returns empty map)
     pub async fn get_cost_by_model(&self) -> DbResult<std::collections::HashMap<String, f64>> {
         Ok(std::collections::HashMap::new())
     }
 
-    /// Count notes (legacy API)
+    // Count notes (legacy API)
     pub async fn count_notes(&self) -> DbResult<i64> {
         let stats = get_stats(&self.pool).await?;
         Ok(stats.total_notes)
     }
 
-    /// Count repositories (legacy API)
+    // Count repositories (legacy API)
     pub async fn count_repositories(&self) -> DbResult<i64> {
         let stats = get_stats(&self.pool).await?;
         Ok(stats.total_repos)
     }
 
-    /// Get recent LLM operations (legacy API - returns empty vec)
+    // Get recent LLM operations (legacy API - returns empty vec)
     pub async fn get_recent_llm_operations(&self, _limit: i64) -> DbResult<Vec<LlmCost>> {
         Ok(Vec::new())
     }
 
-    /// Get stats (legacy API)
+    // Get stats (legacy API)
     pub async fn get_stats(&self) -> DbResult<DatabaseStats> {
         let stats = get_stats(&self.pool).await?;
         Ok(DatabaseStats {
@@ -1768,7 +1768,7 @@ impl Database {
     }
 }
 
-/// Legacy note status enum
+// Legacy note status enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteStatus {
     Inbox,
@@ -1788,7 +1788,7 @@ impl NoteStatus {
     }
 }
 
-/// Legacy stats struct
+// Legacy stats struct
 #[derive(Debug, Clone)]
 pub struct DatabaseStats {
     pub total_notes: i64,
@@ -1797,7 +1797,7 @@ pub struct DatabaseStats {
     pub total_repositories: i64,
 }
 
-/// Legacy LlmCost struct (kept for compatibility)
+// Legacy LlmCost struct (kept for compatibility)
 #[derive(Debug, Clone)]
 pub struct LlmCost {
     pub id: String,
@@ -1812,7 +1812,7 @@ pub struct LlmCost {
 }
 
 impl LlmCost {
-    /// Get formatted created_at timestamp (legacy API)
+    // Get formatted created_at timestamp (legacy API)
     pub fn created_at_formatted(&self) -> String {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -1820,7 +1820,7 @@ impl LlmCost {
     }
 }
 
-/// Legacy LlmCostStats struct (kept for compatibility)
+// Legacy LlmCostStats struct (kept for compatibility)
 #[derive(Debug, Clone)]
 pub struct LlmCostStats {
     pub total_cost: f64,

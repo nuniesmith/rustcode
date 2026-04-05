@@ -1,4 +1,4 @@
-//! Tag scanner for detecting audit annotations in source code
+// Tag scanner for detecting audit annotations in source code
 
 use crate::error::{AuditError, Result};
 use crate::types::{AuditTag, AuditTagType};
@@ -7,14 +7,14 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-/// Scanner for audit tags in source code
+// Scanner for audit tags in source code
 pub struct TagScanner {
-    /// Regex patterns for each tag type
+    // Regex patterns for each tag type
     patterns: Vec<(AuditTagType, Regex)>,
 }
 
 impl TagScanner {
-    /// Create a new tag scanner
+    // Create a new tag scanner
     pub fn new() -> Result<Self> {
         let patterns = vec![
             (
@@ -47,7 +47,7 @@ impl TagScanner {
         Ok(Self { patterns })
     }
 
-    /// Scan a file for audit tags
+    // Scan a file for audit tags
     pub fn scan_file(&self, path: &Path) -> Result<Vec<AuditTag>> {
         // Skip files that define the tag system itself
         if !self.should_scan_for_tags(path) {
@@ -82,7 +82,7 @@ impl TagScanner {
         Ok(tags)
     }
 
-    /// Scan a directory recursively for audit tags
+    // Scan a directory recursively for audit tags
     pub fn scan_directory(&self, dir: &Path) -> Result<Vec<AuditTag>> {
         let mut all_tags = Vec::new();
 
@@ -111,7 +111,7 @@ impl TagScanner {
         Ok(all_tags)
     }
 
-    /// Extract context around a line
+    // Extract context around a line
     fn extract_context(&self, content: &str, line_num: usize) -> Option<String> {
         let lines: Vec<&str> = content.lines().collect();
         let start = line_num.saturating_sub(2);
@@ -125,7 +125,7 @@ impl TagScanner {
         }
     }
 
-    /// Check if a file is a source file we should scan
+    // Check if a file is a source file we should scan
     fn is_source_file(&self, path: &Path) -> bool {
         if !path.is_file() {
             return false;
@@ -145,7 +145,7 @@ impl TagScanner {
         )
     }
 
-    /// Check if a path should be skipped
+    // Check if a path should be skipped
     fn should_skip(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         path_str.contains("target/")
@@ -157,7 +157,7 @@ impl TagScanner {
             || path_str.contains("dist/")
     }
 
-    /// Check if a file should be scanned for tags (exclude tag definition files)
+    // Check if a file should be scanned for tags (exclude tag definition files)
     fn should_scan_for_tags(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
 
@@ -176,7 +176,7 @@ impl TagScanner {
         true
     }
 
-    /// Group tags by type
+    // Group tags by type
     pub fn group_by_type<'a>(
         &self,
         tags: &'a [AuditTag],
@@ -193,28 +193,28 @@ impl TagScanner {
         grouped
     }
 
-    /// Get all TODO tags
+    // Get all TODO tags
     pub fn get_todos<'a>(&self, tags: &'a [AuditTag]) -> Vec<&'a AuditTag> {
         tags.iter()
             .filter(|t| t.tag_type == AuditTagType::Todo)
             .collect()
     }
 
-    /// Get all frozen sections
+    // Get all frozen sections
     pub fn get_frozen<'a>(&self, tags: &'a [AuditTag]) -> Vec<&'a AuditTag> {
         tags.iter()
             .filter(|t| t.tag_type == AuditTagType::Freeze)
             .collect()
     }
 
-    /// Get all security tags
+    // Get all security tags
     pub fn get_security<'a>(&self, tags: &'a [AuditTag]) -> Vec<&'a AuditTag> {
         tags.iter()
             .filter(|t| t.tag_type == AuditTagType::Security)
             .collect()
     }
 
-    /// Check if a file has a freeze tag
+    // Check if a file has a freeze tag
     pub fn is_frozen(&self, path: &Path, tags: &[AuditTag]) -> bool {
         tags.iter()
             .any(|t| t.file == path && t.tag_type == AuditTagType::Freeze)

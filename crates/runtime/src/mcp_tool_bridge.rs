@@ -1,8 +1,8 @@
-//! Bridge between MCP tool surface (ListMcpResources, ReadMcpResource, McpAuth, MCP)
-//! and the existing McpServerManager runtime.
-//!
-//! Provides a stateful client registry that tool handlers can use to
-//! connect to MCP servers and invoke their capabilities.
+// Bridge between MCP tool surface (ListMcpResources, ReadMcpResource, McpAuth, MCP)
+// and the existing McpServerManager runtime.
+//
+// Provides a stateful client registry that tool handlers can use to
+// connect to MCP servers and invoke their capabilities.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -11,7 +11,7 @@ use crate::mcp::mcp_tool_name;
 use crate::mcp_stdio::McpServerManager;
 use serde::{Deserialize, Serialize};
 
-/// Status of a managed MCP server connection.
+// Status of a managed MCP server connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum McpConnectionStatus {
@@ -34,7 +34,7 @@ impl std::fmt::Display for McpConnectionStatus {
     }
 }
 
-/// Metadata about an MCP resource.
+// Metadata about an MCP resource.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpResourceInfo {
     pub uri: String,
@@ -43,7 +43,7 @@ pub struct McpResourceInfo {
     pub mime_type: Option<String>,
 }
 
-/// Metadata about an MCP tool exposed by a server.
+// Metadata about an MCP tool exposed by a server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolInfo {
     pub name: String,
@@ -51,7 +51,7 @@ pub struct McpToolInfo {
     pub input_schema: Option<serde_json::Value>,
 }
 
-/// Tracked state of an MCP server connection.
+// Tracked state of an MCP server connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerState {
     pub server_name: String,
@@ -269,7 +269,7 @@ impl McpToolRegistry {
         )
     }
 
-    /// Set auth status for a server.
+    // Set auth status for a server.
     pub fn set_auth_status(
         &self,
         server_name: &str,
@@ -283,13 +283,13 @@ impl McpToolRegistry {
         Ok(())
     }
 
-    /// Disconnect / remove a server.
+    // Disconnect / remove a server.
     pub fn disconnect(&self, server_name: &str) -> Option<McpServerState> {
         let mut inner = self.inner.lock().expect("mcp registry lock poisoned");
         inner.remove(server_name)
     }
 
-    /// Number of registered servers.
+    // Number of registered servers.
     #[must_use]
     pub fn len(&self) -> usize {
         let inner = self.inner.lock().expect("mcp registry lock poisoned");

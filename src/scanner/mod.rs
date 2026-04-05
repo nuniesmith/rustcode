@@ -1,6 +1,6 @@
-//! Scanner module
-//!
-//! Provides repository scanning functionality for TODOs, file analysis, and directory trees.
+// Scanner module
+//
+// Provides repository scanning functionality for TODOs, file analysis, and directory trees.
 
 pub mod compat;
 pub mod github;

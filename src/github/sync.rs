@@ -1,41 +1,41 @@
-//! GitHub Synchronization Engine
-//!
-//! Provides bidirectional synchronization between GitHub and the local database.
-//! This module implements the "cost optimization" pattern by caching GitHub data
-//! locally and minimizing redundant API calls.
-//!
-//! # Architecture
-//!
-//! The sync engine follows these principles:
-//! - **Incremental Sync**: Only fetch data that changed since last sync
-//! - **Bidirectional**: Support both GitHub → Local and Local → GitHub flows
-//! - **Cost-Free**: GitHub API is free (rate-limited), maximizing its use
-//! - **Event-Driven**: React to webhook events for real-time updates
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::github::{GitHubClient, SyncEngine};
-//! use sqlx::PgPool;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let client = GitHubClient::new("ghp_token")?;
-//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
-//!
-//!     let sync = SyncEngine::new(client, pool);
-//!
-//!     // Full sync of all repos
-//!     let result = sync.sync_all_repos().await?;
-//!     println!("Synced {} repositories", result.repos_synced);
-//!
-//!     // Incremental sync (only changes since last sync)
-//!     let result = sync.sync_incremental().await?;
-//!     println!("Updated {} items", result.items_updated);
-//!
-//!     Ok(())
-//! }
-//! ```
+// GitHub Synchronization Engine
+//
+// Provides bidirectional synchronization between GitHub and the local database.
+// This module implements the "cost optimization" pattern by caching GitHub data
+// locally and minimizing redundant API calls.
+//
+// # Architecture
+//
+// The sync engine follows these principles:
+// - **Incremental Sync**: Only fetch data that changed since last sync
+// - **Bidirectional**: Support both GitHub → Local and Local → GitHub flows
+// - **Cost-Free**: GitHub API is free (rate-limited), maximizing its use
+// - **Event-Driven**: React to webhook events for real-time updates
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::github::{GitHubClient, SyncEngine};
+// use sqlx::PgPool;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let client = GitHubClient::new("ghp_token")?;
+//     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode".to_string())).await?;
+//
+//     let sync = SyncEngine::new(client, pool);
+//
+//     // Full sync of all repos
+//     let result = sync.sync_all_repos().await?;
+//     println!("Synced {} repositories", result.repos_synced);
+//
+//     // Incremental sync (only changes since last sync)
+//     let result = sync.sync_incremental().await?;
+//     println!("Updated {} items", result.items_updated);
+//
+//     Ok(())
+// }
+// ```
 
 use crate::github::{client::GitHubClient, models::*, Result};
 use chrono::{DateTime, Utc};
@@ -47,29 +47,29 @@ use tracing::{debug, error, info, warn};
 // Sync Configuration
 // ============================================================================
 
-/// Synchronization options
+// Synchronization options
 #[derive(Debug, Clone)]
 pub struct SyncOptions {
-    /// Sync repositories
+    // Sync repositories
     pub sync_repos: bool,
 
-    /// Sync issues
+    // Sync issues
     pub sync_issues: bool,
 
-    /// Sync pull requests
+    // Sync pull requests
     pub sync_prs: bool,
 
-    /// Sync commits (last N per repo)
+    // Sync commits (last N per repo)
     pub sync_commits: bool,
     pub commits_limit: u32,
 
-    /// Sync labels and milestones
+    // Sync labels and milestones
     pub sync_metadata: bool,
 
-    /// Force full resync (ignore last_synced timestamps)
+    // Force full resync (ignore last_synced timestamps)
     pub force_full: bool,
 
-    /// Only sync specific repositories
+    // Only sync specific repositories
     pub repo_filter: Option<Vec<String>>,
 }
 
@@ -89,7 +89,7 @@ impl Default for SyncOptions {
 }
 
 impl SyncOptions {
-    /// Create minimal sync options (repos only)
+    // Create minimal sync options (repos only)
     pub fn repos_only() -> Self {
         Self {
             sync_repos: true,
@@ -103,18 +103,18 @@ impl SyncOptions {
         }
     }
 
-    /// Create full sync options
+    // Create full sync options
     pub fn full() -> Self {
         Self::default()
     }
 
-    /// Filter to specific repositories
+    // Filter to specific repositories
     pub fn with_repos(mut self, repos: Vec<String>) -> Self {
         self.repo_filter = Some(repos);
         self
     }
 
-    /// Force full resync
+    // Force full resync
     pub fn force_full(mut self) -> Self {
         self.force_full = true;
         self
@@ -125,7 +125,7 @@ impl SyncOptions {
 // Sync Results
 // ============================================================================
 
-/// Result of a synchronization operation
+// Result of a synchronization operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncResult {
     pub started_at: DateTime<Utc>,
@@ -187,19 +187,19 @@ impl SyncResult {
 // Sync Engine
 // ============================================================================
 
-/// GitHub synchronization engine
+// GitHub synchronization engine
 pub struct SyncEngine {
     client: GitHubClient,
     pool: PgPool,
 }
 
 impl SyncEngine {
-    /// Create new sync engine
+    // Create new sync engine
     pub fn new(client: GitHubClient, pool: PgPool) -> Self {
         Self { client, pool }
     }
 
-    /// Initialize database schema for GitHub data
+    // Initialize database schema for GitHub data
     pub async fn initialize_schema(&self) -> Result<()> {
         info!("Initializing GitHub sync schema");
 
@@ -403,12 +403,12 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Sync all repositories for authenticated user
+    // Sync all repositories for authenticated user
     pub async fn sync_all_repos(&self) -> Result<SyncResult> {
         self.sync_with_options(SyncOptions::default()).await
     }
 
-    /// Sync with custom options
+    // Sync with custom options
     pub async fn sync_with_options(&self, options: SyncOptions) -> Result<SyncResult> {
         let mut result = SyncResult::new();
         info!("Starting GitHub sync with options: {:?}", options);
@@ -504,7 +504,7 @@ impl SyncEngine {
         Ok(result)
     }
 
-    /// Sync repositories
+    // Sync repositories
     async fn sync_repositories(
         &self,
         options: &SyncOptions,
@@ -588,7 +588,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Upsert a repository into the database
+    // Upsert a repository into the database
     async fn upsert_repository(&self, repo: &Repository) -> Result<bool> {
         let topics_json = serde_json::to_string(&repo.topics)?;
         let now = Utc::now().timestamp();
@@ -653,7 +653,7 @@ impl SyncEngine {
         Ok(is_new)
     }
 
-    /// Get list of repositories to sync
+    // Get list of repositories to sync
     async fn get_synced_repos(&self, options: &SyncOptions) -> Result<Vec<(String, String, i64)>> {
         let mut query = String::from(
             "SELECT owner_login, name, id FROM github_repositories WHERE sync_enabled = 1",
@@ -692,7 +692,7 @@ impl SyncEngine {
         Ok(repos)
     }
 
-    /// Sync issues for a repository
+    // Sync issues for a repository
     async fn sync_issues(
         &self,
         owner: &str,
@@ -716,7 +716,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Upsert an issue into the database
+    // Upsert an issue into the database
     async fn upsert_issue(&self, issue: &Issue, repo_id: i64) -> Result<()> {
         let labels_json =
             serde_json::to_string(&issue.labels.iter().map(|l| &l.name).collect::<Vec<_>>())?;
@@ -768,7 +768,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Sync pull requests for a repository
+    // Sync pull requests for a repository
     async fn sync_pull_requests(
         &self,
         owner: &str,
@@ -795,7 +795,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Upsert a pull request into the database
+    // Upsert a pull request into the database
     async fn upsert_pull_request(&self, pr: &PullRequest, repo_id: i64) -> Result<()> {
         let labels_json =
             serde_json::to_string(&pr.labels.iter().map(|l| &l.name).collect::<Vec<_>>())?;
@@ -857,7 +857,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Sync commits for a repository
+    // Sync commits for a repository
     async fn sync_commits(
         &self,
         owner: &str,
@@ -882,7 +882,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Upsert a commit into the database
+    // Upsert a commit into the database
     async fn upsert_commit(&self, commit: &Commit, repo_id: i64) -> Result<()> {
         let now = Utc::now().timestamp();
 
@@ -919,7 +919,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Incremental sync (only updates since last sync)
+    // Incremental sync (only updates since last sync)
     pub async fn sync_incremental(&self) -> Result<SyncResult> {
         info!("Starting incremental GitHub sync");
 
@@ -929,7 +929,7 @@ impl SyncEngine {
         self.sync_all_repos().await
     }
 
-    /// Get open issues across all synced repositories
+    // Get open issues across all synced repositories
     pub async fn get_open_issues(&self) -> Result<Vec<(String, i32, String)>> {
         let rows = sqlx::query(
             r#"
@@ -956,7 +956,7 @@ impl SyncEngine {
         Ok(issues)
     }
 
-    /// Get open PRs needing review
+    // Get open PRs needing review
     pub async fn get_prs_needing_review(&self) -> Result<Vec<(String, i32, String)>> {
         let rows = sqlx::query(
             r#"

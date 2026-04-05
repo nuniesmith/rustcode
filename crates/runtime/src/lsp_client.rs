@@ -1,11 +1,11 @@
-//! LSP (Language Server Protocol) client registry for tool dispatch.
+// LSP (Language Server Protocol) client registry for tool dispatch.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-/// Supported LSP actions.
+// Supported LSP actions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LspAction {
@@ -146,7 +146,7 @@ impl LspRegistry {
         inner.servers.get(language).cloned()
     }
 
-    /// Find the appropriate server for a file path based on extension.
+    // Find the appropriate server for a file path based on extension.
     pub fn find_server_for_path(&self, path: &str) -> Option<LspServerState> {
         let ext = std::path::Path::new(path)
             .extension()
@@ -170,13 +170,13 @@ impl LspRegistry {
         self.get(language)
     }
 
-    /// List all registered servers.
+    // List all registered servers.
     pub fn list_servers(&self) -> Vec<LspServerState> {
         let inner = self.inner.lock().expect("lsp registry lock poisoned");
         inner.servers.values().cloned().collect()
     }
 
-    /// Add diagnostics to a server.
+    // Add diagnostics to a server.
     pub fn add_diagnostics(
         &self,
         language: &str,
@@ -191,7 +191,7 @@ impl LspRegistry {
         Ok(())
     }
 
-    /// Get diagnostics for a specific file path.
+    // Get diagnostics for a specific file path.
     pub fn get_diagnostics(&self, path: &str) -> Vec<LspDiagnostic> {
         let inner = self.inner.lock().expect("lsp registry lock poisoned");
         inner
@@ -203,7 +203,7 @@ impl LspRegistry {
             .collect()
     }
 
-    /// Clear diagnostics for a language server.
+    // Clear diagnostics for a language server.
     pub fn clear_diagnostics(&self, language: &str) -> Result<(), String> {
         let mut inner = self.inner.lock().expect("lsp registry lock poisoned");
         let server = inner
@@ -214,7 +214,7 @@ impl LspRegistry {
         Ok(())
     }
 
-    /// Disconnect a server.
+    // Disconnect a server.
     pub fn disconnect(&self, language: &str) -> Option<LspServerState> {
         let mut inner = self.inner.lock().expect("lsp registry lock poisoned");
         inner.servers.remove(language)
@@ -231,7 +231,7 @@ impl LspRegistry {
         self.len() == 0
     }
 
-    /// Dispatch an LSP action and return a structured result.
+    // Dispatch an LSP action and return a structured result.
     pub fn dispatch(
         &self,
         action: &str,

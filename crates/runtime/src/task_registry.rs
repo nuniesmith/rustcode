@@ -1,4 +1,4 @@
-//! In-memory task registry for sub-agent task lifecycle management.
+// In-memory task registry for sub-agent task lifecycle management.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

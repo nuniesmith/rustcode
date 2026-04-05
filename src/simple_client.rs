@@ -1,22 +1,22 @@
-//! Simple Grok Client Adapter
-//!
-//! Wraps the `api` crate's `OpenAiCompatClient` so the rest of the rustcode
-//! codebase has a stable, high-level interface while all HTTP/retry/auth logic
-//! lives in the shared `api` crate.  This eliminates the raw `reqwest` calls
-//! that previously lived here.
+// Simple Grok Client Adapter
+//
+// Wraps the `api` crate's `OpenAiCompatClient` so the rest of the rustcode
+// codebase has a stable, high-level interface while all HTTP/retry/auth logic
+// lives in the shared `api` crate.  This eliminates the raw `reqwest` calls
+// that previously lived here.
 
 use anyhow::{Context as _, Result};
 use api::{InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock};
 
-/// Default model when `XAI_MODEL` env-var is unset.
+// Default model when `XAI_MODEL` env-var is unset.
 const DEFAULT_MODEL: &str = "grok-4.20-multi-agent-0309";
 
-/// Default max-tokens for simple completions.
+// Default max-tokens for simple completions.
 const DEFAULT_MAX_TOKENS: u32 = 8_000;
 
-/// Simple Grok client for the research and backup systems.
-///
-/// Backed by [`api::OpenAiCompatClient`] — no manual HTTP required.
+// Simple Grok client for the research and backup systems.
+//
+// Backed by [`api::OpenAiCompatClient`] — no manual HTTP required.
 #[derive(Clone)]
 pub struct GrokClient {
     inner: OpenAiCompatClient,
@@ -24,7 +24,7 @@ pub struct GrokClient {
 }
 
 impl GrokClient {
-    /// Create a new client with an explicit API key.
+    // Create a new client with an explicit API key.
     #[must_use]
     pub fn new(api_key: String) -> Self {
         let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
@@ -32,7 +32,7 @@ impl GrokClient {
         Self { inner, model }
     }
 
-    /// Create from `XAI_API_KEY` environment variable.
+    // Create from `XAI_API_KEY` environment variable.
     pub fn from_env() -> Result<Self> {
         let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
         let inner = OpenAiCompatClient::from_env(OpenAiCompatConfig::xai())
@@ -40,19 +40,19 @@ impl GrokClient {
         Ok(Self { inner, model })
     }
 
-    /// Override the model for this client.
+    // Override the model for this client.
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
     }
 
-    /// The active model string.
+    // The active model string.
     pub fn model(&self) -> &str {
         &self.model
     }
 
-    /// Generate a completion. Returns the assistant text content.
+    // Generate a completion. Returns the assistant text content.
     pub async fn generate(&self, prompt: &str, max_tokens: usize) -> Result<String> {
         let request = MessageRequest {
             model:       self.model.clone(),
@@ -86,12 +86,12 @@ impl GrokClient {
         Ok(text)
     }
 
-    /// Convenience: generate with the default token limit.
+    // Convenience: generate with the default token limit.
     pub async fn complete(&self, prompt: &str) -> Result<String> {
         self.generate(prompt, DEFAULT_MAX_TOKENS as usize).await
     }
 
-    /// Chat with an explicit system prompt.
+    // Chat with an explicit system prompt.
     pub async fn chat(&self, system: &str, user: &str) -> Result<String> {
         let request = MessageRequest {
             model:       self.model.clone(),

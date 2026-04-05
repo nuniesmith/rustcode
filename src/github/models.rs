@@ -1,7 +1,7 @@
-//! GitHub Domain Models
-//!
-//! Type-safe representations of GitHub entities with full serde support.
-//! These models are designed to work with both GraphQL and REST APIs.
+// GitHub Domain Models
+//
+// Type-safe representations of GitHub entities with full serde support.
+// These models are designed to work with both GraphQL and REST APIs.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ mod serde_helpers {
 // User & Organization
 // ============================================================================
 
-/// GitHub user or organization
+// GitHub user or organization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct User {
     pub id: i64,
@@ -60,7 +60,7 @@ pub enum UserType {
 // Repository
 // ============================================================================
 
-/// GitHub repository
+// GitHub repository
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Repository {
     pub id: i64,
@@ -130,7 +130,7 @@ pub struct License {
 // Issues
 // ============================================================================
 
-/// GitHub issue
+// GitHub issue
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
     pub id: i64,
@@ -194,7 +194,7 @@ pub struct IssuePullRequestLink {
 // Pull Requests
 // ============================================================================
 
-/// GitHub pull request
+// GitHub pull request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequest {
     pub id: i64,
@@ -267,7 +267,7 @@ pub struct PrBranch {
 // Commits
 // ============================================================================
 
-/// GitHub commit
+// GitHub commit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Commit {
     pub sha: String,
@@ -354,7 +354,7 @@ pub struct Verification {
 // Commit Status (CI/CD)
 // ============================================================================
 
-/// Commit status (CI/CD checks)
+// Commit status (CI/CD checks)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitStatus {
     pub id: i64,
@@ -434,7 +434,7 @@ pub struct Team {
 // Search Results
 // ============================================================================
 
-/// Generic search response wrapper
+// Generic search response wrapper
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponse<T> {
     pub total_count: i32,
@@ -446,7 +446,7 @@ pub struct SearchResponse<T> {
 // Activity Events
 // ============================================================================
 
-/// GitHub event (for activity tracking)
+// GitHub event (for activity tracking)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -518,78 +518,78 @@ pub struct RateLimitResources {
 // ============================================================================
 
 impl Repository {
-    /// Check if repository is a fork
+    // Check if repository is a fork
     pub fn is_fork(&self) -> bool {
         self.fork
     }
 
-    /// Check if repository is archived
+    // Check if repository is archived
     pub fn is_archived(&self) -> bool {
         self.archived
     }
 
-    /// Check if repository is active (not archived, not disabled)
+    // Check if repository is active (not archived, not disabled)
     pub fn is_active(&self) -> bool {
         !self.archived && !self.disabled
     }
 
-    /// Get primary language
+    // Get primary language
     pub fn primary_language(&self) -> Option<&str> {
         self.language.as_deref()
     }
 }
 
 impl Issue {
-    /// Check if issue is open
+    // Check if issue is open
     pub fn is_open(&self) -> bool {
         self.state == IssueState::Open
     }
 
-    /// Check if issue is a pull request
+    // Check if issue is a pull request
     pub fn is_pull_request(&self) -> bool {
         self.pull_request.is_some()
     }
 
-    /// Check if issue is assigned
+    // Check if issue is assigned
     pub fn is_assigned(&self) -> bool {
         !self.assignees.is_empty()
     }
 }
 
 impl PullRequest {
-    /// Check if PR is open
+    // Check if PR is open
     pub fn is_open(&self) -> bool {
         self.state == PrState::Open
     }
 
-    /// Check if PR is draft
+    // Check if PR is draft
     pub fn is_draft(&self) -> bool {
         self.draft
     }
 
-    /// Check if PR is merged
+    // Check if PR is merged
     pub fn is_merged(&self) -> bool {
         self.merged
     }
 
-    /// Check if PR needs review
+    // Check if PR needs review
     pub fn needs_review(&self) -> bool {
         self.is_open() && !self.is_draft() && !self.requested_reviewers.is_empty()
     }
 }
 
 impl Commit {
-    /// Get commit message (first line)
+    // Get commit message (first line)
     pub fn message_summary(&self) -> &str {
         self.commit.message.lines().next().unwrap_or("")
     }
 
-    /// Get commit author name
+    // Get commit author name
     pub fn author_name(&self) -> &str {
         &self.commit.author.name
     }
 
-    /// Check if commit is verified (signed)
+    // Check if commit is verified (signed)
     pub fn is_verified(&self) -> bool {
         self.commit
             .verification

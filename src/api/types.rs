@@ -1,4 +1,4 @@
-//! API request and response types for RAG endpoints
+// API request and response types for RAG endpoints
 
 use axum::{
     http::StatusCode,
@@ -12,19 +12,19 @@ use serde::{Deserialize, Serialize};
 // Shared Error Type
 // ============================================================================
 
-/// Standard API error response body.
-///
-/// Implements [`IntoResponse`] so handlers can return `Result<_, ApiError>`
-/// and Axum will serialise the error automatically.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// async fn my_handler() -> Result<Json<Foo>, ApiError> {
-///     let row = db_call().await.map_err(ApiError::internal)?;
-///     Ok(Json(row))
-/// }
-/// ```
+// Standard API error response body.
+//
+// Implements [`IntoResponse`] so handlers can return `Result<_, ApiError>`
+// and Axum will serialise the error automatically.
+//
+// # Example
+//
+// ```rust,ignore
+// async fn my_handler() -> Result<Json<Foo>, ApiError> {
+//     let row = db_call().await.map_err(ApiError::internal)?;
+//     Ok(Json(row))
+// }
+// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiError {
     pub error: String,
@@ -60,7 +60,7 @@ impl ApiError {
         }
     }
 
-    /// Convenience constructor: map any `Display` error into an internal error.
+    // Convenience constructor: map any `Display` error into an internal error.
     pub fn from_error(e: impl std::fmt::Display) -> Self {
         Self::internal(e.to_string())
     }
@@ -109,7 +109,7 @@ impl From<anyhow::Error> for ApiError {
 // Common Types
 // ============================================================================
 
-/// Standard API response wrapper
+// Standard API response wrapper
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
@@ -161,7 +161,7 @@ impl ApiResponse<()> {
     }
 }
 
-/// Pagination parameters
+// Pagination parameters
 #[derive(Debug, Clone, Deserialize)]
 pub struct PaginationQuery {
     #[serde(default = "default_page")]
@@ -178,7 +178,7 @@ fn default_limit() -> u32 {
     20
 }
 
-/// Paginated response
+// Paginated response
 #[derive(Debug, Clone, Serialize)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
@@ -205,7 +205,7 @@ impl<T> PaginatedResponse<T> {
 // Document Management
 // ============================================================================
 
-/// Request to upload a document
+// Request to upload a document
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadDocumentRequest {
     pub title: String,
@@ -218,7 +218,7 @@ pub struct UploadDocumentRequest {
     pub source_url: Option<String>,
 }
 
-/// Response for uploaded document
+// Response for uploaded document
 #[derive(Debug, Clone, Serialize)]
 pub struct UploadDocumentResponse {
     pub id: String,
@@ -228,8 +228,8 @@ pub struct UploadDocumentResponse {
     pub message: String,
 }
 
-/// Request to update document metadata
-/// Request to update document
+// Request to update document metadata
+// Request to update document
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateDocumentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -238,7 +238,7 @@ pub struct UpdateDocumentRequest {
     pub tags: Option<Vec<String>>,
 }
 
-/// Document details response
+// Document details response
 #[derive(Debug, Clone, Serialize)]
 pub struct DocumentResponse {
     pub id: String,
@@ -255,7 +255,7 @@ pub struct DocumentResponse {
     pub chunk_count: i64,
 }
 
-/// List documents query parameters
+// List documents query parameters
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListDocumentsQuery {
     #[serde(default = "default_page")]
@@ -272,7 +272,7 @@ pub struct ListDocumentsQuery {
 // Search
 // ============================================================================
 
-/// Search request
+// Search request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchRequest {
     pub query: String,
@@ -288,7 +288,7 @@ fn default_search_limit() -> usize {
     10
 }
 
-/// Type of search to perform
+// Type of search to perform
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SearchType {
@@ -298,7 +298,7 @@ pub enum SearchType {
     Keyword,
 }
 
-/// Search filters
+// Search filters
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchFiltersRequest {
     pub doc_type: Option<String>,
@@ -310,7 +310,7 @@ pub struct SearchFiltersRequest {
     pub date_to: Option<DateTime<Utc>>,
 }
 
-/// Search result item
+// Search result item
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResultItem {
     pub document_id: i64,
@@ -324,7 +324,7 @@ pub struct SearchResultItem {
     pub created_at: DateTime<Utc>,
 }
 
-/// Search response
+// Search response
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResponse {
     pub results: Vec<SearchResultItem>,
@@ -338,7 +338,7 @@ pub struct SearchResponse {
 // Indexing
 // ============================================================================
 
-/// Request to index a document
+// Request to index a document
 #[derive(Debug, Clone, Deserialize)]
 pub struct IndexDocumentRequest {
     pub document_id: String,
@@ -346,7 +346,7 @@ pub struct IndexDocumentRequest {
     pub force_reindex: bool,
 }
 
-/// Batch index request
+// Batch index request
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchIndexRequest {
     pub document_ids: Vec<String>,
@@ -354,7 +354,7 @@ pub struct BatchIndexRequest {
     pub force_reindex: bool,
 }
 
-/// Index job response
+// Index job response
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexJobResponse {
     pub job_id: String,
@@ -363,7 +363,7 @@ pub struct IndexJobResponse {
     pub queued_at: DateTime<Utc>,
 }
 
-/// Index status response
+// Index status response
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexStatusResponse {
     pub job_id: String,
@@ -389,7 +389,7 @@ pub enum IndexJobStatus {
 // Statistics
 // ============================================================================
 
-/// System statistics response
+// System statistics response
 #[derive(Debug, Clone, Serialize)]
 pub struct StatsResponse {
     pub documents: DocumentStats,

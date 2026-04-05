@@ -1,53 +1,53 @@
-//! # Code Chunks Database Module
-//!
-//! SQLite schema and CRUD operations for persisting code chunk metadata
-//! and the content-addressable dedup index. This enables cross-repo
-//! deduplication by storing chunk hashes, locations, and embeddings.
-//!
-//! ## Tables
-//!
-//! - `code_chunks`: Individual code chunks with metadata (hash, entity type, complexity, etc.)
-//! - `chunk_locations`: Where each chunk appears (repo, file, lines) — many-to-one with chunks
-//! - `scan_savings`: Records of files skipped or downgraded by static analysis (for cost reporting)
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::db::chunks::{ChunkStore, ChunkRecord, ChunkLocationRecord};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! # let pool = rustcode::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
-//! let store = ChunkStore::new(pool).await?;
-//!
-//! // Insert a chunk
-//! let record = ChunkRecord {
-//!     content_hash: "abc123".into(),
-//!     entity_type: "function".into(),
-//!     entity_name: "process_data".into(),
-//!     language: "rust".into(),
-//!     word_count: 150,
-//!     complexity_score: 12,
-//!     is_public: true,
-//!     has_tests: false,
-//!     is_test_code: false,
-//!     issue_count: 0,
-//!     embedding: None,
-//! };
-//! store.upsert_chunk(&record).await?;
-//!
-//! // Link a location
-//! let loc = ChunkLocationRecord {
-//!     content_hash: "abc123".into(),
-//!     repo_id: "rustcode".into(),
-//!     file_path: "src/lib.rs".into(),
-//!     start_line: 10,
-//!     end_line: 45,
-//!     entity_name: "process_data".into(),
-//! };
-//! store.upsert_location(&loc).await?;
-//! # Ok(())
-//! # }
-//! ```
+// # Code Chunks Database Module
+//
+// SQLite schema and CRUD operations for persisting code chunk metadata
+// and the content-addressable dedup index. This enables cross-repo
+// deduplication by storing chunk hashes, locations, and embeddings.
+//
+// ## Tables
+//
+// - `code_chunks`: Individual code chunks with metadata (hash, entity type, complexity, etc.)
+// - `chunk_locations`: Where each chunk appears (repo, file, lines) — many-to-one with chunks
+// - `scan_savings`: Records of files skipped or downgraded by static analysis (for cost reporting)
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::db::chunks::{ChunkStore, ChunkRecord, ChunkLocationRecord};
+//
+// # async fn example() -> anyhow::Result<()> {
+// # let pool = rustcode::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string())).await?;
+// let store = ChunkStore::new(pool).await?;
+//
+// // Insert a chunk
+// let record = ChunkRecord {
+//     content_hash: "abc123".into(),
+//     entity_type: "function".into(),
+//     entity_name: "process_data".into(),
+//     language: "rust".into(),
+//     word_count: 150,
+//     complexity_score: 12,
+//     is_public: true,
+//     has_tests: false,
+//     is_test_code: false,
+//     issue_count: 0,
+//     embedding: None,
+// };
+// store.upsert_chunk(&record).await?;
+//
+// // Link a location
+// let loc = ChunkLocationRecord {
+//     content_hash: "abc123".into(),
+//     repo_id: "rustcode".into(),
+//     file_path: "src/lib.rs".into(),
+//     start_line: 10,
+//     end_line: 45,
+//     entity_name: "process_data".into(),
+// };
+// store.upsert_location(&loc).await?;
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -60,47 +60,47 @@ use tracing::{debug, info};
 // Record types
 // ---------------------------------------------------------------------------
 
-/// A code chunk record for the `code_chunks` table
+// A code chunk record for the `code_chunks` table
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkRecord {
-    /// SHA-256 content hash (primary key / dedup key)
+    // SHA-256 content hash (primary key / dedup key)
     pub content_hash: String,
 
-    /// Entity type: function, struct, enum, trait, impl_block, class, module, etc.
+    // Entity type: function, struct, enum, trait, impl_block, class, module, etc.
     pub entity_type: String,
 
-    /// Name of the entity (function name, struct name, etc.)
+    // Name of the entity (function name, struct name, etc.)
     pub entity_name: String,
 
-    /// Source language (rust, kotlin, python, go, typescript, etc.)
+    // Source language (rust, kotlin, python, go, typescript, etc.)
     pub language: String,
 
-    /// Word count of the chunk content
+    // Word count of the chunk content
     pub word_count: i64,
 
-    /// Complexity score (0-100)
+    // Complexity score (0-100)
     pub complexity_score: i64,
 
-    /// Whether the entity is public
+    // Whether the entity is public
     pub is_public: bool,
 
-    /// Whether the chunk has associated tests
+    // Whether the chunk has associated tests
     pub has_tests: bool,
 
-    /// Whether the chunk itself is test code
+    // Whether the chunk itself is test code
     pub is_test_code: bool,
 
-    /// Number of issues found in this chunk
+    // Number of issues found in this chunk
     pub issue_count: i64,
 
-    /// Serialized embedding vector (JSON array of f32), if computed
+    // Serialized embedding vector (JSON array of f32), if computed
     pub embedding: Option<String>,
 }
 
-/// A stored chunk with database timestamps
+// A stored chunk with database timestamps
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredChunk {
-    /// All fields from ChunkRecord
+    // All fields from ChunkRecord
     pub content_hash: String,
     pub entity_type: String,
     pub entity_name: String,
@@ -117,29 +117,29 @@ pub struct StoredChunk {
     pub last_analyzed: Option<DateTime<Utc>>,
 }
 
-/// A location where a chunk appears
+// A location where a chunk appears
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkLocationRecord {
-    /// Content hash (foreign key to code_chunks)
+    // Content hash (foreign key to code_chunks)
     pub content_hash: String,
 
-    /// Repository identifier (name or path)
+    // Repository identifier (name or path)
     pub repo_id: String,
 
-    /// File path relative to repo root
+    // File path relative to repo root
     pub file_path: String,
 
-    /// Start line in the file (1-based)
+    // Start line in the file (1-based)
     pub start_line: i64,
 
-    /// End line in the file (1-based, inclusive)
+    // End line in the file (1-based, inclusive)
     pub end_line: i64,
 
-    /// Entity name at this location
+    // Entity name at this location
     pub entity_name: String,
 }
 
-/// A stored location with database timestamp
+// A stored location with database timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredLocation {
     pub id: i64,
@@ -152,41 +152,41 @@ pub struct StoredLocation {
     pub created_at: DateTime<Utc>,
 }
 
-/// Record of a static analysis savings decision
+// Record of a static analysis savings decision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanSavingsRecord {
-    /// Repository identifier
+    // Repository identifier
     pub repo_id: String,
 
-    /// File path relative to repo root
+    // File path relative to repo root
     pub file_path: String,
 
-    /// The recommendation that was applied (SKIP, MINIMAL, STANDARD, DEEP_DIVE)
+    // The recommendation that was applied (SKIP, MINIMAL, STANDARD, DEEP_DIVE)
     pub recommendation: String,
 
-    /// Reason for skip (if recommendation was SKIP)
+    // Reason for skip (if recommendation was SKIP)
     pub skip_reason: Option<String>,
 
-    /// Number of static issues found (without LLM)
+    // Number of static issues found (without LLM)
     pub static_issue_count: i64,
 
-    /// Estimated LLM value score (0.0-1.0)
+    // Estimated LLM value score (0.0-1.0)
     pub estimated_llm_value: f64,
 
-    /// Estimated cost saved in USD (0.0 if not skipped)
+    // Estimated cost saved in USD (0.0 if not skipped)
     pub estimated_cost_saved_usd: f64,
 
-    /// Whether an LLM call was actually made
+    // Whether an LLM call was actually made
     pub llm_called: bool,
 
-    /// Actual cost if LLM was called
+    // Actual cost if LLM was called
     pub actual_cost_usd: f64,
 
-    /// Scan session identifier (groups savings from one scan run)
+    // Scan session identifier (groups savings from one scan run)
     pub scan_session_id: Option<String>,
 }
 
-/// A stored savings record with database timestamp
+// A stored savings record with database timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredSavingsRecord {
     pub id: i64,
@@ -203,7 +203,7 @@ pub struct StoredSavingsRecord {
     pub created_at: DateTime<Utc>,
 }
 
-/// Cross-repo duplicate info
+// Cross-repo duplicate info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossRepoDuplicate {
     pub content_hash: String,
@@ -216,7 +216,7 @@ pub struct CrossRepoDuplicate {
     pub locations: Vec<StoredLocation>,
 }
 
-/// Savings summary for a scan session or time period
+// Savings summary for a scan session or time period
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SavingsSummary {
     pub total_files: i64,
@@ -231,7 +231,7 @@ pub struct SavingsSummary {
     pub savings_percent: f64,
 }
 
-/// Chunk dedup statistics
+// Chunk dedup statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DedupStats {
     pub total_chunks: i64,
@@ -249,20 +249,20 @@ pub struct DedupStats {
 // ChunkStore
 // ---------------------------------------------------------------------------
 
-/// Persistent store for code chunks and dedup index
+// Persistent store for code chunks and dedup index
 pub struct ChunkStore {
     pool: PgPool,
 }
 
 impl ChunkStore {
-    /// Create a new ChunkStore, initializing the schema if needed
+    // Create a new ChunkStore, initializing the schema if needed
     pub async fn new(pool: PgPool) -> Result<Self> {
         let store = Self { pool };
         store.initialize_schema().await?;
         Ok(store)
     }
 
-    /// Initialize all required tables and indexes
+    // Initialize all required tables and indexes
     async fn initialize_schema(&self) -> Result<()> {
         // Acquire a session-level advisory lock so that concurrent test threads
         // don't race on `CREATE TABLE IF NOT EXISTS` + `BIGSERIAL` sequence
@@ -411,7 +411,7 @@ impl ChunkStore {
     // Chunk CRUD
     // -----------------------------------------------------------------------
 
-    /// Insert or update a code chunk. If the hash already exists, updates metadata.
+    // Insert or update a code chunk. If the hash already exists, updates metadata.
     pub async fn upsert_chunk(&self, record: &ChunkRecord) -> Result<()> {
         sqlx::query(
             r#"
@@ -454,7 +454,7 @@ impl ChunkStore {
         Ok(())
     }
 
-    /// Get a chunk by content hash
+    // Get a chunk by content hash
     pub async fn get_chunk(&self, content_hash: &str) -> Result<Option<StoredChunk>> {
         let row = sqlx::query_as::<
             _,
@@ -507,7 +507,7 @@ impl ChunkStore {
         }))
     }
 
-    /// Check if a content hash already exists in the store
+    // Check if a content hash already exists in the store
     pub async fn contains(&self, content_hash: &str) -> Result<bool> {
         let row =
             sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM code_chunks WHERE content_hash = $1")
@@ -519,7 +519,7 @@ impl ChunkStore {
         Ok(row.0 > 0)
     }
 
-    /// Delete a chunk and all its locations
+    // Delete a chunk and all its locations
     pub async fn delete_chunk(&self, content_hash: &str) -> Result<bool> {
         let result = sqlx::query("DELETE FROM code_chunks WHERE content_hash = $1")
             .bind(content_hash)
@@ -530,7 +530,7 @@ impl ChunkStore {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Batch insert/update chunks (uses a transaction for efficiency)
+    // Batch insert/update chunks (uses a transaction for efficiency)
     pub async fn upsert_chunks_batch(&self, records: &[ChunkRecord]) -> Result<usize> {
         if records.is_empty() {
             return Ok(0);
@@ -590,7 +590,7 @@ impl ChunkStore {
         Ok(count)
     }
 
-    /// Update the embedding for a chunk
+    // Update the embedding for a chunk
     pub async fn update_embedding(&self, content_hash: &str, embedding_json: &str) -> Result<bool> {
         let result = sqlx::query(
             r#"
@@ -608,7 +608,7 @@ impl ChunkStore {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Get all chunks that don't have embeddings yet
+    // Get all chunks that don't have embeddings yet
     pub async fn get_chunks_without_embeddings(&self, limit: i64) -> Result<Vec<StoredChunk>> {
         let rows = sqlx::query_as::<
             _,
@@ -670,7 +670,7 @@ impl ChunkStore {
     // Location CRUD
     // -----------------------------------------------------------------------
 
-    /// Insert or update a chunk location
+    // Insert or update a chunk location
     pub async fn upsert_location(&self, loc: &ChunkLocationRecord) -> Result<()> {
         sqlx::query(
             r#"
@@ -696,7 +696,7 @@ impl ChunkStore {
         Ok(())
     }
 
-    /// Batch insert locations (uses a transaction)
+    // Batch insert locations (uses a transaction)
     pub async fn upsert_locations_batch(&self, locations: &[ChunkLocationRecord]) -> Result<usize> {
         if locations.is_empty() {
             return Ok(0);
@@ -742,7 +742,7 @@ impl ChunkStore {
         Ok(count)
     }
 
-    /// Get all locations for a content hash
+    // Get all locations for a content hash
     pub async fn get_locations(&self, content_hash: &str) -> Result<Vec<StoredLocation>> {
         let rows = sqlx::query_as::<_, (i64, String, String, String, i64, i64, String, DateTime<Utc>)>(
             r#"
@@ -772,7 +772,7 @@ impl ChunkStore {
             .collect())
     }
 
-    /// Get all locations for a specific file in a repo
+    // Get all locations for a specific file in a repo
     pub async fn get_file_locations(
         &self,
         repo_id: &str,
@@ -807,7 +807,7 @@ impl ChunkStore {
             .collect())
     }
 
-    /// Remove all locations for a specific file (used before re-chunking)
+    // Remove all locations for a specific file (used before re-chunking)
     pub async fn clear_file_locations(&self, repo_id: &str, file_path: &str) -> Result<u64> {
         let result =
             sqlx::query("DELETE FROM chunk_locations WHERE repo_id = $1 AND file_path = $2")
@@ -820,7 +820,7 @@ impl ChunkStore {
         Ok(result.rows_affected())
     }
 
-    /// Remove all locations for a repo (used before full re-scan)
+    // Remove all locations for a repo (used before full re-scan)
     pub async fn clear_repo_locations(&self, repo_id: &str) -> Result<u64> {
         let result = sqlx::query("DELETE FROM chunk_locations WHERE repo_id = $1")
             .bind(repo_id)
@@ -835,7 +835,7 @@ impl ChunkStore {
     // Cross-repo dedup queries
     // -----------------------------------------------------------------------
 
-    /// Find chunks that appear in more than one repository
+    // Find chunks that appear in more than one repository
     pub async fn find_cross_repo_duplicates(
         &self,
         min_complexity: i64,
@@ -888,7 +888,7 @@ impl ChunkStore {
         Ok(duplicates)
     }
 
-    /// Check if a content hash already exists and was analyzed (for skip-on-dedup)
+    // Check if a content hash already exists and was analyzed (for skip-on-dedup)
     pub async fn is_already_analyzed(&self, content_hash: &str) -> Result<bool> {
         let row = sqlx::query_as::<_, (i64,)>(
             r#"
@@ -908,7 +908,7 @@ impl ChunkStore {
     // Scan savings CRUD
     // -----------------------------------------------------------------------
 
-    /// Record a static analysis savings decision
+    // Record a static analysis savings decision
     pub async fn record_savings(&self, record: &ScanSavingsRecord) -> Result<i64> {
         let row: (i64,) = sqlx::query_as(
             r#"
@@ -940,7 +940,7 @@ impl ChunkStore {
         Ok(id)
     }
 
-    /// Batch record savings (uses a transaction)
+    // Batch record savings (uses a transaction)
     pub async fn record_savings_batch(&self, records: &[ScanSavingsRecord]) -> Result<usize> {
         if records.is_empty() {
             return Ok(0);
@@ -990,25 +990,25 @@ impl ChunkStore {
         Ok(count)
     }
 
-    /// Get savings summary for a scan session
+    // Get savings summary for a scan session
     pub async fn get_session_savings(&self, scan_session_id: &str) -> Result<SavingsSummary> {
         self.get_savings_summary_where("scan_session_id = $1", scan_session_id)
             .await
     }
 
-    /// Get savings summary for a repository (all time)
+    // Get savings summary for a repository (all time)
     pub async fn get_repo_savings(&self, repo_id: &str) -> Result<SavingsSummary> {
         self.get_savings_summary_where("repo_id = $1", repo_id)
             .await
     }
 
-    /// Get savings summary for today
+    // Get savings summary for today
     pub async fn get_daily_savings(&self) -> Result<SavingsSummary> {
         self.get_savings_summary_where("created_at >= CURRENT_DATE", "")
             .await
     }
 
-    /// Internal helper for savings summaries
+    // Internal helper for savings summaries
     async fn get_savings_summary_where(
         &self,
         where_clause: &str,
@@ -1070,7 +1070,7 @@ impl ChunkStore {
     // Statistics
     // -----------------------------------------------------------------------
 
-    /// Get overall dedup statistics
+    // Get overall dedup statistics
     pub async fn get_dedup_stats(&self) -> Result<DedupStats> {
         // Basic counts
         let counts = sqlx::query_as::<_, (i64, i64, i64)>(
@@ -1162,7 +1162,7 @@ impl ChunkStore {
         })
     }
 
-    /// Get total chunk count
+    // Get total chunk count
     pub async fn chunk_count(&self) -> Result<i64> {
         let row = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM code_chunks")
             .fetch_one(&self.pool)
@@ -1172,7 +1172,7 @@ impl ChunkStore {
         Ok(row.0)
     }
 
-    /// Get total location count
+    // Get total location count
     pub async fn location_count(&self) -> Result<i64> {
         let row = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM chunk_locations")
             .fetch_one(&self.pool)
@@ -1186,7 +1186,7 @@ impl ChunkStore {
     // Cleanup
     // -----------------------------------------------------------------------
 
-    /// Remove orphaned chunks (chunks with no locations)
+    // Remove orphaned chunks (chunks with no locations)
     pub async fn cleanup_orphaned_chunks(&self) -> Result<u64> {
         let result = sqlx::query(
             r#"
@@ -1208,7 +1208,7 @@ impl ChunkStore {
         Ok(deleted)
     }
 
-    /// Clear old savings records
+    // Clear old savings records
     pub async fn clear_old_savings(&self, days: i64) -> Result<u64> {
         let result = sqlx::query(
             r#"
@@ -1232,7 +1232,7 @@ impl ChunkStore {
         Ok(deleted)
     }
 
-    /// Get the pool reference (for advanced queries)
+    // Get the pool reference (for advanced queries)
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
@@ -1240,60 +1240,17 @@ impl ChunkStore {
 
 // ---------------------------------------------------------------------------
 // Conversion helpers: CodeChunker types → DB records
+//
+// NOTE: chunk_to_record, chunk_to_location, and chunks_to_records have been
+// moved to src/code_chunker.rs in the root crate.  They reference CodeChunk
+// (a root-crate type) and cannot live here now that rustcode-db is a
+// standalone crate — doing so would create a circular dependency.
 // ---------------------------------------------------------------------------
 
-/// Convert a `CodeChunk` from the chunker into a `ChunkRecord` for persistence
-pub fn chunk_to_record(chunk: &crate::code_chunker::CodeChunk) -> ChunkRecord {
-    ChunkRecord {
-        content_hash: chunk.content_hash.clone(),
-        entity_type: chunk.entity_type.to_string(),
-        entity_name: chunk.entity_name.clone(),
-        language: chunk.language.to_string(),
-        word_count: chunk.word_count as i64,
-        complexity_score: chunk.complexity_score as i64,
-        is_public: chunk.is_public,
-        has_tests: chunk.has_tests,
-        is_test_code: chunk.is_test_code,
-        issue_count: chunk.issue_count as i64,
-        embedding: if chunk.vector.is_empty() {
-            None
-        } else {
-            Some(serde_json::to_string(&chunk.vector).unwrap_or_default())
-        },
-    }
-}
-
-/// Convert a `CodeChunk` into a `ChunkLocationRecord`
-pub fn chunk_to_location(chunk: &crate::code_chunker::CodeChunk) -> ChunkLocationRecord {
-    ChunkLocationRecord {
-        content_hash: chunk.content_hash.clone(),
-        repo_id: chunk.repo_id.clone(),
-        file_path: chunk.file_path.clone(),
-        start_line: chunk.start_line as i64,
-        end_line: chunk.end_line as i64,
-        entity_name: chunk.entity_name.clone(),
-    }
-}
-
-/// Convert a batch of `CodeChunk`s into records and locations for persistence
-pub fn chunks_to_records(
-    chunks: &[crate::code_chunker::CodeChunk],
-) -> (Vec<ChunkRecord>, Vec<ChunkLocationRecord>) {
-    let mut records = Vec::with_capacity(chunks.len());
-    let mut locations = Vec::with_capacity(chunks.len());
-
-    for chunk in chunks {
-        records.push(chunk_to_record(chunk));
-        locations.push(chunk_to_location(chunk));
-    }
-
-    (records, locations)
-}
-
-/// Estimated cost of an LLM call for a file of the given character count
-/// Used to estimate savings when a file is skipped.
-/// Based on Grok 4.1 Fast pricing: $0.20/M input, $0.50/M output
-/// Assumes ~4 chars per token, ~30% output ratio
+// Estimated cost of an LLM call for a file of the given character count
+// Used to estimate savings when a file is skipped.
+// Based on Grok 4.1 Fast pricing: $0.20/M input, $0.50/M output
+// Assumes ~4 chars per token, ~30% output ratio
 pub fn estimate_llm_cost_for_file(char_count: usize) -> f64 {
     let input_tokens = char_count as f64 / 4.0;
     let output_tokens = input_tokens * 0.3;
@@ -1318,7 +1275,7 @@ mod tests {
         .expect("Failed to create test pool")
     }
 
-    /// Generate a short unique suffix to avoid hash/name collisions across test runs.
+    // Generate a short unique suffix to avoid hash/name collisions across test runs.
     fn uid() -> String {
         uuid::Uuid::new_v4().to_string()[..8].to_string()
     }

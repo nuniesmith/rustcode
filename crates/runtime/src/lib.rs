@@ -1,8 +1,8 @@
-//! Core runtime primitives for the `claw` CLI and supporting crates.
-//!
-//! This crate owns session persistence, permission evaluation, prompt assembly,
-//! MCP plumbing, tool-facing file operations, and the core conversation loop
-//! that drives interactive and one-shot turns.
+// Core runtime primitives for the `claw` CLI and supporting crates.
+//
+// This crate owns session persistence, permission evaluation, prompt assembly,
+// MCP plumbing, tool-facing file operations, and the core conversation loop
+// that drives interactive and one-shot turns.
 
 mod bash;
 pub mod bash_validation;

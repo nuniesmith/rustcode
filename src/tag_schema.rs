@@ -1,57 +1,57 @@
-//! Tag schema definitions for structured audit annotations
-//!
-//! Provides a robust schema for categorizing code, tracking technical debt,
-//! and building a comprehensive directory tree of codebase status.
+// Tag schema definitions for structured audit annotations
+//
+// Provides a robust schema for categorizing code, tracking technical debt,
+// and building a comprehensive directory tree of codebase status.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Schema for audit tags with strict validation
+// Schema for audit tags with strict validation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TagSchema {
-    /// Tag category
+    // Tag category
     pub category: TagCategory,
-    /// Tag status
+    // Tag status
     pub status: CodeStatus,
-    /// Tag age (if applicable)
+    // Tag age (if applicable)
     pub age: Option<CodeAge>,
-    /// Tag complexity
+    // Tag complexity
     pub complexity: Option<Complexity>,
-    /// Tag priority
+    // Tag priority
     pub priority: Priority,
-    /// Additional metadata
+    // Additional metadata
     pub metadata: HashMap<String, String>,
 }
 
-/// Tag categories for organization
+// Tag categories for organization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TagCategory {
-    /// Code organization/structure
+    // Code organization/structure
     Organization,
-    /// Security concerns
+    // Security concerns
     Security,
-    /// Performance optimization
+    // Performance optimization
     Performance,
-    /// Risk management
+    // Risk management
     Risk,
-    /// Technical debt
+    // Technical debt
     TechnicalDebt,
-    /// Documentation
+    // Documentation
     Documentation,
-    /// Testing
+    // Testing
     Testing,
-    /// Deprecated/old code
+    // Deprecated/old code
     Legacy,
-    /// Experimental/new code
+    // Experimental/new code
     Experimental,
-    /// Configuration
+    // Configuration
     Configuration,
 }
 
 impl TagCategory {
-    /// Get all possible categories
+    // Get all possible categories
     pub fn all() -> Vec<Self> {
         vec![
             Self::Organization,
@@ -67,7 +67,7 @@ impl TagCategory {
         ]
     }
 
-    /// Get category from string
+    // Get category from string
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
@@ -86,34 +86,34 @@ impl TagCategory {
     }
 }
 
-/// Code status indicators
+// Code status indicators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CodeStatus {
-    /// New code (< 3 months)
+    // New code (< 3 months)
     New,
-    /// Active development
+    // Active development
     Active,
-    /// Stable/production
+    // Stable/production
     Stable,
-    /// Deprecated but still used
+    // Deprecated but still used
     Deprecated,
-    /// Old code (> 1 year)
+    // Old code (> 1 year)
     Old,
-    /// Very old code (> 2 years)
+    // Very old code (> 2 years)
     VeryOld,
-    /// Needs review
+    // Needs review
     NeedsReview,
-    /// Frozen (do not modify)
+    // Frozen (do not modify)
     Frozen,
-    /// Experimental/prototype
+    // Experimental/prototype
     Experimental,
-    /// Unknown status
+    // Unknown status
     Unknown,
 }
 
 impl CodeStatus {
-    /// Get status from string tag value
+    // Get status from string tag value
     pub fn from_tag_value(value: &str) -> Self {
         match value.to_lowercase().as_str() {
             "new" => Self::New,
@@ -129,7 +129,7 @@ impl CodeStatus {
         }
     }
 
-    /// Check if status indicates technical debt
+    // Check if status indicates technical debt
     pub fn is_technical_debt(&self) -> bool {
         matches!(
             self,
@@ -137,32 +137,32 @@ impl CodeStatus {
         )
     }
 
-    /// Check if code is stable/production ready
+    // Check if code is stable/production ready
     pub fn is_production_ready(&self) -> bool {
         matches!(self, Self::Stable | Self::Frozen)
     }
 }
 
-/// Code age classification
+// Code age classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CodeAge {
-    /// Less than 1 month
+    // Less than 1 month
     Fresh,
-    /// 1-3 months
+    // 1-3 months
     Recent,
-    /// 3-6 months
+    // 3-6 months
     Moderate,
-    /// 6-12 months
+    // 6-12 months
     Mature,
-    /// 1-2 years
+    // 1-2 years
     Old,
-    /// 2+ years
+    // 2+ years
     VeryOld,
 }
 
 impl CodeAge {
-    /// Determine age from months
+    // Determine age from months
     pub fn from_months(months: u32) -> Self {
         match months {
             0..=1 => Self::Fresh,
@@ -174,7 +174,7 @@ impl CodeAge {
         }
     }
 
-    /// Get estimated months
+    // Get estimated months
     pub fn to_months(&self) -> u32 {
         match self {
             Self::Fresh => 0,
@@ -187,22 +187,22 @@ impl CodeAge {
     }
 }
 
-/// Code complexity level
+// Code complexity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Complexity {
-    /// Simple, straightforward code
+    // Simple, straightforward code
     Simple,
-    /// Moderate complexity
+    // Moderate complexity
     Moderate,
-    /// Complex logic
+    // Complex logic
     Complex,
-    /// Very complex/critical
+    // Very complex/critical
     Critical,
 }
 
 impl Complexity {
-    /// Determine from lines of code and other metrics
+    // Determine from lines of code and other metrics
     pub fn from_metrics(lines: usize, cyclomatic: usize) -> Self {
         if lines > 500 || cyclomatic > 20 {
             Self::Critical
@@ -216,7 +216,7 @@ impl Complexity {
     }
 }
 
-/// Priority level
+// Priority level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
@@ -227,7 +227,7 @@ pub enum Priority {
 }
 
 impl Priority {
-    /// Determine from status and category
+    // Determine from status and category
     pub fn from_status_and_category(status: CodeStatus, category: TagCategory) -> Self {
         match (status, category) {
             (CodeStatus::NeedsReview, TagCategory::Security) => Self::Critical,
@@ -242,28 +242,28 @@ impl Priority {
     }
 }
 
-/// Directory tree node for codebase visualization
+// Directory tree node for codebase visualization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryNode {
-    /// Node name (file or directory)
+    // Node name (file or directory)
     pub name: String,
-    /// Full path
+    // Full path
     pub path: PathBuf,
-    /// Node type
+    // Node type
     pub node_type: NodeType,
-    /// Code status (if applicable)
+    // Code status (if applicable)
     pub status: Option<CodeStatus>,
-    /// Tags found in this file/directory
+    // Tags found in this file/directory
     pub tags: Vec<String>,
-    /// Statistics
+    // Statistics
     pub stats: NodeStats,
-    /// Child nodes (for directories)
+    // Child nodes (for directories)
     pub children: Vec<DirectoryNode>,
-    /// Issues summary
+    // Issues summary
     pub issues: IssuesSummary,
 }
 
-/// Type of directory tree node
+// Type of directory tree node
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeType {
@@ -271,55 +271,55 @@ pub enum NodeType {
     File,
 }
 
-/// Node statistics
+// Node statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NodeStats {
-    /// Total files (for directories)
+    // Total files (for directories)
     pub file_count: usize,
-    /// Total lines of code
+    // Total lines of code
     pub lines_of_code: usize,
-    /// Number of TODO comments
+    // Number of TODO comments
     pub todos: usize,
-    /// Number of FIXME comments
+    // Number of FIXME comments
     pub fixmes: usize,
-    /// Number of audit tags
+    // Number of audit tags
     pub audit_tags: usize,
-    /// Last modified (Unix timestamp)
+    // Last modified (Unix timestamp)
     pub last_modified: Option<i64>,
 }
 
-/// Issues summary for a node
+// Issues summary for a node
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IssuesSummary {
-    /// Critical issues
+    // Critical issues
     pub critical: usize,
-    /// High severity issues
+    // High severity issues
     pub high: usize,
-    /// Medium severity issues
+    // Medium severity issues
     pub medium: usize,
-    /// Low severity issues
+    // Low severity issues
     pub low: usize,
 }
 
 impl IssuesSummary {
-    /// Total issues
+    // Total issues
     pub fn total(&self) -> usize {
         self.critical + self.high + self.medium + self.low
     }
 
-    /// Has any critical or high issues
+    // Has any critical or high issues
     pub fn has_critical_or_high(&self) -> bool {
         self.critical > 0 || self.high > 0
     }
 }
 
-/// Simple issue detection patterns
+// Simple issue detection patterns
 #[derive(Debug, Clone)]
 pub struct SimpleIssueDetector {
     patterns: Vec<SimpleIssuePattern>,
 }
 
-/// Pattern for detecting simple issues
+// Pattern for detecting simple issues
 #[derive(Debug, Clone)]
 pub struct SimpleIssuePattern {
     pub name: &'static str,
@@ -330,7 +330,7 @@ pub struct SimpleIssuePattern {
 }
 
 impl SimpleIssueDetector {
-    /// Create detector with common patterns
+    // Create detector with common patterns
     pub fn new() -> Self {
         let patterns = vec![
             SimpleIssuePattern {
@@ -409,7 +409,7 @@ impl SimpleIssueDetector {
         Self { patterns }
     }
 
-    /// Get all patterns
+    // Get all patterns
     pub fn patterns(&self) -> &[SimpleIssuePattern] {
         &self.patterns
     }
@@ -421,19 +421,19 @@ impl Default for SimpleIssueDetector {
     }
 }
 
-/// Tag validation result
+// Tag validation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagValidation {
-    /// Is tag valid according to schema
+    // Is tag valid according to schema
     pub is_valid: bool,
-    /// Validation errors
+    // Validation errors
     pub errors: Vec<String>,
-    /// Suggested corrections
+    // Suggested corrections
     pub suggestions: Vec<String>,
 }
 
 impl TagValidation {
-    /// Create a valid result
+    // Create a valid result
     pub fn valid() -> Self {
         Self {
             is_valid: true,
@@ -442,7 +442,7 @@ impl TagValidation {
         }
     }
 
-    /// Create an invalid result with error
+    // Create an invalid result with error
     pub fn invalid(error: impl Into<String>) -> Self {
         Self {
             is_valid: false,
@@ -451,14 +451,14 @@ impl TagValidation {
         }
     }
 
-    /// Add a suggestion
+    // Add a suggestion
     pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
         self.suggestions.push(suggestion.into());
         self
     }
 }
 
-/// Validate a tag value against the schema
+// Validate a tag value against the schema
 pub fn validate_tag(tag_value: &str) -> TagValidation {
     let parts: Vec<&str> = tag_value.split(',').map(|s| s.trim()).collect();
 

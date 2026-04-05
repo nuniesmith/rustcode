@@ -1,4 +1,4 @@
-//! Test runner module for discovering and executing tests across different project types
+// Test runner module for discovering and executing tests across different project types
 
 use crate::error::{AuditError, Result};
 use serde::{Deserialize, Serialize};
@@ -9,13 +9,13 @@ use walkdir::WalkDir;
 
 // ── cargo test --format json event types ────────────────────────────────────
 
-/// A single line of `cargo test -- --format=json` output.
+// A single line of `cargo test -- --format=json` output.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum CargoTestEvent {
-    /// A single test result.
+    // A single test result.
     Test(CargoTestEventTest),
-    /// Suite-level summary emitted at the end.
+    // Suite-level summary emitted at the end.
     Suite(#[allow(dead_code)] CargoTestEventSuite),
 }
 
@@ -36,7 +36,7 @@ struct CargoTestEventSuite {
 
 // ── pytest-json-report structures ───────────────────────────────────────────
 
-/// Root of `.pytest-report.json` produced by `pytest-json-report`.
+// Root of `.pytest-report.json` produced by `pytest-json-report`.
 #[derive(Debug, Deserialize)]
 struct PytestReport {
     #[serde(default)]
@@ -45,58 +45,58 @@ struct PytestReport {
 
 #[derive(Debug, Deserialize)]
 struct PytestTest {
-    /// e.g. "tests/test_foo.py::test_bar"
+    // e.g. "tests/test_foo.py::test_bar"
     nodeid: String,
     outcome: String, // "passed" | "failed" | "skipped" | "error"
 }
 
-/// Test runner for different project types
+// Test runner for different project types
 #[derive(Debug)]
 pub struct TestRunner {
     root: PathBuf,
 }
 
-/// Test suite results
+// Test suite results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResults {
-    /// Project type
+    // Project type
     pub project_type: ProjectType,
-    /// Total tests
+    // Total tests
     pub total: usize,
-    /// Passed tests
+    // Passed tests
     pub passed: usize,
-    /// Failed tests
+    // Failed tests
     pub failed: usize,
-    /// Skipped tests
+    // Skipped tests
     pub skipped: usize,
-    /// Test duration in seconds
+    // Test duration in seconds
     pub duration: f64,
-    /// Test files
+    // Test files
     pub test_files: Vec<String>,
-    /// Coverage percentage (if available)
+    // Coverage percentage (if available)
     pub coverage: Option<f64>,
-    /// Detailed results by file
+    // Detailed results by file
     pub results_by_file: HashMap<String, FileTestResult>,
-    /// Raw output
+    // Raw output
     pub output: String,
 }
 
-/// Test results for a single file
+// Test results for a single file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTestResult {
-    /// File path
+    // File path
     pub file: String,
-    /// Tests in this file
+    // Tests in this file
     pub tests: usize,
-    /// Passed
+    // Passed
     pub passed: usize,
-    /// Failed
+    // Failed
     pub failed: usize,
-    /// Failed test names
+    // Failed test names
     pub failures: Vec<String>,
 }
 
-/// Project type detected
+// Project type detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProjectType {
@@ -109,12 +109,12 @@ pub enum ProjectType {
 }
 
 impl TestRunner {
-    /// Create a new test runner
+    // Create a new test runner
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 
-    /// Detect project types in the repository
+    // Detect project types in the repository
     pub fn detect_project_types(&self) -> Result<Vec<ProjectType>> {
         let mut types = Vec::new();
 
@@ -158,7 +158,7 @@ impl TestRunner {
         Ok(types)
     }
 
-    /// Run all tests for detected project types
+    // Run all tests for detected project types
     pub fn run_all_tests(&self) -> Result<Vec<TestResults>> {
         let project_types = self.detect_project_types()?;
         let mut all_results = Vec::new();
@@ -176,7 +176,7 @@ impl TestRunner {
         Ok(all_results)
     }
 
-    /// Run tests for a specific project type
+    // Run tests for a specific project type
     pub fn run_tests_for_type(&self, project_type: ProjectType) -> Result<TestResults> {
         match project_type {
             ProjectType::Rust => self.run_rust_tests(),
@@ -189,7 +189,7 @@ impl TestRunner {
         }
     }
 
-    /// Run Rust tests using cargo
+    // Run Rust tests using cargo
     fn run_rust_tests(&self) -> Result<TestResults> {
         let start = std::time::Instant::now();
 
@@ -245,7 +245,7 @@ impl TestRunner {
         })
     }
 
-    /// Run Python tests using pytest
+    // Run Python tests using pytest
     fn run_python_tests(&self) -> Result<TestResults> {
         let start = std::time::Instant::now();
 
@@ -294,7 +294,7 @@ impl TestRunner {
         })
     }
 
-    /// Run JavaScript/TypeScript tests using npm/jest
+    // Run JavaScript/TypeScript tests using npm/jest
     fn run_js_tests(&self) -> Result<TestResults> {
         let start = std::time::Instant::now();
 
@@ -330,7 +330,7 @@ impl TestRunner {
         })
     }
 
-    /// Run Kotlin tests using gradle
+    // Run Kotlin tests using gradle
     fn run_kotlin_tests(&self) -> Result<TestResults> {
         let start = std::time::Instant::now();
 
@@ -364,7 +364,7 @@ impl TestRunner {
         })
     }
 
-    /// Find Rust test files
+    // Find Rust test files
     fn find_rust_test_files(&self) -> Result<Vec<String>> {
         let mut test_files = Vec::new();
 
@@ -384,7 +384,7 @@ impl TestRunner {
         Ok(test_files)
     }
 
-    /// Find Python test files
+    // Find Python test files
     fn find_python_test_files(&self) -> Result<Vec<String>> {
         let mut test_files = Vec::new();
 
@@ -406,7 +406,7 @@ impl TestRunner {
         Ok(test_files)
     }
 
-    /// Find JavaScript/TypeScript test files
+    // Find JavaScript/TypeScript test files
     fn find_js_test_files(&self) -> Result<Vec<String>> {
         let mut test_files = Vec::new();
 
@@ -434,7 +434,7 @@ impl TestRunner {
         Ok(test_files)
     }
 
-    /// Find Kotlin test files
+    // Find Kotlin test files
     fn find_kotlin_test_files(&self) -> Result<Vec<String>> {
         let mut test_files = Vec::new();
 
@@ -456,12 +456,12 @@ impl TestRunner {
         Ok(test_files)
     }
 
-    /// Parse cargo test output
-    /// Parse `cargo test -- --format=json` event stream into per-file results.
-    ///
-    /// Returns `(results_by_file, total, passed, failed, skipped)`.
-    /// On any parse error the map will be empty and counts will be 0 so the
-    /// caller can fall back to text-based parsing.
+    // Parse cargo test output
+    // Parse `cargo test -- --format=json` event stream into per-file results.
+    //
+    // Returns `(results_by_file, total, passed, failed, skipped)`.
+    // On any parse error the map will be empty and counts will be 0 so the
+    // caller can fall back to text-based parsing.
     fn parse_cargo_test_json(
         &self,
         output: &str,
@@ -527,10 +527,10 @@ impl TestRunner {
         (by_file, total, passed, failed, skipped)
     }
 
-    /// Parse `.pytest-report.json` written by `pytest-json-report` into
-    /// per-file results.
-    ///
-    /// Returns `(results_by_file, total, passed, failed, skipped)`.
+    // Parse `.pytest-report.json` written by `pytest-json-report` into
+    // per-file results.
+    //
+    // Returns `(results_by_file, total, passed, failed, skipped)`.
     fn parse_pytest_json_report(
         &self,
         report_path: &std::path::Path,
@@ -631,7 +631,7 @@ impl TestRunner {
         (total, passed, failed, skipped)
     }
 
-    /// Parse pytest output
+    // Parse pytest output
     fn parse_pytest_output(&self, output: &str) -> (usize, usize, usize, usize) {
         let mut passed = 0;
         let mut failed = 0;
@@ -660,7 +660,7 @@ impl TestRunner {
         (total, passed, failed, skipped)
     }
 
-    /// Parse jest output
+    // Parse jest output
     fn parse_jest_output(&self, output: &str) -> (usize, usize, usize, usize) {
         // Jest JSON output parsing
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(output) {
@@ -674,7 +674,7 @@ impl TestRunner {
         (0, 0, 0, 0)
     }
 
-    /// Parse gradle output
+    // Parse gradle output
     fn parse_gradle_output(&self, output: &str) -> (usize, usize, usize, usize) {
         let mut passed = 0;
         let failed = 0;
@@ -696,7 +696,7 @@ impl TestRunner {
         (total, passed, failed, skipped)
     }
 
-    /// Get Rust code coverage using tarpaulin or llvm-cov
+    // Get Rust code coverage using tarpaulin or llvm-cov
     fn get_rust_coverage(&self) -> Result<f64> {
         // Try cargo-tarpaulin first
         let output = Command::new("cargo")
@@ -725,7 +725,7 @@ impl TestRunner {
         ))
     }
 
-    /// Get Python code coverage using pytest-cov
+    // Get Python code coverage using pytest-cov
     fn get_python_coverage(&self) -> Result<f64> {
         let output = Command::new("pytest")
             .arg("--cov")
@@ -757,16 +757,16 @@ impl TestRunner {
 
 // ── Module-level helpers ─────────────────────────────────────────────────────
 
-/// Derive a human-readable file key from a cargo test name.
-///
-/// Test names look like `module::submodule::test_fn` or just `test_fn`.
-/// We convert the leading path component(s) to a plausible `src/<path>.rs`
-/// string so results can be grouped by source file even without the full path.
-///
-/// Examples:
-/// - `repo_sync::tests::slugify_basic`  →  `src/repo_sync.rs`
-/// - `audit::cache::tests::hit_rate`    →  `src/audit/cache.rs`
-/// - `top_level_test`                   →  `src/lib.rs`
+// Derive a human-readable file key from a cargo test name.
+//
+// Test names look like `module::submodule::test_fn` or just `test_fn`.
+// We convert the leading path component(s) to a plausible `src/<path>.rs`
+// string so results can be grouped by source file even without the full path.
+//
+// Examples:
+// - `repo_sync::tests::slugify_basic`  →  `src/repo_sync.rs`
+// - `audit::cache::tests::hit_rate`    →  `src/audit/cache.rs`
+// - `top_level_test`                   →  `src/lib.rs`
 fn derive_rust_file_key(test_name: &str) -> String {
     let all_parts: Vec<&str> = test_name.splitn(10, "::").collect();
 

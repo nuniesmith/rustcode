@@ -1,6 +1,6 @@
-//! Database module
-//!
-//! Provides database operations for notes, repositories, tasks, and queue system.
+// Database module
+//
+// Provides database operations for notes, repositories, tasks, and queue system.
 
 pub mod chunks;
 pub mod config;
@@ -9,17 +9,20 @@ pub mod documents;
 pub mod queue;
 pub mod scan_events;
 
-// Re-export chunk store types and functions
+// Re-export chunk store types and functions.
+// NOTE: chunk_to_record, chunk_to_location, chunks_to_records live in the
+// root crate's src/code_chunker.rs — they depend on CodeChunk which is a
+// root-crate type and cannot be re-exported from here without a circular dep.
 pub use chunks::{
-    chunk_to_location, chunk_to_record, chunks_to_records, estimate_llm_cost_for_file,
     ChunkLocationRecord, ChunkRecord, ChunkStore, CrossRepoDuplicate, DedupStats, SavingsSummary,
     ScanSavingsRecord, StoredChunk, StoredLocation, StoredSavingsRecord,
+    estimate_llm_cost_for_file,
 };
 
 // Re-export configuration types and functions
 pub use config::{
-    backup_database, ensure_data_dir, get_backup_path, get_data_dir, health_check, init_pool,
-    print_env_help, DatabaseConfig, DatabaseHealth,
+    DatabaseConfig, DatabaseHealth, backup_database, ensure_data_dir, get_backup_path,
+    get_data_dir, health_check, init_pool, print_env_help,
 };
 
 // Convenience type alias — consumers can use `db::PgPool` instead of `sqlx::PgPool`
@@ -30,12 +33,14 @@ pub use core::*;
 
 // Re-export queue types and functions
 pub use queue::{
-    create_queue_tables, FileAnalysis, QueueItem, QueuePriority, QueueSource, QueueStage,
-    RepoCache, GITHUB_USERNAME,
+    FileAnalysis, GITHUB_USERNAME, QueueItem, QueuePriority, QueueSource, QueueStage, RepoCache,
+    create_queue_tables,
 };
 
 // Re-export document types and functions
 pub use documents::{
+    Idea,
+    Tag,
     count_documents,
     count_documents_by_type,
     // Ideas functions
@@ -67,6 +72,4 @@ pub use documents::{
     store_embedding,
     update_document,
     update_idea_status,
-    Idea,
-    Tag,
 };

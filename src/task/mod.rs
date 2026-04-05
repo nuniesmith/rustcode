@@ -1,23 +1,23 @@
-//! Simplified Task Management System
-//!
-//! This module provides a consolidated task management system that replaces
-//! the previous queue-based architecture with a simpler, more maintainable approach.
-//!
-//! ## Overview
-//!
-//! - **Models**: Core task types and database operations
-//! - **Grouping**: Smart task grouping for efficient batch processing
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::task::{Task, TaskSource, TaskStatus};
-//!
-//! // Create a new task
-//! let task = Task::new("Fix memory leak", TaskSource::Manual)
-//!     .with_priority(8)
-//!     .with_source_file("rustcode", "src/processor.rs", Some(45));
-//! ```
+// Simplified Task Management System
+//
+// This module provides a consolidated task management system that replaces
+// the previous queue-based architecture with a simpler, more maintainable approach.
+//
+// ## Overview
+//
+// - **Models**: Core task types and database operations
+// - **Grouping**: Smart task grouping for efficient batch processing
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::task::{Task, TaskSource, TaskStatus};
+//
+// // Create a new task
+// let task = Task::new("Fix memory leak", TaskSource::Manual)
+//     .with_priority(8)
+//     .with_source_file("rustcode", "src/processor.rs", Some(45));
+// ```
 
 pub mod grouping;
 pub mod models;

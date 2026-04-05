@@ -1,6 +1,6 @@
-//! Task CLI Commands
-//!
-//! Commands for managing tasks, grouping, and exporting to IDE.
+// Task CLI Commands
+//
+// Commands for managing tasks, grouping, and exporting to IDE.
 
 use crate::task::grouping::{
     filter_by_priority, filter_ready_groups, get_next_group, group_tasks, GroupingStrategy,
@@ -16,86 +16,86 @@ use sqlx::PgPool;
 
 #[derive(Subcommand)]
 pub enum TaskCommands {
-    /// Add a new task
+    // Add a new task
     Add {
-        /// Task description
+        // Task description
         content: String,
 
-        /// Source: manual, todo, scan, idea
+        // Source: manual, todo, scan, idea
         #[arg(short, long, default_value = "manual")]
         source: String,
 
-        /// Priority (1-10)
+        // Priority (1-10)
         #[arg(short, long, default_value = "5")]
         priority: i32,
 
-        /// Category: bug, refactor, feature, docs, test
+        // Category: bug, refactor, feature, docs, test
         #[arg(short, long)]
         category: Option<String>,
 
-        /// Associated file path
+        // Associated file path
         #[arg(short, long)]
         file: Option<String>,
 
-        /// Repository name
+        // Repository name
         #[arg(short, long)]
         repo: Option<String>,
     },
 
-    /// List tasks by status
+    // List tasks by status
     List {
-        /// Status: pending, review, ready, done, failed, all
+        // Status: pending, review, ready, done, failed, all
         #[arg(default_value = "pending")]
         status: String,
 
-        /// Max number of tasks
+        // Max number of tasks
         #[arg(short, long, default_value = "20")]
         limit: i32,
     },
 
-    /// Show task statistics
+    // Show task statistics
     Stats,
 
-    /// Get the next highest-priority task group for IDE
+    // Get the next highest-priority task group for IDE
     #[command(name = "next")]
     NextGroup {
-        /// Output format: zed, markdown, json
+        // Output format: zed, markdown, json
         #[arg(short, long, default_value = "zed")]
         format: String,
 
-        /// Minimum priority to include
+        // Minimum priority to include
         #[arg(short, long, default_value = "1")]
         min_priority: i32,
 
-        /// Grouping: file, category, repo, smart
+        // Grouping: file, category, repo, smart
         #[arg(short, long, default_value = "smart")]
         group_by: String,
 
-        /// Copy to clipboard
+        // Copy to clipboard
         #[arg(long)]
         copy: bool,
     },
 
-    /// List all task groups
+    // List all task groups
     Groups {
-        /// Grouping strategy: file, category, repo, smart
+        // Grouping strategy: file, category, repo, smart
         #[arg(short, long, default_value = "smart")]
         group_by: String,
 
-        /// Minimum priority
+        // Minimum priority
         #[arg(short, long, default_value = "1")]
         min_priority: i32,
     },
 
-    /// Mark a task as done
+    // Mark a task as done
     Done {
-        /// Task ID (or "next" for the next pending task)
+        // Task ID (or "next" for the next pending task)
         id: String,
     },
 
-    /// Mark a task as ready for IDE
+    // Mark a task as ready for IDE
     Ready {
-        /// Task ID
+        // Task ID
         id: String,
     },
 }

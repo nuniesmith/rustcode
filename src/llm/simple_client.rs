@@ -1,11 +1,11 @@
-//! Simple Grok Client Adapter
-//!
-//! Provides a simplified interface for the research and backup systems
-//! to use the Grok LLM API.
+// Simple Grok Client Adapter
+//
+// Provides a simplified interface for the research and backup systems
+// to use the Grok LLM API.
 
 use anyhow::Result;
 
-/// Simple Grok client for research system
+// Simple Grok client for research system
 #[derive(Clone)]
 pub struct GrokClient {
     api_key: String,
@@ -14,7 +14,7 @@ pub struct GrokClient {
 }
 
 impl GrokClient {
-    /// Create a new Grok client
+    // Create a new Grok client
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -23,7 +23,7 @@ impl GrokClient {
         }
     }
 
-    /// Create from environment variables
+    // Create from environment variables
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("XAI_API_KEY")
             .map_err(|_| anyhow::anyhow!("XAI_API_KEY not set in environment"))?;
@@ -37,7 +37,7 @@ impl GrokClient {
         })
     }
 
-    /// Generate a completion from Grok
+    // Generate a completion from Grok
     pub async fn generate(&self, prompt: &str, max_tokens: usize) -> Result<String> {
         let client = reqwest::Client::new();
 
@@ -77,7 +77,7 @@ impl GrokClient {
         Ok(content)
     }
 
-    /// Set the model to use
+    // Set the model to use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self

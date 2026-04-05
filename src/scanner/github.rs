@@ -1,9 +1,9 @@
-//! GitHub Repository Scanner
-//!
-//! Scans repositories under the configured GitHub username for:
-//! - TODO/FIXME/HACK comments
-//! - Files needing analysis
-//! - Directory structure caching
+// GitHub Repository Scanner
+//
+// Scans repositories under the configured GitHub username for:
+// - TODO/FIXME/HACK comments
+// - Files needing analysis
+// - Directory structure caching
 
 use crate::db::core::create_task;
 use crate::db::queue::GITHUB_USERNAME;
@@ -21,21 +21,21 @@ use walkdir::WalkDir;
 // Configuration
 // ============================================================================
 
-/// Patterns for TODO detection
+// Patterns for TODO detection
 const TODO_PATTERNS: &[&str] = &[
     r"(?i)\b(TODO|FIXME|HACK|XXX|BUG|NOTE)[\s:]+(.+?)(?:\*/|\n|$)",
     r"(?i)#\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)[\s:]+(.+?)$",
     r"(?i)//\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)[\s:]+(.+?)$",
 ];
 
-/// File extensions to scan for TODOs
+// File extensions to scan for TODOs
 const SCANNABLE_EXTENSIONS: &[&str] = &[
     "rs", "py", "js", "ts", "jsx", "tsx", "go", "java", "c", "cpp", "h", "hpp", "rb", "php",
     "swift", "kt", "scala", "sh", "bash", "zsh", "sql", "md", "txt", "yaml", "yml", "toml", "json",
     "html", "css", "scss", "vue", "svelte",
 ];
 
-/// Directories to skip
+// Directories to skip
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
     "target",
@@ -56,7 +56,7 @@ const SKIP_DIRS: &[&str] = &[
 // GitHub API Client
 // ============================================================================
 
-/// GitHub repository info
+// GitHub repository info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubRepo {
     pub id: i64,
@@ -81,7 +81,7 @@ pub struct GitHubRepo {
     pub private: bool,
 }
 
-/// Fetch all repositories for the configured user
+// Fetch all repositories for the configured user
 pub async fn fetch_user_repos(token: Option<&str>) -> Result<Vec<GitHubRepo>> {
     let client = reqwest::Client::new();
     let mut repos = Vec::new();
@@ -130,7 +130,7 @@ pub async fn fetch_user_repos(token: Option<&str>) -> Result<Vec<GitHubRepo>> {
     Ok(repos)
 }
 
-/// Sync GitHub repos to local database
+// Sync GitHub repos to local database
 pub async fn sync_repos_to_db(pool: &PgPool, token: Option<&str>) -> Result<Vec<String>> {
     let github_repos = fetch_user_repos(token).await?;
     let now = Utc::now().timestamp();
@@ -188,7 +188,7 @@ pub async fn sync_repos_to_db(pool: &PgPool, token: Option<&str>) -> Result<Vec<
 // TODO Scanner
 // ============================================================================
 
-/// A detected TODO in code
+// A detected TODO in code
 #[derive(Debug, Clone)]
 pub struct DetectedTodo {
     pub todo_type: String,
@@ -197,7 +197,7 @@ pub struct DetectedTodo {
     pub line_number: i32,
 }
 
-/// Scan a directory for TODOs
+// Scan a directory for TODOs
 pub fn scan_directory_for_todos(root: &Path) -> Result<Vec<DetectedTodo>> {
     let mut todos = Vec::new();
     let patterns: Vec<Regex> = TODO_PATTERNS
@@ -275,7 +275,7 @@ fn should_skip_entry(entry: &walkdir::DirEntry) -> bool {
     false
 }
 
-/// Scan a repo and save TODOs to database + queue
+// Scan a repo and save TODOs to database + queue
 pub async fn scan_repo_for_todos(
     pool: &PgPool,
     repo_id: &str,
@@ -400,7 +400,7 @@ pub struct ScanResult {
 // File Analysis Tracking
 // ============================================================================
 
-/// Get files that haven't been analyzed yet
+// Get files that haven't been analyzed yet
 pub async fn get_unanalyzed_files(
     pool: &PgPool,
     repo_id: &str,
@@ -462,7 +462,7 @@ pub async fn get_unanalyzed_files(
     Ok(unanalyzed)
 }
 
-/// Record file analysis result
+// Record file analysis result
 pub async fn save_file_analysis(
     pool: &PgPool,
     repo_id: &str,
@@ -545,7 +545,7 @@ pub async fn save_file_analysis(
 // Directory Tree Builder
 // ============================================================================
 
-/// Node in the directory tree
+// Node in the directory tree
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeNode {
     pub name: String,
@@ -563,7 +563,7 @@ pub struct TreeNode {
     pub children: Vec<TreeNode>,
 }
 
-/// Build directory tree for a repository
+// Build directory tree for a repository
 pub fn build_dir_tree(root: &Path, max_depth: usize) -> Result<TreeNode> {
     fn build_node(path: &Path, root: &Path, depth: usize, max_depth: usize) -> Option<TreeNode> {
         if depth > max_depth {
@@ -646,7 +646,7 @@ pub fn build_dir_tree(root: &Path, max_depth: usize) -> Result<TreeNode> {
     Ok(tree)
 }
 
-/// Save directory tree to repo cache
+// Save directory tree to repo cache
 pub async fn save_dir_tree(pool: &PgPool, repo_id: &str, tree: &TreeNode) -> Result<()> {
     let now = Utc::now().timestamp();
     let tree_json = serde_json::to_string(tree)?;
@@ -680,7 +680,7 @@ pub async fn save_dir_tree(pool: &PgPool, repo_id: &str, tree: &TreeNode) -> Res
     Ok(())
 }
 
-/// Get cached directory tree
+// Get cached directory tree
 pub async fn get_dir_tree(pool: &PgPool, repo_id: &str) -> Result<Option<TreeNode>> {
     let cache: Option<(Option<String>,)> =
         sqlx::query_as("SELECT dir_tree FROM repo_cache WHERE repo_id = $1")

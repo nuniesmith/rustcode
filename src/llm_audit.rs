@@ -1,8 +1,8 @@
-//! Enhanced LLM audit modes - Regular and Full
-//!
-//! This module provides two comprehensive audit modes:
-//! - **Regular Audit**: Holistic codebase analysis, entire codebase in context
-//! - **Full Audit**: File-by-file deep dive with scoring and master review
+// Enhanced LLM audit modes - Regular and Full
+//
+// This module provides two comprehensive audit modes:
+// - **Regular Audit**: Holistic codebase analysis, entire codebase in context
+// - **Full Audit**: File-by-file deep dive with scoring and master review
 
 use crate::cache::AuditCache;
 use crate::error::Result;
@@ -15,12 +15,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-/// Audit mode selection
+// Audit mode selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuditMode {
-    /// Regular audit - holistic codebase analysis
+    // Regular audit - holistic codebase analysis
     Regular,
-    /// Full audit - file-by-file deep dive with master review
+    // Full audit - file-by-file deep dive with master review
     Full,
 }
 
@@ -33,214 +33,214 @@ impl std::fmt::Display for AuditMode {
     }
 }
 
-/// Regular audit result - holistic codebase analysis
+// Regular audit result - holistic codebase analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegularAuditResult {
-    /// Audit mode
+    // Audit mode
     pub mode: AuditMode,
 
-    /// Overall architecture assessment
+    // Overall architecture assessment
     pub architecture_assessment: String,
 
-    /// Key patterns identified
+    // Key patterns identified
     pub patterns: Vec<String>,
 
-    /// Security concerns
+    // Security concerns
     pub security_concerns: Vec<SecurityConcern>,
 
-    /// Code quality observations
+    // Code quality observations
     pub quality_observations: Vec<String>,
 
-    /// Technical debt areas
+    // Technical debt areas
     pub tech_debt_areas: Vec<TechDebtArea>,
 
-    /// Recommendations
+    // Recommendations
     pub recommendations: Vec<Recommendation>,
 
-    /// Overall health rating (0-100)
+    // Overall health rating (0-100)
     pub overall_health: f64,
 
-    /// Confidence in analysis (0-100)
+    // Confidence in analysis (0-100)
     pub confidence: f64,
 }
 
-/// Full audit result - comprehensive file-by-file analysis
+// Full audit result - comprehensive file-by-file analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullAuditResult {
-    /// Audit mode
+    // Audit mode
     pub mode: AuditMode,
 
-    /// Individual file analyses
+    // Individual file analyses
     pub file_analyses: Vec<FileAnalysis>,
 
-    /// Codebase scoring
+    // Codebase scoring
     pub codebase_score: CodebaseScore,
 
-    /// Master review synthesizing all findings
+    // Master review synthesizing all findings
     pub master_review: MasterReview,
 
-    /// Critical files requiring attention
+    // Critical files requiring attention
     pub critical_files: Vec<PathBuf>,
 
-    /// Architecture insights
+    // Architecture insights
     pub architecture_insights: ArchitectureInsights,
 
-    /// Overall health rating (0-100)
+    // Overall health rating (0-100)
     pub overall_health: f64,
 }
 
-/// Individual file analysis from Full audit
+// Individual file analysis from Full audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAnalysis {
-    /// File path
+    // File path
     pub path: PathBuf,
 
-    /// File score
+    // File score
     pub score: FileScore,
 
-    /// LLM analysis of the file
+    // LLM analysis of the file
     pub llm_analysis: FileLlmAnalysis,
 
-    /// How this file fits in the codebase
+    // How this file fits in the codebase
     pub relationships: FileRelationships,
 }
 
-/// LLM analysis of a single file
+// LLM analysis of a single file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLlmAnalysis {
-    /// Purpose of the file
+    // Purpose of the file
     pub purpose: String,
 
-    /// Importance rating (Critical, High, Medium, Low)
+    // Importance rating (Critical, High, Medium, Low)
     pub importance: String,
 
-    /// Key functionality
+    // Key functionality
     pub key_functionality: Vec<String>,
 
-    /// Dependencies on other parts
+    // Dependencies on other parts
     pub dependencies: Vec<String>,
 
-    /// Security observations
+    // Security observations
     pub security_observations: Vec<String>,
 
-    /// Quality assessment
+    // Quality assessment
     pub quality_assessment: String,
 
-    /// Suggestions for improvement
+    // Suggestions for improvement
     pub improvement_suggestions: Vec<String>,
 }
 
-/// File relationships within codebase
+// File relationships within codebase
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRelationships {
-    /// Files this depends on
+    // Files this depends on
     pub depends_on: Vec<PathBuf>,
 
-    /// Files that depend on this
+    // Files that depend on this
     pub depended_by: Vec<PathBuf>,
 
-    /// Related files (similar functionality)
+    // Related files (similar functionality)
     pub related: Vec<PathBuf>,
 
-    /// Architectural layer (e.g., "API", "Core Logic", "Data Access")
+    // Architectural layer (e.g., "API", "Core Logic", "Data Access")
     pub layer: String,
 }
 
-/// Master review synthesizing full audit findings
+// Master review synthesizing full audit findings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasterReview {
-    /// Executive summary
+    // Executive summary
     pub executive_summary: String,
 
-    /// Top priorities for improvement
+    // Top priorities for improvement
     pub top_priorities: Vec<String>,
 
-    /// System strengths
+    // System strengths
     pub strengths: Vec<String>,
 
-    /// System weaknesses
+    // System weaknesses
     pub weaknesses: Vec<String>,
 
-    /// Architecture quality (0-100)
+    // Architecture quality (0-100)
     pub architecture_quality: f64,
 
-    /// Code consistency (0-100)
+    // Code consistency (0-100)
     pub code_consistency: f64,
 
-    /// Test coverage assessment
+    // Test coverage assessment
     pub test_coverage_assessment: String,
 
-    /// Long-term sustainability (0-100)
+    // Long-term sustainability (0-100)
     pub sustainability: f64,
 
-    /// Strategic recommendations
+    // Strategic recommendations
     pub strategic_recommendations: Vec<String>,
 }
 
-/// Architecture insights from full audit
+// Architecture insights from full audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchitectureInsights {
-    /// Identified architectural patterns
+    // Identified architectural patterns
     pub patterns: Vec<String>,
 
-    /// Separation of concerns quality (0-100)
+    // Separation of concerns quality (0-100)
     pub separation_of_concerns: f64,
 
-    /// Modularity score (0-100)
+    // Modularity score (0-100)
     pub modularity: f64,
 
-    /// Dependency complexity
+    // Dependency complexity
     pub dependency_complexity: String,
 
-    /// Identified anti-patterns
+    // Identified anti-patterns
     pub anti_patterns: Vec<String>,
 }
 
-/// Security concern identified in audit
+// Security concern identified in audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConcern {
-    /// Severity (Critical, High, Medium, Low)
+    // Severity (Critical, High, Medium, Low)
     pub severity: String,
 
-    /// Description of concern
+    // Description of concern
     pub description: String,
 
-    /// Affected files/areas
+    // Affected files/areas
     pub affected_areas: Vec<String>,
 
-    /// Recommended fix
+    // Recommended fix
     pub recommendation: String,
 }
 
-/// Technical debt area
+// Technical debt area
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TechDebtArea {
-    /// Area name/description
+    // Area name/description
     pub area: String,
 
-    /// Severity (High, Medium, Low)
+    // Severity (High, Medium, Low)
     pub severity: String,
 
-    /// Estimated effort to resolve
+    // Estimated effort to resolve
     pub effort: String,
 
-    /// Impact if not addressed
+    // Impact if not addressed
     pub impact: String,
 }
 
-/// Recommendation from audit
+// Recommendation from audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recommendation {
-    /// Priority (Critical, High, Medium, Low)
+    // Priority (Critical, High, Medium, Low)
     pub priority: String,
 
-    /// Category (Security, Performance, Maintainability, etc.)
+    // Category (Security, Performance, Maintainability, etc.)
     pub category: String,
 
-    /// Recommendation text
+    // Recommendation text
     pub recommendation: String,
 
-    /// Expected benefit
+    // Expected benefit
     pub benefit: String,
 }
 
@@ -255,7 +255,7 @@ impl Default for FileRelationships {
     }
 }
 
-/// Enhanced LLM auditor with Regular and Full modes
+// Enhanced LLM auditor with Regular and Full modes
 pub struct LlmAuditor {
     llm_client: LlmClient,
     cache: Option<AuditCache>,
@@ -263,7 +263,7 @@ pub struct LlmAuditor {
 }
 
 impl LlmAuditor {
-    /// Create a new LLM auditor with the specified provider and project root
+    // Create a new LLM auditor with the specified provider and project root
     pub fn new_with_provider(provider: &str, project_root: &Path) -> Result<Self> {
         // Load config
         let config = LlmConfig::load(project_root)?;
@@ -336,17 +336,17 @@ impl LlmAuditor {
         })
     }
 
-    /// Create a new LLM auditor (defaults to xai provider)
+    // Create a new LLM auditor (defaults to xai provider)
     pub fn new(project_root: &Path) -> Result<Self> {
         Self::new_with_provider("xai", project_root)
     }
 
-    /// Check if LLM audits are enabled
+    // Check if LLM audits are enabled
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
 
-    /// Print configuration summary
+    // Print configuration summary
     pub fn print_config(&self) {
         self.config.print_summary();
         if let Some(ref cache) = self.cache {
@@ -354,7 +354,7 @@ impl LlmAuditor {
         }
     }
 
-    /// Run a regular audit (holistic codebase analysis)
+    // Run a regular audit (holistic codebase analysis)
     pub async fn run_regular_audit(
         &self,
         project_path: &Path,
@@ -420,7 +420,7 @@ impl LlmAuditor {
         })
     }
 
-    /// Run a full audit (file-by-file deep dive)
+    // Run a full audit (file-by-file deep dive)
     pub async fn run_full_audit(&self, project_path: &Path) -> Result<FullAuditResult> {
         info!("🔬 Running Full Audit on: {:?}", project_path);
 
@@ -534,7 +534,7 @@ impl LlmAuditor {
         })
     }
 
-    /// Build a summary context of the codebase
+    // Build a summary context of the codebase
     #[allow(dead_code)]
     fn build_codebase_context(&self, project_path: &Path) -> Result<String> {
         let mut context = String::new();
@@ -561,7 +561,7 @@ impl LlmAuditor {
         Ok(context)
     }
 
-    /// Find Rust files recursively
+    // Find Rust files recursively
     fn find_rust_files(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         let mut results = Vec::new();
 
@@ -590,7 +590,7 @@ impl LlmAuditor {
         Ok(results)
     }
 
-    /// Build codebase score from file analyses
+    // Build codebase score from file analyses
     fn build_codebase_score_from_analyses(
         &self,
         analyses: &[FileAnalysis],
@@ -645,7 +645,7 @@ impl LlmAuditor {
         })
     }
 
-    /// Generate master review from file analyses
+    // Generate master review from file analyses
     async fn generate_master_review(&self, analyses: &[FileAnalysis]) -> Result<MasterReview> {
         let summary = format!(
             "Analyzed {} high-priority files. Security and quality metrics collected.",

@@ -1,11 +1,11 @@
-//! API module for RAG system
-//!
-//! Provides REST API endpoints for:
-//! - Document management (upload, read, update, delete)
-//! - Semantic search (hybrid, semantic-only, keyword)
-//! - Background indexing with job queue
-//! - Authentication and rate limiting
-//! - System statistics and health checks
+// API module for RAG system
+//
+// Provides REST API endpoints for:
+// - Document management (upload, read, update, delete)
+// - Semantic search (hybrid, semantic-only, keyword)
+// - Background indexing with job queue
+// - Authentication and rate limiting
+// - System statistics and health checks
 
 pub mod admin;
 pub mod auth;
@@ -41,7 +41,7 @@ pub use types::*;
 // Router Setup
 // ============================================================================
 
-/// Create the API router with all endpoints
+// Create the API router with all endpoints
 pub async fn create_api_router(
     db_pool: PgPool,
     auth_config: AuthConfig,
@@ -108,7 +108,7 @@ pub async fn create_api_router(
         ))
 }
 
-/// Create API router with default configuration
+// Create API router with default configuration
 pub async fn create_default_api_router(db_pool: PgPool) -> Router {
     create_api_router(
         db_pool,
@@ -124,7 +124,7 @@ pub async fn create_default_api_router(db_pool: PgPool) -> Router {
 // Configuration Helpers
 // ============================================================================
 
-/// API configuration builder
+// API configuration builder
 #[derive(Default)]
 pub struct ApiConfig {
     pub auth: AuthConfig,
@@ -134,7 +134,7 @@ pub struct ApiConfig {
 }
 
 impl ApiConfig {
-    /// Create production configuration
+    // Create production configuration
     pub fn production() -> Self {
         Self {
             auth: AuthConfig {
@@ -148,7 +148,7 @@ impl ApiConfig {
         }
     }
 
-    /// Create development configuration
+    // Create development configuration
     pub fn development() -> Self {
         Self {
             auth: AuthConfig::default(),
@@ -158,25 +158,25 @@ impl ApiConfig {
         }
     }
 
-    /// Add API key
+    // Add API key
     pub fn with_api_key(mut self, key: String) -> Self {
         self.auth.add_key(&key);
         self
     }
 
-    /// Set rate limit
+    // Set rate limit
     pub fn with_rate_limit(mut self, max_requests: u32, window_seconds: u64) -> Self {
         self.rate_limit = RateLimitConfig::new(max_requests, window_seconds);
         self
     }
 
-    /// Enable anonymous read access
+    // Enable anonymous read access
     pub fn allow_anonymous_read(mut self) -> Self {
         self.auth.allow_anonymous_read = true;
         self
     }
 
-    /// Build router with this configuration
+    // Build router with this configuration
     pub async fn build_router(self, db_pool: PgPool) -> Router {
         create_api_router(
             db_pool,

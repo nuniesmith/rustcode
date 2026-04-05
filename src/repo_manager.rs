@@ -1,30 +1,30 @@
-//! Repository Manager
-//!
-//! Manages git repository cloning, updating, and synchronization at runtime.
-//! Eliminates the need for bind-mounted host directories by cloning repos into
-//! container-managed storage.
+// Repository Manager
+//
+// Manages git repository cloning, updating, and synchronization at runtime.
+// Eliminates the need for bind-mounted host directories by cloning repos into
+// container-managed storage.
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
-/// Repository manager for git operations
+// Repository manager for git operations
 pub struct RepoManager {
-    /// Base directory where repos are cloned
+    // Base directory where repos are cloned
     repos_dir: PathBuf,
-    /// GitHub token for authentication (optional)
+    // GitHub token for authentication (optional)
     github_token: Option<String>,
-    /// Default branch name
+    // Default branch name
     default_branch: String,
 }
 
 impl RepoManager {
-    /// Create a new repository manager
-    ///
-    /// # Arguments
-    /// * `repos_dir` - Base directory for cloning repositories
-    /// * `github_token` - Optional GitHub token for private repos
+    // Create a new repository manager
+    //
+    // # Arguments
+    // * `repos_dir` - Base directory for cloning repositories
+    // * `github_token` - Optional GitHub token for private repos
     pub fn new<P: AsRef<Path>>(repos_dir: P, github_token: Option<String>) -> Result<Self> {
         let repos_dir = repos_dir.as_ref().to_path_buf();
 
@@ -42,14 +42,14 @@ impl RepoManager {
         })
     }
 
-    /// Clone a repository or update if it already exists
-    ///
-    /// # Arguments
-    /// * `git_url` - Git clone URL (HTTPS)
-    /// * `repo_name` - Local directory name for the repo
-    ///
-    /// # Returns
-    /// Path to the cloned/updated repository
+    // Clone a repository or update if it already exists
+    //
+    // # Arguments
+    // * `git_url` - Git clone URL (HTTPS)
+    // * `repo_name` - Local directory name for the repo
+    //
+    // # Returns
+    // Path to the cloned/updated repository
     pub fn clone_or_update(&self, git_url: &str, repo_name: &str) -> Result<PathBuf> {
         let repo_path = self.repos_dir.join(repo_name);
 
@@ -60,7 +60,7 @@ impl RepoManager {
         }
     }
 
-    /// Clone a fresh repository
+    // Clone a fresh repository
     fn clone_repo(&self, git_url: &str, repo_name: &str) -> Result<PathBuf> {
         let repo_path = self.repos_dir.join(repo_name);
 
@@ -92,7 +92,7 @@ impl RepoManager {
         Ok(repo_path)
     }
 
-    /// Update an existing repository
+    // Update an existing repository
     fn update_repo(&self, repo_path: &Path, _git_url: &str) -> Result<PathBuf> {
         debug!("Updating repository at {:?}", repo_path);
 
@@ -151,7 +151,7 @@ impl RepoManager {
         Ok(repo_path.to_path_buf())
     }
 
-    /// Update repository with a specific branch
+    // Update repository with a specific branch
     fn update_repo_with_branch(&self, repo_path: &Path, branch: &str) -> Result<PathBuf> {
         let mut cmd = Command::new("git");
         cmd.arg("-C")
@@ -174,7 +174,7 @@ impl RepoManager {
         Ok(repo_path.to_path_buf())
     }
 
-    /// Get current commit hash of a repository
+    // Get current commit hash of a repository
     pub fn get_current_commit(&self, repo_path: &Path) -> Result<String> {
         let output = Command::new("git")
             .arg("-C")
@@ -193,7 +193,7 @@ impl RepoManager {
         Ok(hash)
     }
 
-    /// Check if repository has uncommitted changes
+    // Check if repository has uncommitted changes
     pub fn has_uncommitted_changes(&self, repo_path: &Path) -> Result<bool> {
         let output = Command::new("git")
             .arg("-C")
@@ -210,7 +210,7 @@ impl RepoManager {
         Ok(!output.stdout.is_empty())
     }
 
-    /// Get repository information
+    // Get repository information
     pub fn get_repo_info(&self, repo_path: &Path) -> Result<RepoInfo> {
         let commit_hash = self.get_current_commit(repo_path)?;
         let has_changes = self.has_uncommitted_changes(repo_path)?;
@@ -224,7 +224,7 @@ impl RepoManager {
         })
     }
 
-    /// Get current branch name
+    // Get current branch name
     fn get_current_branch(&self, repo_path: &Path) -> Result<String> {
         let output = Command::new("git")
             .arg("-C")
@@ -244,7 +244,7 @@ impl RepoManager {
         Ok(branch)
     }
 
-    /// Build authenticated URL with GitHub token if available
+    // Build authenticated URL with GitHub token if available
     fn build_authenticated_url(&self, git_url: &str) -> Result<String> {
         if let Some(token) = &self.github_token {
             // Parse the URL and inject the token
@@ -262,7 +262,7 @@ impl RepoManager {
         Ok(git_url.to_string())
     }
 
-    /// Remove a cloned repository
+    // Remove a cloned repository
     pub fn remove_repo(&self, repo_name: &str) -> Result<()> {
         let repo_path = self.repos_dir.join(repo_name);
 
@@ -277,7 +277,7 @@ impl RepoManager {
         Ok(())
     }
 
-    /// List all cloned repositories
+    // List all cloned repositories
     pub fn list_repos(&self) -> Result<Vec<String>> {
         let mut repos = Vec::new();
 
@@ -299,13 +299,13 @@ impl RepoManager {
         Ok(repos)
     }
 
-    /// Get the path where a repository would be cloned
+    // Get the path where a repository would be cloned
     pub fn get_repo_path(&self, repo_name: &str) -> PathBuf {
         self.repos_dir.join(repo_name)
     }
 }
 
-/// Repository information
+// Repository information
 #[derive(Debug, Clone)]
 pub struct RepoInfo {
     pub path: PathBuf,

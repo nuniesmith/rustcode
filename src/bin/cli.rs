@@ -1,6 +1,6 @@
-//! Rustassistant CLI
-//!
-//! Command-line interface for managing notes, repositories, and tasks.
+// Rustassistant CLI
+//
+// Command-line interface for managing notes, repositories, and tasks.
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -40,76 +40,76 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Manage notes
+    // Manage notes
     Note {
         #[command(subcommand)]
         action: NoteAction,
     },
 
-    /// Manage repositories
+    // Manage repositories
     Repo {
         #[command(subcommand)]
         action: RepoAction,
     },
 
-    /// Manage tasks
+    // Manage tasks
     Tasks {
         #[command(subcommand)]
         action: TaskAction,
     },
 
-    /// Manage processing queue
+    // Manage processing queue
     Queue {
         #[command(subcommand)]
         action: QueueCommands,
     },
 
-    /// Scan repositories
+    // Scan repositories
     Scan {
         #[command(subcommand)]
         action: ScanCommands,
     },
 
-    /// Generate reports
+    // Generate reports
     Report {
         #[command(subcommand)]
         action: ReportCommands,
     },
 
-    /// Get the next recommended task
+    // Get the next recommended task
     Next,
 
-    /// Show statistics
+    // Show statistics
     Stats,
 
-    /// Test API connection (XAI/Grok)
+    // Test API connection (XAI/Grok)
     TestApi,
 
-    /// Generate documentation
+    // Generate documentation
     Docs {
         #[command(subcommand)]
         action: DocsAction,
     },
 
-    /// Refactoring assistant
+    // Refactoring assistant
     Refactor {
         #[command(subcommand)]
         action: RefactorAction,
     },
 
-    /// Manage repository cache
+    // Manage repository cache
     Cache {
         #[command(subcommand)]
         action: CacheAction,
     },
 
-    /// GitHub integration
+    // GitHub integration
     Github {
         #[command(subcommand)]
         action: GithubCommands,
     },
 
-    /// Rust-native TODO pipeline (scan → scaffold → plan → work → sync)
+    // Rust-native TODO pipeline (scan → scaffold → plan → work → sync)
     Todo {
         #[command(subcommand)]
         action: TodoCommands,
@@ -122,146 +122,146 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum TodoCommands {
-    /// STEP 0 — Scan source code for inline TODO/FIXME/HACK/XXX comments
-    ///
-    /// Walks the repo tree and extracts every TODO-style comment into
-    /// structured JSON.  No LLM calls — purely static.
-    ///
-    /// Examples:
-    ///   rustcode todo scan .
-    ///   rustcode todo scan . --json
-    ///   rustcode todo scan . --filter high --output scan.json
+    // STEP 0 — Scan source code for inline TODO/FIXME/HACK/XXX comments
+    //
+    // Walks the repo tree and extracts every TODO-style comment into
+    // structured JSON.  No LLM calls — purely static.
+    //
+    // Examples:
+    //   rustcode todo scan .
+    //   rustcode todo scan . --json
+    //   rustcode todo scan . --filter high --output scan.json
     Scan {
-        /// Path to the repository root (default: current directory)
+        // Path to the repository root (default: current directory)
         #[arg(default_value = ".")]
         repo: String,
 
-        /// Emit raw JSON instead of a human-readable table
+        // Emit raw JSON instead of a human-readable table
         #[arg(long)]
         json: bool,
 
-        /// Minimum priority to include: low | medium | high
+        // Minimum priority to include: low | medium | high
         #[arg(long, default_value = "low")]
         filter: String,
 
-        /// Write output to a file instead of stdout
+        // Write output to a file instead of stdout
         #[arg(short, long)]
         output: Option<String>,
     },
 
-    /// STEP 1 — Scaffold files/folders/stubs described in todo.md
-    ///
-    /// Reads todo.md, asks the LLM which files/dirs need to exist, creates
-    /// stubs on disk, and writes a "Scaffolded files" section back into
-    /// todo.md.  Idempotent — safe to re-run.
-    ///
-    /// Examples:
-    ///   rustcode todo scaffold .
-    ///   rustcode todo scaffold . --dry-run
-    ///   rustcode todo scaffold . --overwrite --output scaffold.json
+    // STEP 1 — Scaffold files/folders/stubs described in todo.md
+    //
+    // Reads todo.md, asks the LLM which files/dirs need to exist, creates
+    // stubs on disk, and writes a "Scaffolded files" section back into
+    // todo.md.  Idempotent — safe to re-run.
+    //
+    // Examples:
+    //   rustcode todo scaffold .
+    //   rustcode todo scaffold . --dry-run
+    //   rustcode todo scaffold . --overwrite --output scaffold.json
     Scaffold {
-        /// Path to the repository root (default: current directory)
+        // Path to the repository root (default: current directory)
         #[arg(default_value = ".")]
         repo: String,
 
-        /// Preview what would be created without touching the file system
+        // Preview what would be created without touching the file system
         #[arg(long)]
         dry_run: bool,
 
-        /// Overwrite existing stubs (default: skip)
+        // Overwrite existing stubs (default: skip)
         #[arg(long)]
         overwrite: bool,
 
-        /// Write the ScaffoldPlan JSON to a file
+        // Write the `ScaffoldPlan` JSON to a file
         #[arg(short, long)]
         output: Option<String>,
     },
 
-    /// STEP 2 — Generate a batched GAMEPLAN from todo.md via the LLM
-    ///
-    /// Reads todo.md plus optional source-context snippets and asks the
-    /// LLM to produce a prioritised, dependency-aware GamePlan JSON.
-    ///
-    /// Examples:
-    ///   rustcode todo plan todo.md
-    ///   rustcode todo plan todo.md --context . --output .rustcode/gameplan.json
+    // STEP 2 — Generate a batched GAMEPLAN from todo.md via the LLM
+    //
+    // Reads todo.md plus optional source-context snippets and asks the
+    // LLM to produce a prioritised, dependency-aware `GamePlan` JSON.
+    //
+    // Examples:
+    //   rustcode todo plan todo.md
+    //   rustcode todo plan todo.md --context . --output .rustcode/gameplan.json
     Plan {
-        /// Path to todo.md
+        // Path to todo.md
         todo_md: String,
 
-        /// Optional repo root for source-context snippets
+        // Optional repo root for source-context snippets
         #[arg(long)]
         context: Option<String>,
 
-        /// Write the GamePlan JSON to this file
+        // Write the `GamePlan` JSON to this file
         #[arg(short, long)]
         output: Option<String>,
     },
 
-    /// STEP 3 — Execute a single batch from a GamePlan
-    ///
-    /// Reads a GamePlan JSON (or a single batch JSON), calls the LLM to
-    /// generate real code for each item, applies hunks/replacements to disk,
-    /// creates backups, and writes a WorkResult JSON.
-    ///
-    /// Examples:
-    ///   rustcode todo work .rustcode/gameplan.json --batch batch-001 --dry-run
-    ///   rustcode todo work .rustcode/gameplan.json --batch batch-001
-    ///   rustcode todo work .rustcode/gameplan.json --batch batch-001 --auto-sync
+    // STEP 3 — Execute a single batch from a `GamePlan`
+    //
+    // Reads a `GamePlan` JSON (or a single batch JSON), calls the LLM to
+    // generate real code for each item, applies hunks/replacements to disk,
+    // creates backups, and writes a `WorkResult` JSON.
+    //
+    // Examples:
+    //   rustcode todo work .rustcode/gameplan.json --batch batch-001 --dry-run
+    //   rustcode todo work .rustcode/gameplan.json --batch batch-001
+    //   rustcode todo work .rustcode/gameplan.json --batch batch-001 --auto-sync
     Work {
-        /// Path to a GamePlan JSON file (or a single-batch JSON)
+        // Path to a `GamePlan` JSON file (or a single-batch JSON)
         gameplan: String,
 
-        /// Batch ID to execute (required when file is a full GamePlan)
+        // Batch ID to execute (required when file is a full `GamePlan`)
         #[arg(long)]
         batch: Option<String>,
 
-        /// Dry-run: build prompts and plan changes but do not write to disk
+        // Dry-run: build prompts and plan changes but do not write to disk
         #[arg(long)]
         dry_run: bool,
 
-        /// Root of the repository being modified (default: current directory)
+        // Root of the repository being modified (default: current directory)
         #[arg(long, default_value = ".")]
         repo: String,
 
-        /// Skip the post-work `cargo check` compile verification and automatic
-        /// rollback on failure.  By default a check is run after applying
-        /// changes; pass this flag to skip it (e.g. for non-Rust repos or
-        /// when you want to review changes manually before checking).
+        // Skip the post-work `cargo check` compile verification and automatic
+        // rollback on failure.  By default a check is run after applying
+        // changes; pass this flag to skip it (e.g. for non-Rust repos or
+        // when you want to review changes manually before checking).
         #[arg(long)]
         no_check: bool,
 
-        /// Automatically run `todo sync` after a successful work + compile-check
-        /// pass, eliminating the manual step 4 invocation.
-        /// The todo.md path defaults to `<repo>/todo.md`.
+        // Automatically run `todo sync` after a successful work + compile-check
+        // pass, eliminating the manual step 4 invocation.
+        // The todo.md path defaults to `<repo>/todo.md`.
         #[arg(long)]
         auto_sync: bool,
 
-        /// Path to todo.md used by --auto-sync (default: <repo>/todo.md)
+        // Path to todo.md used by --auto-sync (default: <repo>/todo.md)
         #[arg(long)]
         todo_md: Option<String>,
     },
 
-    /// STEP 4 — Apply a WorkResult back to todo.md (update status markers)
-    ///
-    /// Reads a WorkResult JSON produced by `todo work` and updates the
-    /// corresponding todo.md items with ✅ / ⚠️ / ❌ status markers.
-    ///
-    /// Examples:
-    ///   rustcode todo sync todo.md .rustcode/results/batch-001.json
-    ///   rustcode todo sync todo.md result.json --dry-run --append-summary
+    // STEP 4 — Apply a `WorkResult` back to todo.md (update status markers)
+    //
+    // Reads a `WorkResult` JSON produced by `todo work` and updates the
+    // corresponding todo.md items with ✅ / ⚠️ / ❌ status markers.
+    //
+    // Examples:
+    //   rustcode todo sync todo.md .rustcode/results/batch-001.json
+    //   rustcode todo sync todo.md result.json --dry-run --append-summary
     Sync {
-        /// Path to todo.md
+        // Path to todo.md
         todo_md: String,
 
-        /// Path to the WorkResult JSON produced by `todo work`
+        // Path to the `WorkResult` JSON produced by `todo work`
         results: String,
 
-        /// Preview changes without writing todo.md
+        // Preview changes without writing todo.md
         #[arg(long)]
         dry_run: bool,
 
-        /// Append a human-readable summary section to todo.md
+        // Append a human-readable summary section to todo.md
         #[arg(long)]
         append_summary: bool,
     },
@@ -269,45 +269,45 @@ enum TodoCommands {
 
 #[derive(Subcommand)]
 enum NoteAction {
-    /// Add a new note
+    // Add a new note
     Add {
-        /// Note content
+        // Note content
         content: String,
 
-        /// Tags (comma-separated)
+        // Tags (comma-separated)
         #[arg(short, long)]
         tags: Option<String>,
 
-        /// Project name
+        // Project name
         #[arg(short, long)]
         project: Option<String>,
     },
 
-    /// List notes
+    // List notes
     List {
-        /// Maximum number of notes to show
+        // Maximum number of notes to show
         #[arg(short, long, default_value = "10")]
         limit: i64,
 
-        /// Filter by status (inbox, processed, archived)
+        // Filter by status (inbox, processed, archived)
         #[arg(short, long)]
         status: Option<String>,
 
-        /// Filter by project
+        // Filter by project
         #[arg(short, long)]
         project: Option<String>,
 
-        /// Filter by tag
+        // Filter by tag
         #[arg(long)]
         tag: Option<String>,
     },
 
-    /// Search notes
+    // Search notes
     Search {
-        /// Search query
+        // Search query
         query: String,
 
-        /// Maximum results
+        // Maximum results
         #[arg(short, long, default_value = "10")]
         limit: i64,
     },
@@ -315,67 +315,67 @@ enum NoteAction {
 
 #[derive(Subcommand)]
 enum RepoAction {
-    /// Add a repository to track
+    // Add a repository to track
     Add {
-        /// Path to repository
+        // Path to repository
         path: String,
 
-        /// Display name (defaults to directory name)
+        // Display name (defaults to directory name)
         #[arg(short, long)]
         name: Option<String>,
     },
 
-    /// List tracked repositories
+    // List tracked repositories
     List,
 
-    /// Remove a repository
+    // Remove a repository
     Remove {
-        /// Repository ID
+        // Repository ID
         id: String,
     },
 
-    /// Enable auto-scanning for a repository
+    // Enable auto-scanning for a repository
     EnableAutoScan {
-        /// Repository ID or path
+        // Repository ID or path
         repo: String,
 
-        /// Scan interval in minutes (default: 60)
+        // Scan interval in minutes (default: 60)
         #[arg(short, long)]
         interval: Option<i64>,
     },
 
-    /// Disable auto-scanning for a repository
+    // Disable auto-scanning for a repository
     DisableAutoScan {
-        /// Repository ID or path
+        // Repository ID or path
         repo: String,
     },
 
-    /// Force an immediate scan check
+    // Force an immediate scan check
     ForceScan {
-        /// Repository ID or path
+        // Repository ID or path
         repo: String,
     },
 }
 
 #[derive(Subcommand)]
 enum DocsAction {
-    /// Generate documentation for a module/file
+    // Generate documentation for a module/file
     Module {
-        /// File path
+        // File path
         file: String,
 
-        /// Output file (prints to stdout if not specified)
+        // Output file (prints to stdout if not specified)
         #[arg(short, long)]
         output: Option<String>,
     },
 
-    /// Generate README for repository
+    // Generate README for repository
     Readme {
-        /// Repository path
+        // Repository path
         #[arg(default_value = ".")]
         repo: String,
 
-        /// Output file (prints to stdout if not specified)
+        // Output file (prints to stdout if not specified)
         #[arg(short, long)]
         output: Option<String>,
     },
@@ -383,18 +383,18 @@ enum DocsAction {
 
 #[derive(Subcommand)]
 enum RefactorAction {
-    /// Analyze a file for refactoring opportunities
+    // Analyze a file for refactoring opportunities
     Analyze {
-        /// File path to analyze
+        // File path to analyze
         file: String,
     },
 
-    /// Generate refactoring plan for a file
+    // Generate refactoring plan for a file
     Plan {
-        /// File path
+        // File path
         file: String,
 
-        /// Specific smell ID to focus on (optional)
+        // Specific smell ID to focus on (optional)
         #[arg(short, long)]
         smell: Option<String>,
     },
@@ -402,50 +402,50 @@ enum RefactorAction {
 
 #[derive(Subcommand)]
 enum CacheAction {
-    /// Initialize cache structure in a repository
+    // Initialize cache structure in a repository
     Init {
-        /// Repository path (defaults to current directory)
+        // Repository path (defaults to current directory)
         #[arg(short, long)]
         path: Option<String>,
     },
 
-    /// Show cache status and statistics
+    // Show cache status and statistics
     Status {
-        /// Repository path (defaults to current directory)
+        // Repository path (defaults to current directory)
         #[arg(short, long)]
         path: Option<String>,
     },
 
-    /// Clear cache entries
+    // Clear cache entries
     Clear {
-        /// Repository path (defaults to current directory)
+        // Repository path (defaults to current directory)
         #[arg(short, long)]
         path: Option<String>,
 
-        /// Cache type to clear (analysis, docs, refactor, todos)
+        // Cache type to clear (analysis, docs, refactor, todos)
         #[arg(short = 't', long)]
         cache_type: Option<String>,
 
-        /// Clear all cache types
+        // Clear all cache types
         #[arg(short, long)]
         all: bool,
     },
 
-    /// Migrate cache from JSON to SQLite
+    // Migrate cache from JSON to `SQLite`
     Migrate {
-        /// Source path (JSON cache directory)
+        // Source path (JSON cache directory)
         #[arg(short, long)]
         source: Option<String>,
 
-        /// Destination path (SQLite database file)
+        // Destination path (`SQLite` database file)
         #[arg(short, long)]
         destination: Option<String>,
 
-        /// Create backup before migration
+        // Create backup before migration
         #[arg(short, long)]
         backup: bool,
 
-        /// Verify migration after completion
+        // Verify migration after completion
         #[arg(short, long)]
         verify: bool,
     },
@@ -453,30 +453,30 @@ enum CacheAction {
 
 #[derive(Subcommand)]
 enum TaskAction {
-    /// List tasks
+    // List tasks
     List {
-        /// Maximum number of tasks
+        // Maximum number of tasks
         #[arg(short, long, default_value = "20")]
         limit: i64,
 
-        /// Filter by status (pending, in_progress, done)
+        // Filter by status (pending, `in_progress`, done)
         #[arg(short, long)]
         status: Option<String>,
 
-        /// Filter by max priority (1=critical, 2=high, 3=medium, 4=low)
+        // Filter by max priority (1=critical, 2=high, 3=medium, 4=low)
         #[arg(short, long)]
         priority: Option<i32>,
     },
 
-    /// Mark a task as done
+    // Mark a task as done
     Done {
-        /// Task ID
+        // Task ID
         id: String,
     },
 
-    /// Start working on a task
+    // Start working on a task
     Start {
-        /// Task ID
+        // Task ID
         id: String,
     },
 }
@@ -630,7 +630,7 @@ async fn handle_todo_scan(
         std::fs::write(&out_path, &rendered)?;
         eprintln!("{}  Wrote scan output → {}", "✅".bold(), out_path.green());
     } else {
-        println!("{}", rendered);
+        println!("{rendered}");
     }
 
     eprintln!(
@@ -668,7 +668,7 @@ async fn handle_todo_scan(
     Ok(())
 }
 
-/// Render a filtered list of scan items as a coloured human-readable table.
+// Render a filtered list of scan items as a coloured human-readable table.
 fn render_scan_table_items(items: &[&rustcode::todo::TodoCommentItem]) -> String {
     use std::fmt::Write as FmtWrite;
 
@@ -692,7 +692,7 @@ fn render_scan_table_items(items: &[&rustcode::todo::TodoCommentItem]) -> String
         let loc = format!("{}:{}", item.file.display(), item.line);
         let text = if item.text.chars().count() > 60 {
             let truncated: String = item.text.chars().take(57).collect();
-            format!("{}…", truncated)
+            format!("{truncated}…")
         } else {
             item.text.clone()
         };
@@ -800,7 +800,7 @@ async fn handle_todo_plan(
         std::fs::write(out_path, &json)?;
         eprintln!("{}  Wrote gameplan → {}", "✅".bold(), out_path.green());
     } else {
-        println!("{}", json);
+        println!("{json}");
     }
 
     // Human-readable summary
@@ -877,7 +877,9 @@ async fn handle_todo_work(
 
     // Snapshot the files the batch intends to touch *before* applying changes
     // so we can roll back if the post-work compile check fails.
-    let pre_snapshots: std::collections::HashMap<String, Option<Vec<u8>>> = if !dry_run {
+    let pre_snapshots: std::collections::HashMap<String, Option<Vec<u8>>> = if dry_run {
+        Default::default()
+    } else {
         work_batch
             .batch
             .items
@@ -889,8 +891,6 @@ async fn handle_todo_work(
                 (f.clone(), contents)
             })
             .collect()
-    } else {
-        Default::default()
     };
 
     let worker = TodoWorker::from_env(config, db).await?;
@@ -925,7 +925,7 @@ async fn handle_todo_work(
                     // Extract just the error lines for a concise report.
                     let error_lines: Vec<&str> = stderr
                         .lines()
-                        .filter(|l| l.starts_with("error") || l.contains("^"))
+                        .filter(|l| l.starts_with("error") || l.contains('^'))
                         .take(20)
                         .collect();
 
@@ -956,13 +956,13 @@ async fn handle_todo_work(
                             Some(original_bytes) => {
                                 // File existed before — restore it.
                                 match std::fs::write(&abs, original_bytes) {
-                                    Ok(_) => {
+                                    Ok(()) => {
                                         eprintln!("   ↩  Restored {}", rel_path.yellow());
                                         rolled_back += 1;
                                     }
                                     Err(e) => {
                                         rollback_errors
-                                            .push(format!("  restore {}: {}", rel_path, e));
+                                            .push(format!("  restore {rel_path}: {e}"));
                                     }
                                 }
                             }
@@ -970,7 +970,7 @@ async fn handle_todo_work(
                                 // File was newly created — remove it.
                                 if abs.exists() {
                                     match std::fs::remove_file(&abs) {
-                                        Ok(_) => {
+                                        Ok(()) => {
                                             eprintln!(
                                                 "   ↩  Removed new file {}",
                                                 rel_path.yellow()
@@ -979,7 +979,7 @@ async fn handle_todo_work(
                                         }
                                         Err(e) => {
                                             rollback_errors
-                                                .push(format!("  remove {}: {}", rel_path, e));
+                                                .push(format!("  remove {rel_path}: {e}"));
                                         }
                                     }
                                 }
@@ -1057,9 +1057,7 @@ async fn handle_todo_work(
         // manually.  Only runs when --auto-sync is set and not in dry-run.
         // ------------------------------------------------------------------
         if auto_sync && !dry_run && result.items_succeeded > 0 {
-            let todo_md_path = auto_sync_todo_md
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| repo_path.join("todo.md"));
+            let todo_md_path = auto_sync_todo_md.map_or_else(|| repo_path.join("todo.md"), std::path::PathBuf::from);
 
             if todo_md_path.exists() {
                 eprintln!(
@@ -1077,7 +1075,7 @@ async fn handle_todo_work(
                 )
                 .await
                 {
-                    Ok(_) => eprintln!("{}  auto-sync complete ✅", "🔄".bold()),
+                    Ok(()) => eprintln!("{}  auto-sync complete ✅", "🔄".bold()),
                     Err(e) => eprintln!(
                         "{}  auto-sync failed ({}). Run manually: rustcode todo sync {} {}",
                         "⚠️ ".bold(),
@@ -1143,7 +1141,7 @@ async fn handle_todo_work(
                 "\n{}  Dry-run complete — no files were written.",
                 "ℹ️ ".bold()
             );
-            println!("{}", result_json);
+            println!("{result_json}");
         } else if !auto_sync {
             // Only show the manual hint when --auto-sync was NOT used.
             eprintln!(
@@ -1287,7 +1285,7 @@ fn print_note(note: &db::Note) {
 
     let mut meta = Vec::new();
     if let Some(tags) = &note.tags {
-        meta.push(format!("tags: {}", tags));
+        meta.push(format!("tags: {tags}"));
     }
 
     if !meta.is_empty() {
@@ -1319,7 +1317,7 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
 
             // Check if path exists
             if !canonical.exists() {
-                anyhow::bail!("Path does not exist: {}", path_str);
+                anyhow::bail!("Path does not exist: {path_str}");
             }
 
             let repo = db::add_repository(pool, &path_str, &name, None).await?;
@@ -1343,13 +1341,9 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
                 println!("📂 Tracked repositories ({}):\n", repos.len());
                 for repo in repos {
                     let analyzed = repo
-                        .last_analyzed
-                        .map(|ts| {
-                            chrono::DateTime::from_timestamp(ts, 0)
-                                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                                .unwrap_or_else(|| "unknown".into())
-                        })
-                        .unwrap_or_else(|| "never".into());
+                        .last_analyzed.map_or_else(|| "never".into(), |ts| {
+                            chrono::DateTime::from_timestamp(ts, 0).map_or_else(|| "unknown".into(), |dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                        });
 
                     println!("  📁 {} ({})", repo.name.cyan(), repo.id.dimmed());
                     println!("     {} {}", "Path:".dimmed(), repo.path);
@@ -1375,7 +1369,7 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
                     .iter()
                     .find(|r| r.path == repo || r.name == repo)
                     .map(|r| r.id.clone())
-                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {}", repo))?
+                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {repo}"))?
             };
 
             rustcode::auto_scanner::enable_auto_scan(pool, &repo_id, interval).await?;
@@ -1399,7 +1393,7 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
                     .iter()
                     .find(|r| r.path == repo || r.name == repo)
                     .map(|r| r.id.clone())
-                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {}", repo))?
+                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {repo}"))?
             };
 
             rustcode::auto_scanner::disable_auto_scan(pool, &repo_id).await?;
@@ -1417,7 +1411,7 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
                     .iter()
                     .find(|r| r.path == repo || r.name == repo)
                     .map(|r| r.id.clone())
-                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {}", repo))?
+                    .ok_or_else(|| anyhow::anyhow!("Repository not found: {repo}"))?
             };
 
             rustcode::auto_scanner::force_scan(pool, &repo_id).await?;
@@ -1501,16 +1495,15 @@ fn print_task(task: &db::Task) {
     );
     println!("     {} {}", "Priority:".dimmed(), priority_label);
 
-    if let Some(desc) = &task.description {
-        if !desc.is_empty() {
+    if let Some(desc) = &task.description
+        && !desc.is_empty() {
             println!("     {}", desc.dimmed());
         }
-    }
 
     if let Some(file) = &task.file_path {
         let line = task
             .line_number
-            .map(|n| format!(":{}", n))
+            .map(|n| format!(":{n}"))
             .unwrap_or_default();
         println!("     {} {}{}", "File:".dimmed(), file, line);
     }
@@ -1692,10 +1685,10 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
                 )
                 .await?
             {
-                println!("📦 Using cached analysis for {}\n", file);
+                println!("📦 Using cached analysis for {file}\n");
                 serde_json::from_value(cached)?
             } else {
-                println!("🔍 Analyzing {} for refactoring opportunities...\n", file);
+                println!("🔍 Analyzing {file} for refactoring opportunities...\n");
                 let analysis = assistant.analyze_file(&file).await?;
 
                 // Cache the result
@@ -1716,7 +1709,7 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
                     .await?;
 
                 if let Some(tokens) = analysis.tokens_used {
-                    println!("💾 Analysis cached (tokens used: {})\n", tokens);
+                    println!("💾 Analysis cached (tokens used: {tokens})\n");
                 } else {
                     println!("💾 Analysis cached\n");
                 }
@@ -1746,7 +1739,7 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
 
                     let location = if let Some(ref loc) = smell.location {
                         if let Some(line) = loc.line_start {
-                            format!("Line {}", line)
+                            format!("Line {line}")
                         } else {
                             "Unknown location".to_string()
                         }
@@ -1781,7 +1774,7 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
         }
 
         RefactorAction::Plan { file, smell: _ } => {
-            println!("📋 Generating refactoring plan for {}...\n", file);
+            println!("📋 Generating refactoring plan for {file}...\n");
 
             let analysis = assistant.analyze_file(&file).await?;
 
@@ -1824,7 +1817,7 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
             if !plan.benefits.is_empty() {
                 println!("✨ Benefits:");
                 for benefit in &plan.benefits {
-                    println!("  • {}", benefit);
+                    println!("  • {benefit}");
                 }
                 println!();
             }
@@ -1864,10 +1857,10 @@ async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::
                 )
                 .await?
             {
-                println!("📦 Using cached documentation for {}\n", file);
+                println!("📦 Using cached documentation for {file}\n");
                 serde_json::from_value(cached)?
             } else {
-                println!("📝 Generating documentation for {}...\n", file);
+                println!("📝 Generating documentation for {file}...\n");
                 let doc = generator.generate_module_docs(&file).await?;
 
                 // Cache the result
@@ -1897,12 +1890,12 @@ async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::
                 std::fs::write(&output_path, &markdown)?;
                 println!("{} Documentation written to {}", "✓".green(), output_path);
             } else {
-                println!("{}", markdown);
+                println!("{markdown}");
             }
         }
 
         DocsAction::Readme { repo, output } => {
-            println!("📖 Generating README for {}...\n", repo);
+            println!("📖 Generating README for {repo}...\n");
 
             let content = generator.generate_readme(&repo).await?;
             let markdown = generator.format_readme(&content);
@@ -1911,7 +1904,7 @@ async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::
                 std::fs::write(&output_path, &markdown)?;
                 println!("{} README written to {}", "✓".green(), output_path);
             } else {
-                println!("{}", markdown);
+                println!("{markdown}");
             }
         }
     }
@@ -1961,7 +1954,7 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
             let mut hasher = Sha256::new();
             hasher.update(canonical_path.to_string_lossy().as_bytes());
             let hash = hasher.finalize();
-            let repo_hash = format!("{:x}", hash)[..8].to_string();
+            let repo_hash = format!("{hash:x}")[..8].to_string();
 
             let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
                 PathBuf::from(cache_home)
@@ -2016,13 +2009,13 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
                     stats.estimated_cost, budget_config.monthly_budget, percentage
                 );
             }
-            println!("  Remaining: ${:.2}", remaining);
+            println!("  Remaining: ${remaining:.2}");
 
             if stats.total_tokens > 0 {
                 let tokens_per_dollar =
                     stats.total_tokens as f64 / stats.estimated_cost.max(0.0001);
                 let remaining_tokens = (remaining * tokens_per_dollar) as usize;
-                println!("  Estimated tokens remaining: ~{}", remaining_tokens);
+                println!("  Estimated tokens remaining: ~{remaining_tokens}");
             }
         }
 
@@ -2094,8 +2087,8 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
             });
 
             println!("{} Starting cache migration", "🔄".blue());
-            println!("  Source: {}", source_path);
-            println!("  Destination: {}", dest_path);
+            println!("  Source: {source_path}");
+            println!("  Destination: {dest_path}");
             println!();
 
             // Create migrator
@@ -2103,7 +2096,7 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
 
             // Create backup if requested
             if backup {
-                let backup_path = format!("{}.backup", source_path);
+                let backup_path = format!("{source_path}.backup");
                 println!("{} Creating backup at {}", "💾".blue(), backup_path);
                 migrator.backup(&backup_path)?;
                 println!("{} Backup created\n", "✓".green());

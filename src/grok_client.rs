@@ -1,32 +1,32 @@
-//! # Grok Client Module
-//!
-//! Simplified Grok API client with cost tracking integration for Rustassistant.
-//!
-//! ## Features
-//!
-//! - Direct xAI API integration using reqwest
-//! - Automatic cost tracking to database
-//! - File scoring and analysis
-//! - Retry logic with exponential backoff
-//! - Response caching support
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::grok_client::GrokClient;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustcode.db").await?;
-//!     let client = GrokClient::new("your-api-key", db);
-//!
-//!     let result = client.score_file("path/to/file.rs", "fn main() {}").await?;
-//!     println!("Score: {}", result.overall_score);
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Grok Client Module
+//
+// Simplified Grok API client with cost tracking integration for Rustassistant.
+//
+// ## Features
+//
+// - Direct xAI API integration using reqwest
+// - Automatic cost tracking to database
+// - File scoring and analysis
+// - Retry logic with exponential backoff
+// - Response caching support
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::grok_client::GrokClient;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("data/rustcode.db").await?;
+//     let client = GrokClient::new("your-api-key", db);
+//
+//     let result = client.score_file("path/to/file.rs", "fn main() {}").await?;
+//     println!("Score: {}", result.overall_score);
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::response_cache::ResponseCache;
@@ -35,41 +35,41 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-/// Grok API base URL
+// Grok API base URL
 const GROK_API_BASE: &str = "https://api.x.ai/v1";
 
-/// Grok model for fast reasoning
+// Grok model for fast reasoning
 const GROK_MODEL: &str = "grok-4-1-fast-reasoning";
 
-/// Pricing per million tokens for Grok 4.1 Fast
+// Pricing per million tokens for Grok 4.1 Fast
 const COST_PER_MILLION_INPUT_TOKENS: f64 = 0.20;
 const COST_PER_MILLION_OUTPUT_TOKENS: f64 = 0.50;
 #[allow(dead_code)]
 const COST_PER_MILLION_CACHED_TOKENS: f64 = 0.05;
 
-/// Maximum retries for API calls
+// Maximum retries for API calls
 const MAX_RETRIES: usize = 3;
 
-/// Initial retry delay in milliseconds
+// Initial retry delay in milliseconds
 const INITIAL_RETRY_DELAY_MS: u64 = 1000;
 
-/// Grok API client with cost tracking and caching
+// Grok API client with cost tracking and caching
 pub struct GrokClient {
-    /// HTTP client
+    // HTTP client
     client: reqwest::Client,
-    /// API key
+    // API key
     api_key: String,
-    /// Database for cost tracking
+    // Database for cost tracking
     db: Database,
-    /// Model to use
+    // Model to use
     model: String,
-    /// Response cache
+    // Response cache
     cache: Option<ResponseCache>,
-    /// Enable caching
+    // Enable caching
     caching_enabled: bool,
 }
 
-/// File scoring request
+// File scoring request
 #[derive(Debug, Serialize)]
 struct ChatCompletionRequest {
     model: String,
@@ -78,14 +78,14 @@ struct ChatCompletionRequest {
     max_tokens: usize,
 }
 
-/// Chat message
+// Chat message
 #[derive(Debug, Serialize, Deserialize)]
 struct Message {
     role: String,
     content: String,
 }
 
-/// API response
+// API response
 #[derive(Debug, Deserialize)]
 struct ChatCompletionResponse {
     #[allow(dead_code)]
@@ -94,7 +94,7 @@ struct ChatCompletionResponse {
     usage: Usage,
 }
 
-/// Response choice
+// Response choice
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: Message,
@@ -102,7 +102,7 @@ struct Choice {
     finish_reason: String,
 }
 
-/// Token usage information
+// Token usage information
 #[derive(Debug, Clone, Deserialize)]
 struct Usage {
     prompt_tokens: i64,
@@ -110,7 +110,7 @@ struct Usage {
     total_tokens: i64,
 }
 
-/// Public response from ask_tracked() with cost/token info
+// Public response from ask_tracked() with cost/token info
 #[derive(Debug, Clone)]
 pub struct AskResponse {
     pub content: String,
@@ -120,24 +120,24 @@ pub struct AskResponse {
     pub cost_usd: f64,
 }
 
-/// File scoring result
+// File scoring result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileScoreResult {
-    /// Overall quality score (0-100)
+    // Overall quality score (0-100)
     pub overall_score: f64,
-    /// Security score (0-100)
+    // Security score (0-100)
     pub security_score: f64,
-    /// Code quality score (0-100)
+    // Code quality score (0-100)
     pub quality_score: f64,
-    /// Complexity score (0-100, lower is better)
+    // Complexity score (0-100, lower is better)
     pub complexity_score: f64,
-    /// Maintainability score (0-100)
+    // Maintainability score (0-100)
     pub maintainability_score: f64,
-    /// Summary of findings
+    // Summary of findings
     pub summary: String,
-    /// Specific issues found
+    // Specific issues found
     pub issues: Vec<String>,
-    /// Suggestions for improvement
+    // Suggestions for improvement
     pub suggestions: Vec<String>,
 }
 
@@ -156,33 +156,33 @@ impl Default for FileScoreResult {
     }
 }
 
-/// Quick analysis result
+// Quick analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuickAnalysisResult {
-    /// Main findings
+    // Main findings
     pub findings: String,
-    /// Estimated quality (1-10)
+    // Estimated quality (1-10)
     pub quality_rating: i32,
-    /// Key concerns
+    // Key concerns
     pub concerns: Vec<String>,
 }
 
-/// Repository-wide analysis result
+// Repository-wide analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepositoryAnalysis {
-    /// Overall health score (0-100)
+    // Overall health score (0-100)
     pub overall_health: f64,
-    /// Identified strengths
+    // Identified strengths
     pub strengths: Vec<String>,
-    /// Identified weaknesses
+    // Identified weaknesses
     pub weaknesses: Vec<String>,
-    /// Security concerns
+    // Security concerns
     pub security_concerns: Vec<String>,
-    /// Architecture notes
+    // Architecture notes
     pub architecture_notes: String,
-    /// Technical debt areas
+    // Technical debt areas
     pub tech_debt_areas: Vec<String>,
-    /// Recommendations
+    // Recommendations
     pub recommendations: Vec<String>,
 }
 
@@ -201,7 +201,7 @@ impl Default for RepositoryAnalysis {
 }
 
 impl GrokClient {
-    /// Create a new Grok client
+    // Create a new Grok client
     pub fn new(api_key: impl Into<String>, db: Database) -> Self {
         let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| GROK_MODEL.to_string());
 
@@ -220,7 +220,7 @@ impl GrokClient {
         }
     }
 
-    /// Enable caching with the specified database path
+    // Enable caching with the specified database path
     pub async fn with_cache(mut self, cache_db_path: &str) -> Result<Self> {
         let cache = ResponseCache::new(cache_db_path).await?;
         self.cache = Some(cache);
@@ -228,18 +228,18 @@ impl GrokClient {
         Ok(self)
     }
 
-    /// Return the model name this client is configured to use.
+    // Return the model name this client is configured to use.
     pub fn model_name(&self) -> &str {
         &self.model
     }
 
-    /// Disable caching
+    // Disable caching
     pub fn without_cache(mut self) -> Self {
         self.caching_enabled = false;
         self
     }
 
-    /// Create client from environment variable
+    // Create client from environment variable
     pub async fn from_env(db: Database) -> Result<Self> {
         let api_key = std::env::var("XAI_API_KEY")
             .or_else(|_| std::env::var("GROK_API_KEY"))
@@ -250,7 +250,7 @@ impl GrokClient {
         client.with_cache("data/rustcode_cache.db").await
     }
 
-    /// Score a file using Grok (with caching)
+    // Score a file using Grok (with caching)
     pub async fn score_file(&self, file_path: &str, content: &str) -> Result<FileScoreResult> {
         // Check cache first
         if self.caching_enabled {
@@ -326,7 +326,7 @@ Focus on: security vulnerabilities, code quality, complexity, and maintainabilit
         Ok(result)
     }
 
-    /// Quick analysis of code
+    // Quick analysis of code
     pub async fn quick_analysis(&self, code: &str) -> Result<QuickAnalysisResult> {
         let prompt = format!(
             r#"Provide a quick analysis of this code. Return ONLY valid JSON:
@@ -358,7 +358,7 @@ Code:
         Ok(result)
     }
 
-    /// Ask a question about code or project
+    // Ask a question about code or project
     pub async fn ask(&self, question: &str, context: Option<&str>) -> Result<String> {
         let prompt = if let Some(ctx) = context {
             format!("Context:\n{}\n\nQuestion: {}", ctx, question)
@@ -374,7 +374,7 @@ Code:
         Ok(response.content)
     }
 
-    /// Ask a question and return the response with token/cost tracking info
+    // Ask a question and return the response with token/cost tracking info
     pub async fn ask_tracked(
         &self,
         question: &str,
@@ -403,11 +403,11 @@ Code:
         })
     }
 
-    /// Ask a question with full repository context
+    // Ask a question with full repository context
     pub async fn ask_with_context(
         &self,
         question: &str,
-        context: &crate::context_builder::Context,
+        context: &crate::context_rag::Context,
         repository_id: Option<i64>,
     ) -> Result<String> {
         let prompt = format!(
@@ -424,10 +424,10 @@ Code:
         Ok(response.content)
     }
 
-    /// Analyze entire repository for patterns and issues
+    // Analyze entire repository for patterns and issues
     pub async fn analyze_repository(
         &self,
-        context: &crate::context_builder::Context,
+        context: &crate::context_rag::Context,
         repository_id: Option<i64>,
     ) -> Result<RepositoryAnalysis> {
         let prompt = format!(
@@ -455,10 +455,10 @@ Code:
         Ok(result)
     }
 
-    /// Find code patterns across repository
+    // Find code patterns across repository
     pub async fn find_patterns(
         &self,
-        context: &crate::context_builder::Context,
+        context: &crate::context_rag::Context,
         pattern_type: &str,
         repository_id: Option<i64>,
     ) -> Result<Vec<String>> {
@@ -484,7 +484,7 @@ Code:
         Ok(findings)
     }
 
-    /// Call Grok API with retry logic
+    // Call Grok API with retry logic
     async fn call_api(
         &self,
         prompt: &str,
@@ -545,7 +545,7 @@ Code:
             .unwrap_or_else(|| anyhow::anyhow!("API call failed after {} retries", MAX_RETRIES)))
     }
 
-    /// Make a single API call
+    // Make a single API call
     async fn call_api_once(&self, prompt: &str) -> Result<ApiResponse> {
         let max_tokens = std::env::var("XAI_MAX_TOKENS")
             .ok()
@@ -605,7 +605,7 @@ Code:
         })
     }
 
-    /// Calculate estimated cost from usage
+    // Calculate estimated cost from usage
     fn calculate_cost(&self, usage: &Usage) -> f64 {
         let input_cost = (usage.prompt_tokens as f64 / 1_000_000.0) * COST_PER_MILLION_INPUT_TOKENS;
         let output_cost =
@@ -613,7 +613,7 @@ Code:
         input_cost + output_cost
     }
 
-    /// Get total cost from database
+    // Get total cost from database
     pub async fn get_total_cost(&self) -> Result<f64> {
         self.db
             .get_total_llm_cost()
@@ -621,7 +621,7 @@ Code:
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    /// Get cost for last N days
+    // Get cost for last N days
     pub async fn get_cost_last_n_days(&self, days: i64) -> Result<f64> {
         self.db
             .get_llm_cost_by_period(days)
@@ -629,7 +629,7 @@ Code:
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    /// Get cost breakdown by model
+    // Get cost breakdown by model
     pub async fn get_cost_by_model(&self) -> Result<Vec<(String, f64, i64)>> {
         let map = self
             .db
@@ -640,7 +640,7 @@ Code:
         Ok(map.into_iter().map(|(k, v)| (k, v, 0)).collect())
     }
 
-    /// Get cache statistics
+    // Get cache statistics
     pub async fn get_cache_stats(&self) -> Result<Option<crate::response_cache::CacheStats>> {
         if let Some(ref cache) = self.cache {
             Ok(Some(cache.get_stats().await?))
@@ -649,7 +649,7 @@ Code:
         }
     }
 
-    /// Clear cache
+    // Clear cache
     pub async fn clear_cache(&self) -> Result<u64> {
         if let Some(ref cache) = self.cache {
             cache.clear_all().await
@@ -658,7 +658,7 @@ Code:
         }
     }
 
-    /// Clear expired cache entries
+    // Clear expired cache entries
     pub async fn clear_expired_cache(&self) -> Result<u64> {
         if let Some(ref cache) = self.cache {
             cache.clear_expired().await
@@ -668,7 +668,7 @@ Code:
     }
 }
 
-/// Internal API response
+// Internal API response
 struct ApiResponse {
     content: String,
     usage: Usage,

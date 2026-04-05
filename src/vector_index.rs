@@ -1,39 +1,39 @@
-//! Vector Index Module
-//!
-//! Provides fast approximate nearest neighbor (ANN) search using HNSW
-//! (Hierarchical Navigable Small World) algorithm for semantic search.
-//!
-//! # Features
-//!
-//! - **HNSW Index**: Fast approximate nearest neighbor search
-//! - **Incremental Updates**: Add/remove vectors dynamically
-//! - **Persistence**: Save/load index to disk
-//! - **Memory Efficient**: Optimized for production use
-//! - **Thread Safe**: Concurrent read access
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::vector_index::{VectorIndex, IndexConfig};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let config = IndexConfig::default();
-//! let mut index = VectorIndex::new(config);
-//!
-//! // Add vectors
-//! index.add_vector("doc1", vec![0.1, 0.2, 0.3]);
-//! index.add_vector("doc2", vec![0.2, 0.3, 0.4]);
-//!
-//! // Search
-//! let query = vec![0.15, 0.25, 0.35];
-//! let results = index.search(&query, 10)?;
-//!
-//! for result in results {
-//!     println!("ID: {}, Score: {:.4}", result.id, result.score);
-//! }
-//! # Ok(())
-//! # }
-//! ```
+// Vector Index Module
+//
+// Provides fast approximate nearest neighbor (ANN) search using HNSW
+// (Hierarchical Navigable Small World) algorithm for semantic search.
+//
+// # Features
+//
+// - **HNSW Index**: Fast approximate nearest neighbor search
+// - **Incremental Updates**: Add/remove vectors dynamically
+// - **Persistence**: Save/load index to disk
+// - **Memory Efficient**: Optimized for production use
+// - **Thread Safe**: Concurrent read access
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::vector_index::{VectorIndex, IndexConfig};
+//
+// # async fn example() -> anyhow::Result<()> {
+// let config = IndexConfig::default();
+// let mut index = VectorIndex::new(config);
+//
+// // Add vectors
+// index.add_vector("doc1", vec![0.1, 0.2, 0.3]);
+// index.add_vector("doc2", vec![0.2, 0.3, 0.4]);
+//
+// // Search
+// let query = vec![0.15, 0.25, 0.35];
+// let results = index.search(&query, 10)?;
+//
+// for result in results {
+//     println!("ID: {}, Score: {:.4}", result.id, result.score);
+// }
+// # Ok(())
+// # }
+// ```
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -44,25 +44,25 @@ use std::sync::{Arc, RwLock};
 // Configuration
 // ============================================================================
 
-/// Configuration for the vector index
+// Configuration for the vector index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexConfig {
-    /// Number of bi-directional links created for each node (M parameter)
+    // Number of bi-directional links created for each node (M parameter)
     pub m: usize,
 
-    /// Size of the dynamic candidate list (ef_construction parameter)
+    // Size of the dynamic candidate list (ef_construction parameter)
     pub ef_construction: usize,
 
-    /// Size of the dynamic candidate list during search (ef_search parameter)
+    // Size of the dynamic candidate list during search (ef_search parameter)
     pub ef_search: usize,
 
-    /// Maximum number of layers in the graph
+    // Maximum number of layers in the graph
     pub max_layers: usize,
 
-    /// Dimension of vectors
+    // Dimension of vectors
     pub dimension: usize,
 
-    /// Distance metric to use
+    // Distance metric to use
     pub distance_metric: DistanceMetric,
 }
 
@@ -79,16 +79,16 @@ impl Default for IndexConfig {
     }
 }
 
-/// Distance metric for vector comparison
+// Distance metric for vector comparison
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum DistanceMetric {
-    /// Cosine similarity (1 - cosine distance)
+    // Cosine similarity (1 - cosine distance)
     Cosine,
-    /// Euclidean (L2) distance
+    // Euclidean (L2) distance
     Euclidean,
-    /// Manhattan (L1) distance
+    // Manhattan (L1) distance
     Manhattan,
-    /// Dot product similarity
+    // Dot product similarity
     DotProduct,
 }
 
@@ -96,7 +96,7 @@ pub enum DistanceMetric {
 // Vector Index
 // ============================================================================
 
-/// Main vector index structure
+// Main vector index structure
 pub struct VectorIndex {
     config: IndexConfig,
     vectors: Arc<RwLock<HashMap<String, Vec<f32>>>>,
@@ -104,7 +104,7 @@ pub struct VectorIndex {
 }
 
 impl VectorIndex {
-    /// Create a new vector index
+    // Create a new vector index
     pub fn new(config: IndexConfig) -> Self {
         Self {
             config: config.clone(),
@@ -113,7 +113,7 @@ impl VectorIndex {
         }
     }
 
-    /// Add a vector to the index
+    // Add a vector to the index
     pub fn add_vector(&mut self, id: impl Into<String>, vector: Vec<f32>) -> Result<()> {
         let id = id.into();
 
@@ -148,7 +148,7 @@ impl VectorIndex {
         Ok(())
     }
 
-    /// Remove a vector from the index
+    // Remove a vector from the index
     pub fn remove_vector(&mut self, id: &str) -> Result<()> {
         {
             let mut vectors = self.vectors.write().unwrap();
@@ -163,7 +163,7 @@ impl VectorIndex {
         Ok(())
     }
 
-    /// Search for nearest neighbors
+    // Search for nearest neighbors
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         // Validate dimension
         if query.len() != self.config.dimension {
@@ -188,23 +188,23 @@ impl VectorIndex {
         index.search(&normalized_query, k, &vectors, self.config.distance_metric)
     }
 
-    /// Get the number of vectors in the index
+    // Get the number of vectors in the index
     pub fn len(&self) -> usize {
         self.vectors.read().unwrap().len()
     }
 
-    /// Check if the index is empty
+    // Check if the index is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Clear the index
+    // Clear the index
     pub fn clear(&mut self) {
         self.vectors.write().unwrap().clear();
         self.index.write().unwrap().clear();
     }
 
-    /// Save index to disk
+    // Save index to disk
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let vectors = self.vectors.read().unwrap();
         let index = self.index.read().unwrap();
@@ -221,7 +221,7 @@ impl VectorIndex {
         Ok(())
     }
 
-    /// Load index from disk
+    // Load index from disk
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)?;
         let data: IndexData = bincode::deserialize_from(file)?;
@@ -236,7 +236,7 @@ impl VectorIndex {
     }
 }
 
-/// Search result
+// Search result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub id: String,
@@ -391,12 +391,12 @@ impl HNSWIndex {
         Ok(results)
     }
 
-    /// HNSW graph traversal: greedy descent from the top layer down to layer 1,
-    /// followed by an `ef_search` beam search on layer 0.
-    ///
-    /// Returns the best candidates found via graph traversal.  When the graph
-    /// has no edges this returns at most one result (the entry-point node), and
-    /// `search()` will fall through to the brute-force path.
+    // HNSW graph traversal: greedy descent from the top layer down to layer 1,
+    // followed by an `ef_search` beam search on layer 0.
+    //
+    // Returns the best candidates found via graph traversal.  When the graph
+    // has no edges this returns at most one result (the entry-point node), and
+    // `search()` will fall through to the brute-force path.
     fn hnsw_traverse(
         &self,
         query: &[f32],
@@ -585,7 +585,7 @@ struct IndexData {
 // Utility Functions
 // ============================================================================
 
-/// Normalize a vector to unit length
+// Normalize a vector to unit length
 fn normalize_vector(vec: &[f32]) -> Vec<f32> {
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
@@ -595,10 +595,10 @@ fn normalize_vector(vec: &[f32]) -> Vec<f32> {
     }
 }
 
-/// Convert a raw distance value to a similarity score where higher is better.
-///
-/// - Cosine / DotProduct: score = 1 − distance  (distance is already 1 − similarity)
-/// - Euclidean / Manhattan: score = 1 / (1 + distance)  (maps [0, ∞) → (0, 1])
+// Convert a raw distance value to a similarity score where higher is better.
+//
+// - Cosine / DotProduct: score = 1 − distance  (distance is already 1 − similarity)
+// - Euclidean / Manhattan: score = 1 / (1 + distance)  (maps [0, ∞) → (0, 1])
 fn distance_to_score(distance: f32, metric: DistanceMetric) -> f32 {
     match metric {
         DistanceMetric::Cosine | DistanceMetric::DotProduct => 1.0 - distance,
@@ -606,7 +606,7 @@ fn distance_to_score(distance: f32, metric: DistanceMetric) -> f32 {
     }
 }
 
-/// Compute distance between two vectors
+// Compute distance between two vectors
 fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> f32 {
     match metric {
         DistanceMetric::Cosine => {

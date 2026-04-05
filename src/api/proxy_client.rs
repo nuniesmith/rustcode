@@ -1,51 +1,51 @@
-//! Standalone RustCode proxy client for external apps (e.g. the futures trading app).
-//!
-//! # Purpose
-//!
-//! Drop this file into any Rust project that currently calls Grok/xAI directly.
-//! It wraps the RustCode OpenAI-compatible `/v1/chat/completions` endpoint
-//! and falls back to the real Grok API transparently when:
-//!
-//!   - RustCode is unreachable (connection refused, timeout, DNS failure)
-//!   - RustCode returns a 5xx error
-//!   - The configured `ra_timeout` is exceeded
-//!
-//! The caller never needs to know which backend answered.
-//!
-//! # Quick start
-//!
-//! ```rust,ignore
-//! use proxy_client::{ProxyClient, ProxyClientConfig, ChatMessage};
-//!
-//! let client = ProxyClient::from_env();
-//!
-//! let reply = client
-//!     .chat(vec![
-//!         ChatMessage::system("You are a futures trading analyst."),
-//!         ChatMessage::user("Analyse the current BTC open interest spike."),
-//!     ])
-//!     .await?;
-//!
-//! println!("{}", reply.content);
-//! println!("answered by: {}", reply.answered_by);  // "rustcode" | "grok"
-//! println!("model: {}",       reply.model_used);
-//! println!("tokens: {}",      reply.total_tokens);
-//! ```
-//!
-//! # Environment variables
-//!
-//! | Variable                  | Default                         | Purpose                                    |
-//! |---------------------------|---------------------------------|--------------------------------------------|
-//! | `RUSTCODE_BASE_URL`             | `http://localhost:3500`         | RustCode server URL                   |
-//! | `RUSTCODE_API_KEY`              | *(empty — open endpoint)*       | Bearer token for RustCode             |
-//! | `RUSTCODE_TIMEOUT_SECS`         | `15`                            | Per-request timeout before fallback fires  |
-//! | `RUSTCODE_MODEL`                | `auto`                          | Model hint sent to RustCode           |
-//! | `RUSTCODE_REPO_ID`              | *(none)*                        | Repo context to inject (optional)          |
-//! | `RUSTCODE_FORCE_REMOTE`         | `false`                         | Force Grok even when calling RUSTCODE            |
-//! | `XAI_API_KEY`             | *(required for fallback)*       | Grok / xAI API key                         |
-//! | `XAI_MODEL`               | `grok-4`                        | Grok model to use in fallback              |
-//! | `XAI_BASE_URL`            | `https://api.x.ai/v1`          | xAI API base URL                           |
-//! | `PROXY_CLIENT_DISABLE_RA` | `false`                         | Skip RUSTCODE entirely, always use Grok directly |
+// Standalone RustCode proxy client for external apps (e.g. the futures trading app).
+//
+// # Purpose
+//
+// Drop this file into any Rust project that currently calls Grok/xAI directly.
+// It wraps the RustCode OpenAI-compatible `/v1/chat/completions` endpoint
+// and falls back to the real Grok API transparently when:
+//
+//   - RustCode is unreachable (connection refused, timeout, DNS failure)
+//   - RustCode returns a 5xx error
+//   - The configured `ra_timeout` is exceeded
+//
+// The caller never needs to know which backend answered.
+//
+// # Quick start
+//
+// ```rust,ignore
+// use proxy_client::{ProxyClient, ProxyClientConfig, ChatMessage};
+//
+// let client = ProxyClient::from_env();
+//
+// let reply = client
+//     .chat(vec![
+//         ChatMessage::system("You are a futures trading analyst."),
+//         ChatMessage::user("Analyse the current BTC open interest spike."),
+//     ])
+//     .await?;
+//
+// println!("{}", reply.content);
+// println!("answered by: {}", reply.answered_by);  // "rustcode" | "grok"
+// println!("model: {}",       reply.model_used);
+// println!("tokens: {}",      reply.total_tokens);
+// ```
+//
+// # Environment variables
+//
+// | Variable                  | Default                         | Purpose                                    |
+// |---------------------------|---------------------------------|--------------------------------------------|
+// | `RUSTCODE_BASE_URL`             | `http://localhost:3500`         | RustCode server URL                   |
+// | `RUSTCODE_API_KEY`              | *(empty — open endpoint)*       | Bearer token for RustCode             |
+// | `RUSTCODE_TIMEOUT_SECS`         | `15`                            | Per-request timeout before fallback fires  |
+// | `RUSTCODE_MODEL`                | `auto`                          | Model hint sent to RustCode           |
+// | `RUSTCODE_REPO_ID`              | *(none)*                        | Repo context to inject (optional)          |
+// | `RUSTCODE_FORCE_REMOTE`         | `false`                         | Force Grok even when calling RUSTCODE            |
+// | `XAI_API_KEY`             | *(required for fallback)*       | Grok / xAI API key                         |
+// | `XAI_MODEL`               | `grok-4`                        | Grok model to use in fallback              |
+// | `XAI_BASE_URL`            | `https://api.x.ai/v1`          | xAI API base URL                           |
+// | `PROXY_CLIENT_DISABLE_RA` | `false`                         | Skip RUSTCODE entirely, always use Grok directly |
 
 use std::time::Duration;
 
@@ -78,49 +78,49 @@ pub enum ProxyClientError {
 // Configuration
 // ============================================================================
 
-/// Complete configuration for the proxy client.
-///
-/// Build with [`ProxyClientConfig::from_env`] for the common case, or
-/// construct the struct directly for unit-test / programmatic use.
+// Complete configuration for the proxy client.
+//
+// Build with [`ProxyClientConfig::from_env`] for the common case, or
+// construct the struct directly for unit-test / programmatic use.
 #[derive(Debug, Clone)]
 pub struct ProxyClientConfig {
     // ── RustCode ────────────────────────────────────────────────────────
-    /// Full base URL of the RustCode server, e.g. `http://10.0.1.5:3500`.
+    // Full base URL of the RustCode server, e.g. `http://10.0.1.5:3500`.
     pub ra_base_url: String,
 
-    /// Bearer token for RustCode (`RUSTCODE_API_KEY`).
-    /// Empty string → no `Authorization` header sent (open endpoint).
+    // Bearer token for RustCode (`RUSTCODE_API_KEY`).
+    // Empty string → no `Authorization` header sent (open endpoint).
     pub ra_api_key: String,
 
-    /// Per-request timeout when calling RustCode.
-    /// On timeout the fallback fires immediately.
+    // Per-request timeout when calling RustCode.
+    // On timeout the fallback fires immediately.
     pub ra_timeout: Duration,
 
-    /// Model hint forwarded in the `model` field.
-    /// `"auto"` (default) lets the ModelRouter decide.
+    // Model hint forwarded in the `model` field.
+    // `"auto"` (default) lets the ModelRouter decide.
     pub ra_model: String,
 
-    /// Optional registered-repo slug or UUID to inject as RAG context.
+    // Optional registered-repo slug or UUID to inject as RAG context.
     pub ra_repo_id: Option<String>,
 
-    /// Force remote (Grok) inside RustCode regardless of task kind.
+    // Force remote (Grok) inside RustCode regardless of task kind.
     pub ra_force_remote: bool,
 
-    /// When `true`, skip RustCode entirely and call Grok directly.
-    /// Useful for hot-patching without redeploying.
+    // When `true`, skip RustCode entirely and call Grok directly.
+    // Useful for hot-patching without redeploying.
     pub disable_ra: bool,
 
     // ── Grok fallback ────────────────────────────────────────────────────────
-    /// xAI API key (`XAI_API_KEY`).  `None` → fallback disabled.
+    // xAI API key (`XAI_API_KEY`).  `None` → fallback disabled.
     pub xai_api_key: Option<String>,
 
-    /// Grok model name, e.g. `"grok-4"`.
+    // Grok model name, e.g. `"grok-4"`.
     pub xai_model: String,
 
-    /// xAI API base URL.
+    // xAI API base URL.
     pub xai_base_url: String,
 
-    /// Per-request timeout when calling Grok directly.
+    // Per-request timeout when calling Grok directly.
     pub xai_timeout: Duration,
 }
 
@@ -143,9 +143,9 @@ impl Default for ProxyClientConfig {
 }
 
 impl ProxyClientConfig {
-    /// Read configuration from environment variables.
-    ///
-    /// Falls back to sensible defaults for every variable that is not set.
+    // Read configuration from environment variables.
+    //
+    // Falls back to sensible defaults for every variable that is not set.
     pub fn from_env() -> Self {
         let ra_timeout = std::env::var("RUSTCODE_TIMEOUT_SECS")
             .ok()
@@ -187,7 +187,7 @@ impl ProxyClientConfig {
 // Message helpers
 // ============================================================================
 
-/// A single chat message — mirrors the OpenAI message shape.
+// A single chat message — mirrors the OpenAI message shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
@@ -221,20 +221,20 @@ impl ChatMessage {
 // Chat request builder
 // ============================================================================
 
-/// Fluent builder for a single chat request.
-///
-/// ```rust,ignore
-/// let reply = client
-///     .request()
-///     .system("You are a futures trading analyst.")
-///     .user("Is BTC in a squeeze right now?")
-///     .model("remote")          // override: always use Grok
-///     .repo_id("futures-bot")   // inject repo RAG context
-///     .temperature(0.1)
-///     .no_cache(true)
-///     .send()
-///     .await?;
-/// ```
+// Fluent builder for a single chat request.
+//
+// ```rust,ignore
+// let reply = client
+//     .request()
+//     .system("You are a futures trading analyst.")
+//     .user("Is BTC in a squeeze right now?")
+//     .model("remote")          // override: always use Grok
+//     .repo_id("futures-bot")   // inject repo RAG context
+//     .temperature(0.1)
+//     .no_cache(true)
+//     .send()
+//     .await?;
+// ```
 pub struct ChatRequestBuilder<'c> {
     client: &'c ProxyClient,
     messages: Vec<ChatMessage>,
@@ -260,73 +260,73 @@ impl<'c> ChatRequestBuilder<'c> {
         }
     }
 
-    /// Add a system message.
+    // Add a system message.
     pub fn system(mut self, content: impl Into<String>) -> Self {
         self.messages.push(ChatMessage::system(content));
         self
     }
 
-    /// Add a user message.
+    // Add a user message.
     pub fn user(mut self, content: impl Into<String>) -> Self {
         self.messages.push(ChatMessage::user(content));
         self
     }
 
-    /// Add an assistant message (for multi-turn history).
+    // Add an assistant message (for multi-turn history).
     pub fn assistant(mut self, content: impl Into<String>) -> Self {
         self.messages.push(ChatMessage::assistant(content));
         self
     }
 
-    /// Append a pre-built message.
+    // Append a pre-built message.
     pub fn message(mut self, msg: ChatMessage) -> Self {
         self.messages.push(msg);
         self
     }
 
-    /// Append a slice of pre-built messages (e.g. conversation history).
+    // Append a slice of pre-built messages (e.g. conversation history).
     pub fn messages(mut self, msgs: impl IntoIterator<Item = ChatMessage>) -> Self {
         self.messages.extend(msgs);
         self
     }
 
-    /// Override the model hint for this request.
+    // Override the model hint for this request.
     pub fn model(mut self, m: impl Into<String>) -> Self {
         self.model = Some(m.into());
         self
     }
 
-    /// Sampling temperature (0.0–2.0).
+    // Sampling temperature (0.0–2.0).
     pub fn temperature(mut self, t: f32) -> Self {
         self.temperature = Some(t);
         self
     }
 
-    /// Maximum tokens to generate.
+    // Maximum tokens to generate.
     pub fn max_tokens(mut self, n: u32) -> Self {
         self.max_tokens = Some(n);
         self
     }
 
-    /// Inject RAG context from the named registered repo.
+    // Inject RAG context from the named registered repo.
     pub fn repo_id(mut self, id: impl Into<String>) -> Self {
         self.repo_id = Some(id.into());
         self
     }
 
-    /// Bypass the Redis/LRU cache for this request.
+    // Bypass the Redis/LRU cache for this request.
     pub fn no_cache(mut self, v: bool) -> Self {
         self.no_cache = v;
         self
     }
 
-    /// Force Grok inside RustCode for this request.
+    // Force Grok inside RustCode for this request.
     pub fn force_remote(mut self, v: bool) -> Self {
         self.force_remote = v;
         self
     }
 
-    /// Execute the request.
+    // Execute the request.
     pub async fn send(self) -> Result<ChatReply, ProxyClientError> {
         self.client
             .chat_inner(
@@ -346,40 +346,40 @@ impl<'c> ChatRequestBuilder<'c> {
 // Response type
 // ============================================================================
 
-/// The reply returned to the caller regardless of which backend answered.
+// The reply returned to the caller regardless of which backend answered.
 #[derive(Debug, Clone)]
 pub struct ChatReply {
-    /// The assistant's text response.
+    // The assistant's text response.
     pub content: String,
 
-    /// Which backend actually answered: `"rustcode"` or `"grok"`.
+    // Which backend actually answered: `"rustcode"` or `"grok"`.
     pub answered_by: String,
 
-    /// The specific model name returned by the backend.
+    // The specific model name returned by the backend.
     pub model_used: String,
 
-    /// Total tokens consumed (prompt + completion).
+    // Total tokens consumed (prompt + completion).
     pub total_tokens: u32,
 
-    /// Prompt tokens (approximate when RUSTCODE answered).
+    // Prompt tokens (approximate when RUSTCODE answered).
     pub prompt_tokens: u32,
 
-    /// Completion tokens (approximate when RUSTCODE answered).
+    // Completion tokens (approximate when RUSTCODE answered).
     pub completion_tokens: u32,
 
-    /// True when the local Ollama model was tried but fell back to Grok
-    /// inside RustCode.
+    // True when the local Ollama model was tried but fell back to Grok
+    // inside RustCode.
     pub used_internal_fallback: bool,
 
-    /// True when the response was served from RustCode's cache.
+    // True when the response was served from RustCode's cache.
     pub cached: bool,
 
-    /// The `TaskKind` RustCode assigned (empty string when Grok answered
-    /// directly).
+    // The `TaskKind` RustCode assigned (empty string when Grok answered
+    // directly).
     pub task_kind: String,
 
-    /// Number of RAG chunks injected into the prompt (0 when Grok answered
-    /// directly).
+    // Number of RAG chunks injected into the prompt (0 when Grok answered
+    // directly).
     pub rag_chunks_used: usize,
 }
 
@@ -440,16 +440,16 @@ struct RaMetadata {
 // Main client
 // ============================================================================
 
-/// RustCode proxy client with transparent Grok fallback.
-///
-/// Create once and reuse (the underlying `reqwest::Client` connection-pools
-/// underneath).
-///
-/// ```rust,ignore
-/// // Simplest possible usage — reads all config from env vars.
-/// let client = ProxyClient::from_env();
-/// let reply  = client.chat(vec![ChatMessage::user("Hello!")]).await?;
-/// ```
+// RustCode proxy client with transparent Grok fallback.
+//
+// Create once and reuse (the underlying `reqwest::Client` connection-pools
+// underneath).
+//
+// ```rust,ignore
+// // Simplest possible usage — reads all config from env vars.
+// let client = ProxyClient::from_env();
+// let reply  = client.chat(vec![ChatMessage::user("Hello!")]).await?;
+// ```
 #[derive(Clone)]
 pub struct ProxyClient {
     config: ProxyClientConfig,
@@ -459,7 +459,7 @@ pub struct ProxyClient {
 impl ProxyClient {
     // ── Constructors ──────────────────────────────────────────────────────────
 
-    /// Build from explicit config.
+    // Build from explicit config.
     pub fn new(config: ProxyClientConfig) -> Self {
         // Use a single HTTP client for both backends; timeouts are set per-request.
         let http = Client::builder()
@@ -471,13 +471,13 @@ impl ProxyClient {
         Self { config, http }
     }
 
-    /// Build from environment variables (most common path).
+    // Build from environment variables (most common path).
     pub fn from_env() -> Self {
         Self::new(ProxyClientConfig::from_env())
     }
 
-    /// Build from environment variables but override the RUSTCODE base URL.
-    /// Convenient for tests or when you know the URL at compile time.
+    // Build from environment variables but override the RUSTCODE base URL.
+    // Convenient for tests or when you know the URL at compile time.
     pub fn with_base_url(base_url: impl Into<String>) -> Self {
         let mut cfg = ProxyClientConfig::from_env();
         cfg.ra_base_url = base_url.into();
@@ -486,22 +486,22 @@ impl ProxyClient {
 
     // ── Shortcut — single-turn ────────────────────────────────────────────────
 
-    /// Send a list of messages and return the reply.
-    /// Uses the defaults from the client config.
-    ///
-    /// For more control (temperature, repo context, cache bypass) use
-    /// [`ProxyClient::request`] instead.
+    // Send a list of messages and return the reply.
+    // Uses the defaults from the client config.
+    //
+    // For more control (temperature, repo context, cache bypass) use
+    // [`ProxyClient::request`] instead.
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<ChatReply, ProxyClientError> {
         self.chat_inner(messages, None, None, None, None, false, false)
             .await
     }
 
-    /// Ask a single question with no conversation history.
+    // Ask a single question with no conversation history.
     pub async fn ask(&self, question: impl Into<String>) -> Result<ChatReply, ProxyClientError> {
         self.chat(vec![ChatMessage::user(question)]).await
     }
 
-    /// Ask with an explicit system prompt and a user question.
+    // Ask with an explicit system prompt and a user question.
     pub async fn ask_with_system(
         &self,
         system: impl Into<String>,
@@ -516,17 +516,17 @@ impl ProxyClient {
 
     // ── Fluent builder ────────────────────────────────────────────────────────
 
-    /// Start building a chat request with full control over all parameters.
+    // Start building a chat request with full control over all parameters.
     pub fn request(&self) -> ChatRequestBuilder<'_> {
         ChatRequestBuilder::new(self)
     }
 
     // ── Availability check ────────────────────────────────────────────────────
 
-    /// Probe RustCode with a `GET /health` request.
-    ///
-    /// Returns `true` if the server is reachable and healthy.
-    /// Does **not** count against rate limits.
+    // Probe RustCode with a `GET /health` request.
+    //
+    // Returns `true` if the server is reachable and healthy.
+    // Does **not** count against rate limits.
     pub async fn is_ra_available(&self) -> bool {
         if self.config.disable_ra {
             return false;
@@ -805,19 +805,19 @@ impl ProxyClient {
 // ============================================================================
 
 impl ChatReply {
-    /// True when RustCode (local Ollama or internal Grok) answered.
+    // True when RustCode (local Ollama or internal Grok) answered.
     pub fn from_rustcode(&self) -> bool {
         self.answered_by == "rustcode"
     }
 
-    /// True when the upstream Grok API answered (RUSTCODE was unavailable).
+    // True when the upstream Grok API answered (RUSTCODE was unavailable).
     pub fn from_grok_fallback(&self) -> bool {
         self.answered_by == "grok"
     }
 
-    /// Cost estimate in USD based on a simple token heuristic.
-    /// This is only meaningful when [`ChatReply::from_grok_fallback`] is true;
-    /// when RUSTCODE answered with the local model the cost is effectively $0.
+    // Cost estimate in USD based on a simple token heuristic.
+    // This is only meaningful when [`ChatReply::from_grok_fallback`] is true;
+    // when RUSTCODE answered with the local model the cost is effectively $0.
     pub fn estimated_cost_usd(&self) -> f64 {
         if self.from_rustcode() && !self.used_internal_fallback {
             // Local Ollama — no API cost.
@@ -841,9 +841,9 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// Env-var tests mutate the process-global environment.  Rust runs tests
-    /// in parallel threads, so two tests that call `set_var`/`remove_var` on
-    /// the same keys will race.  Serialise all such tests with this mutex.
+    // Env-var tests mutate the process-global environment.  Rust runs tests
+    // in parallel threads, so two tests that call `set_var`/`remove_var` on
+    // the same keys will race.  Serialise all such tests with this mutex.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn default_config() -> ProxyClientConfig {

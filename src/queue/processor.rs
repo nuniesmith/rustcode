@@ -1,17 +1,17 @@
-//! Queue Processor (Legacy)
-//!
-//! Handles moving items through processing stages:
-//! Inbox → PendingAnalysis → Analyzing → PendingTagging → Ready
-//!
-//! **DEPRECATED:** The primary task system is now the `tasks` table
-//! (managed by `db::core::create_task` / `db::core::list_tasks`).
-//! The auto-scanner writes project review tasks directly to `tasks`,
-//! and the API dashboard endpoint reads from `tasks`.
-//!
-//! This module still operates on the `queue_items` table and is used
-//! for capturing notes, thoughts, and TODO comments via `capture_thought`,
-//! `capture_note`, and `capture_todo`. Consider migrating these to write
-//! to the `tasks` table as well, then retiring `queue_items` entirely.
+// Queue Processor (Legacy)
+//
+// Handles moving items through processing stages:
+// Inbox → PendingAnalysis → Analyzing → PendingTagging → Ready
+//
+// **DEPRECATED:** The primary task system is now the `tasks` table
+// (managed by `db::core::create_task` / `db::core::list_tasks`).
+// The auto-scanner writes project review tasks directly to `tasks`,
+// and the API dashboard endpoint reads from `tasks`.
+//
+// This module still operates on the `queue_items` table and is used
+// for capturing notes, thoughts, and TODO comments via `capture_thought`,
+// `capture_note`, and `capture_todo`. Consider migrating these to write
+// to the `tasks` table as well, then retiring `queue_items` entirely.
 
 use crate::db::core::create_task;
 use crate::db::queue::{QueueItem, QueuePriority, QueueSource, QueueStage};
@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 // Queue Operations
 // ============================================================================
 
-/// Add raw content to the queue for processing
+// Add raw content to the queue for processing
 pub async fn enqueue(
     pool: &PgPool,
     content: &str,
@@ -83,7 +83,7 @@ pub async fn enqueue(
     get_queue_item(pool, &id).await
 }
 
-/// Get a queue item by ID
+// Get a queue item by ID
 pub async fn get_queue_item(pool: &PgPool, id: &str) -> Result<QueueItem> {
     sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = $1")
         .bind(id)
@@ -92,7 +92,7 @@ pub async fn get_queue_item(pool: &PgPool, id: &str) -> Result<QueueItem> {
         .map_err(Into::into)
 }
 
-/// Move item to next stage
+// Move item to next stage
 pub async fn advance_stage(pool: &PgPool, id: &str) -> Result<QueueStage> {
     let item = get_queue_item(pool, id).await?;
     let current = parse_stage(&item.stage);
@@ -126,7 +126,7 @@ pub async fn advance_stage(pool: &PgPool, id: &str) -> Result<QueueStage> {
     Ok(next)
 }
 
-/// Mark item as failed
+// Mark item as failed
 pub async fn mark_failed(pool: &PgPool, id: &str, error: &str) -> Result<()> {
     let now = Utc::now().timestamp();
 
@@ -143,7 +143,7 @@ pub async fn mark_failed(pool: &PgPool, id: &str, error: &str) -> Result<()> {
     Ok(())
 }
 
-/// Update item with analysis results
+// Update item with analysis results
 pub async fn update_analysis(pool: &PgPool, id: &str, analysis: &AnalysisResult) -> Result<()> {
     let now = Utc::now().timestamp();
     let analysis_json = serde_json::to_string(analysis)?;
@@ -166,7 +166,7 @@ pub async fn update_analysis(pool: &PgPool, id: &str, analysis: &AnalysisResult)
     Ok(())
 }
 
-/// Get next items to process for a given stage
+// Get next items to process for a given stage
 pub async fn get_pending_items(
     pool: &PgPool,
     stage: QueueStage,
@@ -184,7 +184,7 @@ pub async fn get_pending_items(
     .map_err(Into::into)
 }
 
-/// Get items that failed but can be retried
+// Get items that failed but can be retried
 pub async fn get_retriable_items(pool: &PgPool, max_retries: i32) -> Result<Vec<QueueItem>> {
     sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM queue_items WHERE stage = 'failed' AND retry_count < $1 ORDER BY priority ASC"
@@ -195,7 +195,7 @@ pub async fn get_retriable_items(pool: &PgPool, max_retries: i32) -> Result<Vec<
     .map_err(Into::into)
 }
 
-/// Get queue statistics
+// Get queue statistics
 pub async fn get_queue_stats(pool: &PgPool) -> Result<QueueStats> {
     let counts: Vec<(String, i64)> =
         sqlx::query_as("SELECT stage, COUNT(*) as count FROM queue_items GROUP BY stage")
@@ -223,32 +223,32 @@ pub async fn get_queue_stats(pool: &PgPool) -> Result<QueueStats> {
 // Analysis Result Types
 // ============================================================================
 
-/// LLM analysis output
+// LLM analysis output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResult {
-    /// Short summary of the content
+    // Short summary of the content
     pub summary: String,
 
-    /// Suggested tags
+    // Suggested tags
     pub tags: Vec<String>,
 
-    /// Category (docs, code, idea, task, research, etc)
+    // Category (docs, code, idea, task, research, etc)
     pub category: String,
 
-    /// Importance/quality score (1-10)
+    // Importance/quality score (1-10)
     pub score: i32,
 
-    /// Actionable items extracted
+    // Actionable items extracted
     pub action_items: Vec<String>,
 
-    /// Related concepts/topics
+    // Related concepts/topics
     pub related_topics: Vec<String>,
 
-    /// Suggested project association
+    // Suggested project association
     pub suggested_project: Option<String>,
 }
 
-/// Queue statistics
+// Queue statistics
 #[derive(Debug, Default, Serialize)]
 pub struct QueueStats {
     pub inbox: i64,
@@ -270,18 +270,18 @@ impl QueueStats {
 // Queue Processor (Background Worker)
 // ============================================================================
 
-/// Background processor configuration
+// Background processor configuration
 pub struct ProcessorConfig {
-    /// How many items to process per batch
+    // How many items to process per batch
     pub batch_size: i32,
 
-    /// Delay between batches (ms)
+    // Delay between batches (ms)
     pub batch_delay_ms: u64,
 
-    /// Maximum retries before giving up
+    // Maximum retries before giving up
     pub max_retries: i32,
 
-    /// Delay before retrying failed items (seconds)
+    // Delay before retrying failed items (seconds)
     pub retry_delay_secs: u64,
 }
 
@@ -296,14 +296,14 @@ impl Default for ProcessorConfig {
     }
 }
 
-/// The background queue processor
+// The background queue processor
 pub struct QueueProcessor {
     pool: PgPool,
     config: ProcessorConfig,
     llm_client: Box<dyn LlmAnalyzer + Send + Sync>,
 }
 
-/// Trait for LLM analysis (implement with your Grok client)
+// Trait for LLM analysis (implement with your Grok client)
 #[async_trait::async_trait]
 pub trait LlmAnalyzer {
     async fn analyze_content(&self, content: &str, source: &str) -> Result<AnalysisResult>;
@@ -315,7 +315,7 @@ pub trait LlmAnalyzer {
     ) -> Result<FileAnalysisResult>;
 }
 
-/// File-specific analysis result
+// File-specific analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAnalysisResult {
     pub summary: String,
@@ -345,7 +345,7 @@ impl QueueProcessor {
         }
     }
 
-    /// Run the processor loop
+    // Run the processor loop
     pub async fn run(&self) -> Result<()> {
         info!("Queue processor started");
 
@@ -367,7 +367,7 @@ impl QueueProcessor {
         }
     }
 
-    /// Move inbox items to pending_analysis
+    // Move inbox items to pending_analysis
     async fn process_inbox(&self) -> Result<()> {
         let items =
             get_pending_items(&self.pool, QueueStage::Inbox, self.config.batch_size).await?;
@@ -385,7 +385,7 @@ impl QueueProcessor {
         Ok(())
     }
 
-    /// Run LLM analysis on pending items
+    // Run LLM analysis on pending items
     async fn process_analysis(&self) -> Result<()> {
         let items = get_pending_items(
             &self.pool,
@@ -420,20 +420,20 @@ impl QueueProcessor {
         Ok(())
     }
 
-    /// Finalize tagging, refine tags via schema, link to projects, write to
-    /// `tasks` table, then advance the item to `Ready`.
-    ///
-    /// # What this does
-    /// 1. Parse LLM-produced tags from `item.tags` (comma-separated).
-    /// 2. Normalise / validate tags against `TagSchema` (canonical aliases,
-    ///    deduplication, sort).
-    /// 3. Infer a [`CodeStatus`] from the item source and LLM score.
-    /// 4. Derive a task priority from the tag category + status.
-    /// 5. Attempt to resolve the queue item's `repo_id` (or fall back to a
-    ///    `registered_repos` lookup by `file_path`) so the new task is linked
-    ///    to the correct repo.
-    /// 6. Write a new row to the `tasks` table via `db::core::create_task`.
-    /// 7. Advance the queue item to `Ready`.
+    // Finalize tagging, refine tags via schema, link to projects, write to
+    // `tasks` table, then advance the item to `Ready`.
+    //
+    // # What this does
+    // 1. Parse LLM-produced tags from `item.tags` (comma-separated).
+    // 2. Normalise / validate tags against `TagSchema` (canonical aliases,
+    //    deduplication, sort).
+    // 3. Infer a [`CodeStatus`] from the item source and LLM score.
+    // 4. Derive a task priority from the tag category + status.
+    // 5. Attempt to resolve the queue item's `repo_id` (or fall back to a
+    //    `registered_repos` lookup by `file_path`) so the new task is linked
+    //    to the correct repo.
+    // 6. Write a new row to the `tasks` table via `db::core::create_task`.
+    // 7. Advance the queue item to `Ready`.
     async fn process_tagging(&self) -> Result<()> {
         let items = get_pending_items(
             &self.pool,
@@ -540,7 +540,7 @@ impl QueueProcessor {
         Ok(())
     }
 
-    /// Retry failed items
+    // Retry failed items
     async fn retry_failed(&self) -> Result<()> {
         let items = get_retriable_items(&self.pool, self.config.max_retries).await?;
 
@@ -565,11 +565,11 @@ impl QueueProcessor {
 // Tag Refinement Helpers
 // ============================================================================
 
-/// Normalise a raw tag list: validate against `TagSchema`, deduplicate, sort.
-///
-/// Unknown tags are kept as-is (lowercased) so we don't silently drop
-/// user-supplied context. Known schema tags are normalised to their canonical
-/// form (e.g. "tech-debt" → "technical-debt").
+// Normalise a raw tag list: validate against `TagSchema`, deduplicate, sort.
+//
+// Unknown tags are kept as-is (lowercased) so we don't silently drop
+// user-supplied context. Known schema tags are normalised to their canonical
+// form (e.g. "tech-debt" → "technical-debt").
 fn refine_tags(raw: &[String]) -> Vec<String> {
     use crate::tag_schema::validate_tag;
 
@@ -603,7 +603,7 @@ fn refine_tags(raw: &[String]) -> Vec<String> {
     out
 }
 
-/// Infer a [`CodeStatus`] from the queue item's source type and LLM score.
+// Infer a [`CodeStatus`] from the queue item's source type and LLM score.
 fn infer_status_from_item(item: &QueueItem) -> CodeStatus {
     match item.source.as_str() {
         "todo_comment" => CodeStatus::NeedsReview,
@@ -619,8 +619,8 @@ fn infer_status_from_item(item: &QueueItem) -> CodeStatus {
     }
 }
 
-/// Derive a numeric task priority (1 = Critical, 2 = High, 3 = Medium, 4 = Low)
-/// from the combined tag category and status.
+// Derive a numeric task priority (1 = Critical, 2 = High, 3 = Medium, 4 = Low)
+// from the combined tag category and status.
 fn derive_priority(category: TagCategory, status: CodeStatus, score: Option<i32>) -> i32 {
     use crate::tag_schema::Priority;
     let schema_priority = Priority::from_status_and_category(status, category);
@@ -640,9 +640,9 @@ fn derive_priority(category: TagCategory, status: CodeStatus, score: Option<i32>
     base
 }
 
-/// Try to find a `registered_repos` row whose `local_path` is a prefix of
-/// the given file path. Returns `None` when no match is found or when the
-/// path argument is `None`.
+// Try to find a `registered_repos` row whose `local_path` is a prefix of
+// the given file path. Returns `None` when no match is found or when the
+// path argument is `None`.
 async fn resolve_repo_from_path(pool: &PgPool, file_path: Option<&str>) -> Option<String> {
     let path = file_path?;
 
@@ -663,7 +663,7 @@ async fn resolve_repo_from_path(pool: &PgPool, file_path: Option<&str>) -> Optio
     row.map(|(id,)| id)
 }
 
-/// Build a short task title from the queue item's content and refined tags.
+// Build a short task title from the queue item's content and refined tags.
 fn build_task_title(item: &QueueItem, tags: &[String]) -> String {
     // Use the first 120 chars of content as the title, stripping newlines.
     let snippet: String = item
@@ -699,7 +699,7 @@ fn parse_stage(s: &str) -> QueueStage {
 // Quick Capture Functions
 // ============================================================================
 
-/// Quick capture for random thoughts
+// Quick capture for random thoughts
 pub async fn capture_thought(pool: &PgPool, text: &str) -> Result<QueueItem> {
     enqueue(
         pool,
@@ -713,7 +713,7 @@ pub async fn capture_thought(pool: &PgPool, text: &str) -> Result<QueueItem> {
     .await
 }
 
-/// Quick capture for notes
+// Quick capture for notes
 pub async fn capture_note(pool: &PgPool, text: &str, project: Option<&str>) -> Result<QueueItem> {
     // If project specified, try to find matching repo
     let repo_id = if let Some(p) = project {
@@ -738,7 +738,7 @@ pub async fn capture_note(pool: &PgPool, text: &str, project: Option<&str>) -> R
     .await
 }
 
-/// Capture a TODO found in code
+// Capture a TODO found in code
 pub async fn capture_todo(
     pool: &PgPool,
     content: &str,

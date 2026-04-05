@@ -1,42 +1,42 @@
-//! Webhook System Module
-//!
-//! Provides event-driven webhook notifications for system events.
-//! Supports HTTP POST webhooks with retry logic, filtering, and signatures.
-//!
-//! # Features
-//!
-//! - **Event Types**: Document indexed, search performed, job completed, etc.
-//! - **HTTP POST**: JSON payload delivery to configured endpoints
-//! - **Retry Logic**: Automatic retry with exponential backoff
-//! - **Filtering**: Subscribe to specific event types
-//! - **Signatures**: HMAC-SHA256 signatures for verification
-//! - **Async Delivery**: Non-blocking webhook execution
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::webhooks::{WebhookManager, WebhookConfig, WebhookEvent};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! let config = WebhookConfig::default();
-//! let manager = WebhookManager::new(config);
-//!
-//! // Register a webhook
-//! manager.register(
-//!     "https://example.com/webhook".to_string(),
-//!     vec!["document.indexed".to_string()],
-//!     Some("secret_key".to_string())
-//! ).await?;
-//!
-//! // Trigger an event
-//! manager.trigger(WebhookEvent::DocumentIndexed {
-//!     document_id: 123,
-//!     chunks: 10,
-//!     duration_ms: 1500,
-//! }).await?;
-//! # Ok(())
-//! # }
-//! ```
+// Webhook System Module
+//
+// Provides event-driven webhook notifications for system events.
+// Supports HTTP POST webhooks with retry logic, filtering, and signatures.
+//
+// # Features
+//
+// - **Event Types**: Document indexed, search performed, job completed, etc.
+// - **HTTP POST**: JSON payload delivery to configured endpoints
+// - **Retry Logic**: Automatic retry with exponential backoff
+// - **Filtering**: Subscribe to specific event types
+// - **Signatures**: HMAC-SHA256 signatures for verification
+// - **Async Delivery**: Non-blocking webhook execution
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::webhooks::{WebhookManager, WebhookConfig, WebhookEvent};
+//
+// # async fn example() -> anyhow::Result<()> {
+// let config = WebhookConfig::default();
+// let manager = WebhookManager::new(config);
+//
+// // Register a webhook
+// manager.register(
+//     "https://example.com/webhook".to_string(),
+//     vec!["document.indexed".to_string()],
+//     Some("secret_key".to_string())
+// ).await?;
+//
+// // Trigger an event
+// manager.trigger(WebhookEvent::DocumentIndexed {
+//     document_id: 123,
+//     chunks: 10,
+//     duration_ms: 1500,
+// }).await?;
+// # Ok(())
+// # }
+// ```
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -50,25 +50,25 @@ use uuid::Uuid;
 // Configuration
 // ============================================================================
 
-/// Webhook system configuration
+// Webhook system configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookConfig {
-    /// Maximum number of retry attempts
+    // Maximum number of retry attempts
     pub max_retries: u32,
 
-    /// Initial retry delay in milliseconds
+    // Initial retry delay in milliseconds
     pub initial_retry_delay_ms: u64,
 
-    /// Maximum retry delay in milliseconds
+    // Maximum retry delay in milliseconds
     pub max_retry_delay_ms: u64,
 
-    /// Request timeout in seconds
+    // Request timeout in seconds
     pub timeout_seconds: u64,
 
-    /// Maximum number of concurrent deliveries
+    // Maximum number of concurrent deliveries
     pub max_concurrent_deliveries: usize,
 
-    /// Enable webhook signatures (HMAC-SHA256)
+    // Enable webhook signatures (HMAC-SHA256)
     pub enable_signatures: bool,
 }
 
@@ -89,11 +89,11 @@ impl Default for WebhookConfig {
 // Webhook Events
 // ============================================================================
 
-/// Webhook event types
+// Webhook event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data")]
 pub enum WebhookEvent {
-    /// Document was uploaded
+    // Document was uploaded
     DocumentUploaded {
         document_id: i64,
         title: String,
@@ -101,17 +101,17 @@ pub enum WebhookEvent {
         created_at: DateTime<Utc>,
     },
 
-    /// Document indexing completed
+    // Document indexing completed
     DocumentIndexed {
         document_id: i64,
         chunks: usize,
         duration_ms: u64,
     },
 
-    /// Document indexing failed
+    // Document indexing failed
     DocumentIndexingFailed { document_id: i64, error: String },
 
-    /// Search was performed
+    // Search was performed
     SearchPerformed {
         query: String,
         results_count: usize,
@@ -119,13 +119,13 @@ pub enum WebhookEvent {
         search_type: String,
     },
 
-    /// Indexing job started
+    // Indexing job started
     JobStarted {
         job_id: String,
         document_count: usize,
     },
 
-    /// Indexing job completed
+    // Indexing job completed
     JobCompleted {
         job_id: String,
         document_count: usize,
@@ -134,18 +134,18 @@ pub enum WebhookEvent {
         duration_ms: u64,
     },
 
-    /// Indexing job failed
+    // Indexing job failed
     JobFailed { job_id: String, error: String },
 
-    /// Document was deleted
+    // Document was deleted
     DocumentDeleted { document_id: i64 },
 
-    /// System health check failed
+    // System health check failed
     HealthCheckFailed { service: String, error: String },
 }
 
 impl WebhookEvent {
-    /// Get the event type as a string
+    // Get the event type as a string
     pub fn event_type(&self) -> &str {
         match self {
             Self::DocumentUploaded { .. } => "document.uploaded",
@@ -165,7 +165,7 @@ impl WebhookEvent {
 // Webhook Registration
 // ============================================================================
 
-/// Webhook endpoint configuration
+// Webhook endpoint configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookEndpoint {
     pub id: String,
@@ -194,7 +194,7 @@ impl WebhookEndpoint {
         }
     }
 
-    /// Check if this endpoint should receive the event
+    // Check if this endpoint should receive the event
     pub fn should_receive(&self, event: &WebhookEvent) -> bool {
         if !self.enabled {
             return false;
@@ -212,7 +212,7 @@ impl WebhookEndpoint {
 // Webhook Payload
 // ============================================================================
 
-/// Webhook HTTP payload
+// Webhook HTTP payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookPayload {
     pub id: String,
@@ -239,7 +239,7 @@ impl WebhookPayload {
         }
     }
 
-    /// Compute HMAC-SHA256 signature
+    // Compute HMAC-SHA256 signature
     fn compute_signature(payload: &str, secret: &str) -> String {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
@@ -252,7 +252,7 @@ impl WebhookPayload {
         hex::encode(mac.finalize().into_bytes())
     }
 
-    /// Verify payload signature
+    // Verify payload signature
     pub fn verify_signature(&self, secret: &str) -> bool {
         if let Some(ref sig) = self.signature {
             let payload = serde_json::to_string(&self.event).unwrap_or_default();
@@ -303,7 +303,7 @@ pub struct WebhookManager {
 }
 
 impl WebhookManager {
-    /// Create a new webhook manager
+    // Create a new webhook manager
     pub fn new(config: WebhookConfig) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_seconds))
@@ -318,7 +318,7 @@ impl WebhookManager {
         }
     }
 
-    /// Register a new webhook endpoint
+    // Register a new webhook endpoint
     pub async fn register(
         &self,
         url: String,
@@ -334,25 +334,25 @@ impl WebhookManager {
         Ok(id)
     }
 
-    /// Unregister a webhook endpoint
+    // Unregister a webhook endpoint
     pub async fn unregister(&self, id: &str) -> Result<bool> {
         let mut endpoints = self.endpoints.write().await;
         Ok(endpoints.remove(id).is_some())
     }
 
-    /// List all registered webhooks
+    // List all registered webhooks
     pub async fn list_webhooks(&self) -> Vec<WebhookEndpoint> {
         let endpoints = self.endpoints.read().await;
         endpoints.values().cloned().collect()
     }
 
-    /// Get webhook by ID
+    // Get webhook by ID
     pub async fn get_webhook(&self, id: &str) -> Option<WebhookEndpoint> {
         let endpoints = self.endpoints.read().await;
         endpoints.get(id).cloned()
     }
 
-    /// Enable/disable a webhook
+    // Enable/disable a webhook
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<()> {
         let mut endpoints = self.endpoints.write().await;
         if let Some(endpoint) = endpoints.get_mut(id) {
@@ -363,7 +363,7 @@ impl WebhookManager {
         }
     }
 
-    /// Trigger a webhook event
+    // Trigger a webhook event
     pub async fn trigger(&self, event: WebhookEvent) -> Result<()> {
         let endpoints = self.endpoints.read().await.clone();
 
@@ -386,7 +386,7 @@ impl WebhookManager {
         Ok(())
     }
 
-    /// Deliver webhook to endpoint
+    // Deliver webhook to endpoint
     async fn deliver(&self, endpoint: WebhookEndpoint, payload: WebhookPayload) {
         let delivery_id = Uuid::new_v4().to_string();
 
@@ -418,7 +418,7 @@ impl WebhookManager {
         });
     }
 
-    /// Execute webhook delivery with retries
+    // Execute webhook delivery with retries
     async fn execute_delivery(
         &self,
         endpoint: &WebhookEndpoint,
@@ -486,7 +486,7 @@ impl WebhookManager {
         }
     }
 
-    /// Send webhook HTTP request
+    // Send webhook HTTP request
     async fn send_webhook(&self, url: &str, payload: &WebhookPayload) -> Result<reqwest::Response> {
         let mut request = self
             .client
@@ -503,7 +503,7 @@ impl WebhookManager {
         request.send().await.context("Failed to send webhook")
     }
 
-    /// Update delivery status
+    // Update delivery status
     async fn update_delivery_status(&self, id: &str, status: DeliveryStatus, attempt: u32) {
         let mut deliveries = self.deliveries.write().await;
         if let Some(delivery) = deliveries.iter_mut().find(|d| d.id == id) {
@@ -512,7 +512,7 @@ impl WebhookManager {
         }
     }
 
-    /// Mark delivery as successful
+    // Mark delivery as successful
     async fn mark_delivery_success(&self, id: &str, status_code: u16, body: String) {
         let mut deliveries = self.deliveries.write().await;
         if let Some(delivery) = deliveries.iter_mut().find(|d| d.id == id) {
@@ -523,7 +523,7 @@ impl WebhookManager {
         }
     }
 
-    /// Mark delivery as failed
+    // Mark delivery as failed
     async fn mark_delivery_failed(&self, id: &str, error: String) {
         let mut deliveries = self.deliveries.write().await;
         if let Some(delivery) = deliveries.iter_mut().find(|d| d.id == id) {
@@ -533,7 +533,7 @@ impl WebhookManager {
         }
     }
 
-    /// Update endpoint statistics
+    // Update endpoint statistics
     async fn update_endpoint_stats(&self, id: &str, success: bool) {
         let mut endpoints = self.endpoints.write().await;
         if let Some(endpoint) = endpoints.get_mut(id) {
@@ -545,7 +545,7 @@ impl WebhookManager {
         }
     }
 
-    /// Get delivery history
+    // Get delivery history
     pub async fn get_deliveries(&self, endpoint_id: Option<&str>) -> Vec<WebhookDelivery> {
         let deliveries = self.deliveries.read().await;
         if let Some(id) = endpoint_id {
@@ -559,7 +559,7 @@ impl WebhookManager {
         }
     }
 
-    /// Clone for async delivery
+    // Clone for async delivery
     fn clone_for_delivery(&self) -> Self {
         Self {
             config: self.config.clone(),

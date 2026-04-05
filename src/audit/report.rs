@@ -1,20 +1,20 @@
-//! Audit report — render audit findings to Markdown and JSON
-//!
-//! Transforms a completed `AuditResponse` into human-readable Markdown (for
-//! committing to `docs/audit/`) or structured JSON (for downstream tooling).
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! let report = AuditReport::new(response, ReportFormat::Markdown);
-//! report.save_to("docs/audit/2024-01-01-my-repo.md")?;
-//! println!("{}", report.render()?);
-//! ```
-//!
-//! # TODO(scaffolder): implement
-//!
-//! Implement the `render_markdown` and `render_json` methods once
-//! `AuditResponse` and `AuditFinding` are defined in `src/audit/types.rs`.
+// Audit report — render audit findings to Markdown and JSON
+//
+// Transforms a completed `AuditResponse` into human-readable Markdown (for
+// committing to `docs/audit/`) or structured JSON (for downstream tooling).
+//
+// # Usage
+//
+// ```rust,ignore
+// let report = AuditReport::new(response, ReportFormat::Markdown);
+// report.save_to("docs/audit/2024-01-01-my-repo.md")?;
+// println!("{}", report.render()?);
+// ```
+//
+// # TODO(scaffolder): implement
+//
+// Implement the `render_markdown` and `render_json` methods once
+// `AuditResponse` and `AuditFinding` are defined in `src/audit/types.rs`.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -27,16 +27,16 @@ use crate::error::{AuditError, Result};
 // Format selector
 // ============================================================================
 
-/// Output format for a rendered audit report
+// Output format for a rendered audit report
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportFormat {
-    /// Human-readable Markdown — committed to `docs/audit/`
+    // Human-readable Markdown — committed to `docs/audit/`
     #[default]
     Markdown,
-    /// Structured JSON — consumed by downstream tooling / workflow steps
+    // Structured JSON — consumed by downstream tooling / workflow steps
     Json,
-    /// Both Markdown and JSON side-by-side
+    // Both Markdown and JSON side-by-side
     Both,
 }
 
@@ -66,33 +66,33 @@ impl std::str::FromStr for ReportFormat {
 // Severity
 // ============================================================================
 
-/// Re-exported here so callers don't need to import both `types` and `report`
+// Re-exported here so callers don't need to import both `types` and `report`
 pub use crate::audit::types::AuditSeverity;
 
 // ============================================================================
 // Report configuration
 // ============================================================================
 
-/// Configuration for report generation
+// Configuration for report generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportConfig {
-    /// Output format
+    // Output format
     pub format: ReportFormat,
-    /// Whether to include the full raw LLM response in the output
+    // Whether to include the full raw LLM response in the output
     pub include_raw_response: bool,
-    /// Whether to include a summary table at the top
+    // Whether to include a summary table at the top
     pub include_summary_table: bool,
-    /// Whether to group findings by file
+    // Whether to group findings by file
     pub group_by_file: bool,
-    /// Whether to group findings by severity
+    // Whether to group findings by severity
     pub group_by_severity: bool,
-    /// Minimum severity to include in the report
+    // Minimum severity to include in the report
     pub min_severity: AuditSeverity,
-    /// Maximum number of findings to include (0 = unlimited)
+    // Maximum number of findings to include (0 = unlimited)
     pub max_findings: usize,
-    /// Repository name shown in the report header
+    // Repository name shown in the report header
     pub repo_name: Option<String>,
-    /// Optional link to the repo (used in Markdown headers)
+    // Optional link to the repo (used in Markdown headers)
     pub repo_url: Option<String>,
 }
 
@@ -116,17 +116,17 @@ impl Default for ReportConfig {
 // AuditReport
 // ============================================================================
 
-/// A rendered audit report ready to be written to disk
+// A rendered audit report ready to be written to disk
 #[derive(Debug, Clone)]
 pub struct AuditReport {
-    /// The underlying response data
+    // The underlying response data
     pub response: crate::audit::types::AuditResponse,
-    /// Rendering configuration
+    // Rendering configuration
     pub config: ReportConfig,
 }
 
 impl AuditReport {
-    /// Create a new report with default config
+    // Create a new report with default config
     pub fn new(response: crate::audit::types::AuditResponse) -> Self {
         Self {
             response,
@@ -134,7 +134,7 @@ impl AuditReport {
         }
     }
 
-    /// Create a new report with explicit config
+    // Create a new report with explicit config
     pub fn with_config(response: crate::audit::types::AuditResponse, config: ReportConfig) -> Self {
         Self { response, config }
     }
@@ -143,11 +143,11 @@ impl AuditReport {
     // Rendering
     // -----------------------------------------------------------------------
 
-    /// Render the report to a string in the configured format.
-    ///
-    /// Returns the rendered Markdown when format is `Markdown` or `Both`.
-    /// Returns JSON when format is `Json`.
-    /// Returns Markdown + `\n---\n` + JSON when format is `Both`.
+    // Render the report to a string in the configured format.
+    //
+    // Returns the rendered Markdown when format is `Markdown` or `Both`.
+    // Returns JSON when format is `Json`.
+    // Returns Markdown + `\n---\n` + JSON when format is `Both`.
     pub fn render(&self) -> Result<String> {
         match self.config.format {
             ReportFormat::Markdown => self.render_markdown(),
@@ -160,7 +160,7 @@ impl AuditReport {
         }
     }
 
-    /// Render to Markdown
+    // Render to Markdown
     pub fn render_markdown(&self) -> Result<String> {
         // TODO(scaffolder): implement full Markdown rendering once AuditResponse
         // fields are finalised in src/audit/types.rs.
@@ -295,7 +295,7 @@ impl AuditReport {
         Ok(md)
     }
 
-    /// Render to compact JSON
+    // Render to compact JSON
     pub fn render_json(&self) -> Result<String> {
         serde_json::to_string_pretty(&self.response)
             .map_err(|e| AuditError::other(format!("JSON render error: {}", e)))
@@ -305,9 +305,9 @@ impl AuditReport {
     // Disk I/O
     // -----------------------------------------------------------------------
 
-    /// Write the rendered report to a file on disk.
-    ///
-    /// Creates parent directories if they do not exist.
+    // Write the rendered report to a file on disk.
+    //
+    // Creates parent directories if they do not exist.
     pub fn save_to(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         let content = self.render()?;
@@ -321,11 +321,11 @@ impl AuditReport {
         Ok(())
     }
 
-    /// Save Markdown and JSON side-by-side.
-    ///
-    /// Given `base_path = "docs/audit/report"`, writes:
-    /// - `docs/audit/report.md`
-    /// - `docs/audit/report.json`
+    // Save Markdown and JSON side-by-side.
+    //
+    // Given `base_path = "docs/audit/report"`, writes:
+    // - `docs/audit/report.md`
+    // - `docs/audit/report.json`
     pub fn save_both(&self, base_path: impl AsRef<Path>) -> Result<()> {
         let base = base_path.as_ref();
         let md_path = base.with_extension("md");
@@ -353,7 +353,7 @@ impl AuditReport {
     // Helpers
     // -----------------------------------------------------------------------
 
-    /// Return findings filtered by minimum severity and capped by max_findings
+    // Return findings filtered by minimum severity and capped by max_findings
     fn filtered_findings(&self) -> Vec<&crate::audit::types::AuditFinding> {
         let min = self.config.min_severity;
         let max = self.config.max_findings;
@@ -374,7 +374,7 @@ impl AuditReport {
         findings
     }
 
-    /// Count findings grouped by severity
+    // Count findings grouped by severity
     fn severity_counts(&self) -> Vec<(AuditSeverity, usize)> {
         let mut counts: std::collections::HashMap<AuditSeverity, usize> =
             std::collections::HashMap::new();
@@ -396,9 +396,9 @@ impl AuditReport {
 // Free functions
 // ============================================================================
 
-/// Generate a default filename for an audit report.
-///
-/// Format: `YYYY-MM-DD-<repo-slug>.md`
+// Generate a default filename for an audit report.
+//
+// Format: `YYYY-MM-DD-<repo-slug>.md`
 pub fn default_report_filename(repo_name: &str, format: ReportFormat) -> String {
     let slug = repo_name
         .to_ascii_lowercase()
@@ -416,7 +416,7 @@ pub fn default_report_filename(repo_name: &str, format: ReportFormat) -> String 
     format!("{}-{}.{}", date, slug, ext)
 }
 
-/// Render a single finding as a Markdown section
+// Render a single finding as a Markdown section
 fn render_finding_markdown(finding: &crate::audit::types::AuditFinding) -> String {
     let severity_badge = match finding.severity {
         AuditSeverity::Critical => "🔴 **CRITICAL**",
@@ -451,7 +451,7 @@ fn render_finding_markdown(finding: &crate::audit::types::AuditFinding) -> Strin
     md
 }
 
-/// Return severities in descending order (critical first)
+// Return severities in descending order (critical first)
 fn severity_order() -> Vec<AuditSeverity> {
     vec![
         AuditSeverity::Critical,
@@ -462,7 +462,7 @@ fn severity_order() -> Vec<AuditSeverity> {
     ]
 }
 
-/// Numeric sort key — lower = higher priority (critical = 0)
+// Numeric sort key — lower = higher priority (critical = 0)
 fn severity_sort_key(sev: AuditSeverity) -> u8 {
     match sev {
         AuditSeverity::Critical => 0,

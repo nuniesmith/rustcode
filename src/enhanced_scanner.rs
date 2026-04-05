@@ -1,6 +1,6 @@
-//! Enhanced scanner with test running and deep context analysis
+// Enhanced scanner with test running and deep context analysis
 
-use crate::context::{ContextBuilder, GlobalContextBundle};
+use crate::context_llm::{ContextBuilder, GlobalContextBundle};
 use crate::error::Result;
 use crate::llm::{FileAuditResult, LlmClient};
 use crate::scanner::Scanner;
@@ -9,27 +9,27 @@ use crate::types::{AuditReport, AuditRequest, AuditSummary, Task, TaskPriority};
 use std::path::PathBuf;
 use tracing::{info, warn};
 
-/// Enhanced scanner with test running and 2M context window analysis
+// Enhanced scanner with test running and 2M context window analysis
 pub struct EnhancedScanner {
-    /// Base scanner
+    // Base scanner
     scanner: Scanner,
-    /// Root directory
+    // Root directory
     #[allow(dead_code)]
     root: PathBuf,
-    /// Test runner
+    // Test runner
     test_runner: TestRunner,
-    /// Context builder
+    // Context builder
     context_builder: ContextBuilder,
-    /// LLM client (optional)
+    // LLM client (optional)
     llm_client: Option<LlmClient>,
-    /// Whether to run tests
+    // Whether to run tests
     run_tests: bool,
-    /// Whether to use deep analysis
+    // Whether to use deep analysis
     use_deep_analysis: bool,
 }
 
 impl EnhancedScanner {
-    /// Create a new enhanced scanner
+    // Create a new enhanced scanner
     pub fn new(
         root: PathBuf,
         max_file_size: usize,
@@ -55,19 +55,19 @@ impl EnhancedScanner {
         })
     }
 
-    /// Set whether to run tests
+    // Set whether to run tests
     pub fn with_run_tests(mut self, run: bool) -> Self {
         self.run_tests = run;
         self
     }
 
-    /// Set whether to use deep analysis
+    // Set whether to use deep analysis
     pub fn with_deep_analysis(mut self, use_deep: bool) -> Self {
         self.use_deep_analysis = use_deep;
         self
     }
 
-    /// Run complete audit with all features
+    // Run complete audit with all features
     pub async fn run_complete_audit(&self, request: &AuditRequest) -> Result<AuditReport> {
         info!("Starting enhanced audit with test running and deep analysis");
 
@@ -156,7 +156,7 @@ impl EnhancedScanner {
         Ok(report)
     }
 
-    /// Run all tests in the project
+    // Run all tests in the project
     fn run_tests(&self) -> Result<Vec<TestResults>> {
         info!("Discovering and running tests...");
         let results = self.test_runner.run_all_tests()?;
@@ -174,7 +174,7 @@ impl EnhancedScanner {
         Ok(results)
     }
 
-    /// Build global context bundle
+    // Build global context bundle
     fn build_context_bundle(
         &self,
         system_map: crate::types::SystemMap,
@@ -182,7 +182,7 @@ impl EnhancedScanner {
         self.context_builder.build(system_map)
     }
 
-    /// Run deep analysis with LLM using the 2M context window
+    // Run deep analysis with LLM using the 2M context window
     async fn run_deep_analysis(
         &self,
         llm: &LlmClient,
@@ -221,7 +221,7 @@ impl EnhancedScanner {
         Ok(tasks)
     }
 
-    /// Run standard questionnaire for all files
+    // Run standard questionnaire for all files
     async fn run_standard_questionnaire(
         &self,
         llm: &LlmClient,
@@ -238,7 +238,7 @@ impl EnhancedScanner {
         llm.run_standard_questionnaire(&formatted_context).await
     }
 
-    /// Generate tasks from file audit results
+    // Generate tasks from file audit results
     fn generate_tasks_from_audits(&self, audits: &[FileAuditResult]) -> Vec<Task> {
         let mut tasks = Vec::new();
 
@@ -307,7 +307,7 @@ impl EnhancedScanner {
         tasks
     }
 
-    /// Update summary with test results
+    // Update summary with test results
     fn update_summary_with_tests(&self, summary: &mut AuditSummary, results: &[TestResults]) {
         let total_tests: usize = results.iter().map(|r| r.total).sum();
         let total_passed: usize = results.iter().map(|r| r.passed).sum();

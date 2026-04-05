@@ -1,8 +1,8 @@
-//! In-memory worker-boot state machine and control registry.
-//!
-//! This provides a foundational control plane for reliable worker startup:
-//! trust-gate detection, ready-for-prompt handshakes, and prompt-misdelivery
-//! detection/recovery all live above raw terminal transport.
+// In-memory worker-boot state machine and control registry.
+//
+// This provides a foundational control plane for reliable worker startup:
+// trust-gate detection, ready-for-prompt handshakes, and prompt-misdelivery
+// detection/recovery all live above raw terminal transport.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -459,8 +459,8 @@ impl WorkerRegistry {
         Ok(worker.clone())
     }
 
-    /// Classify session completion and transition worker to appropriate terminal state.
-    /// Detects degraded completions (finish="unknown" with zero tokens) as provider failures.
+    // Classify session completion and transition worker to appropriate terminal state.
+    // Detects degraded completions (finish="unknown" with zero tokens) as provider failures.
     pub fn observe_completion(
         &self,
         worker_id: &str,

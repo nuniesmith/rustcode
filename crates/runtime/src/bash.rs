@@ -14,7 +14,7 @@ use crate::sandbox::{
 };
 use crate::ConfigLoader;
 
-/// Input schema for the built-in bash execution tool.
+// Input schema for the built-in bash execution tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BashCommandInput {
     pub command: String,
@@ -34,7 +34,7 @@ pub struct BashCommandInput {
     pub allowed_mounts: Option<Vec<String>>,
 }
 
-/// Output returned from a bash tool invocation.
+// Output returned from a bash tool invocation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BashCommandOutput {
     pub stdout: String,
@@ -66,7 +66,7 @@ pub struct BashCommandOutput {
     pub sandbox_status: Option<SandboxStatus>,
 }
 
-/// Executes a shell command with the requested sandbox settings.
+// Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
     let cwd = env::current_dir()?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
@@ -285,10 +285,10 @@ mod tests {
     }
 }
 
-/// Maximum output bytes before truncation (16 KiB, matching upstream).
+// Maximum output bytes before truncation (16 KiB, matching upstream).
 const MAX_OUTPUT_BYTES: usize = 16_384;
 
-/// Truncate output to `MAX_OUTPUT_BYTES`, appending a marker when trimmed.
+// Truncate output to `MAX_OUTPUT_BYTES`, appending a marker when trimmed.
 fn truncate_output(s: &str) -> String {
     if s.len() <= MAX_OUTPUT_BYTES {
         return s.to_string();

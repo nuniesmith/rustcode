@@ -1,12 +1,12 @@
-//! Lane completion detector — automatically marks lanes as completed when
-//! session finishes successfully with green tests and pushed code.
-//!
-//! This bridges the gap where `LaneContext::completed` was a passive bool
-//! that nothing automatically set. Now completion is detected from:
-//! - Agent output shows Finished status
-//! - No errors/blockers present  
-//! - Tests passed (green status)
-//! - Code pushed (has output file)
+// Lane completion detector — automatically marks lanes as completed when
+// session finishes successfully with green tests and pushed code.
+//
+// This bridges the gap where `LaneContext::completed` was a passive bool
+// that nothing automatically set. Now completion is detected from:
+// - Agent output shows Finished status
+// - No errors/blockers present  
+// - Tests passed (green status)
+// - Code pushed (has output file)
 
 use runtime::{
     evaluate, LaneBlocker, LaneContext, PolicyAction, PolicyCondition, PolicyEngine, PolicyRule,
@@ -15,10 +15,10 @@ use runtime::{
 
 use crate::AgentOutput;
 
-/// Detects if a lane should be automatically marked as completed.
-/// 
-/// Returns `Some(LaneContext)` with `completed = true` if all conditions met,
-/// `None` if lane should remain active.
+// Detects if a lane should be automatically marked as completed.
+// 
+// Returns `Some(LaneContext)` with `completed = true` if all conditions met,
+// `None` if lane should remain active.
 pub(crate) fn detect_lane_completion(
     output: &AgentOutput,
     test_green: bool,
@@ -64,7 +64,7 @@ pub(crate) fn detect_lane_completion(
     })
 }
 
-/// Evaluates policy actions for a completed lane.
+// Evaluates policy actions for a completed lane.
 pub(crate) fn evaluate_completed_lane(
     context: &LaneContext,
 ) -> Vec<PolicyAction> {

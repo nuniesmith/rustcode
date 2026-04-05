@@ -1,24 +1,24 @@
-//! Documentation Generator
-//!
-//! Automatically generates documentation using LLM analysis.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! use rustcode::doc_generator::DocGenerator;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("sqlite:data/rustcode.db").await?;
-//!     let generator = DocGenerator::new(db).await?;
-//!
-//!     let docs = generator.generate_module_docs("src/db.rs").await?;
-//!     println!("{}", generator.format_module_doc(&docs));
-//!
-//!     Ok(())
-//! }
-//! ```
+// Documentation Generator
+//
+// Automatically generates documentation using LLM analysis.
+//
+// # Examples
+//
+// ```no_run
+// use rustcode::doc_generator::DocGenerator;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("sqlite:data/rustcode.db").await?;
+//     let generator = DocGenerator::new(db).await?;
+//
+//     let docs = generator.generate_module_docs("src/db.rs").await?;
+//     println!("{}", generator.format_module_doc(&docs));
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::GrokClient;
@@ -75,13 +75,13 @@ pub struct DocGenerator {
 }
 
 impl DocGenerator {
-    /// Create a new documentation generator
+    // Create a new documentation generator
     pub async fn new(db: Database) -> Result<Self> {
         let grok_client = GrokClient::from_env(db).await?;
         Ok(Self { grok_client })
     }
 
-    /// Generate documentation for a Rust module/file
+    // Generate documentation for a Rust module/file
     pub async fn generate_module_docs(&self, file_path: impl AsRef<Path>) -> Result<ModuleDoc> {
         let file_path = file_path.as_ref();
         let content = std::fs::read_to_string(file_path)?;
@@ -108,7 +108,7 @@ impl DocGenerator {
         Ok(doc)
     }
 
-    /// Generate README content from repository analysis
+    // Generate README content from repository analysis
     pub async fn generate_readme(&self, repo_path: impl AsRef<Path>) -> Result<ReadmeContent> {
         let repo_path = repo_path.as_ref();
 
@@ -128,7 +128,7 @@ impl DocGenerator {
         Ok(readme)
     }
 
-    /// Format module documentation as Markdown
+    // Format module documentation as Markdown
     pub fn format_module_doc(&self, doc: &ModuleDoc) -> String {
         let mut md = String::new();
 
@@ -175,7 +175,7 @@ impl DocGenerator {
         md
     }
 
-    /// Format README content as Markdown
+    // Format README content as Markdown
     pub fn format_readme(&self, content: &ReadmeContent) -> String {
         let mut md = String::new();
 

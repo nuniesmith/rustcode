@@ -1,12 +1,12 @@
-//! Grok 4.1 Reasoning Client Module
-//!
-//! Specialized client for xAI's Grok 4.1 with reasoning capabilities:
-//! - Agentic tool calling (code_execution, web_search)
-//! - 2M context window optimization with intelligent batching
-//! - max_turns control for cost management
-//! - File-by-file review with scoring integration
-//! - CI/CD integration with progress tracking
-//! - Retry logic with exponential backoff
+// Grok 4.1 Reasoning Client Module
+//
+// Specialized client for xAI's Grok 4.1 with reasoning capabilities:
+// - Agentic tool calling (code_execution, web_search)
+// - 2M context window optimization with intelligent batching
+// - max_turns control for cost management
+// - File-by-file review with scoring integration
+// - CI/CD integration with progress tracking
+// - Retry logic with exponential backoff
 
 use crate::cache::{AuditCache, CacheEntry};
 use crate::error::{AuditError, Result};
@@ -20,36 +20,36 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-/// Default Grok 4.1 model for reasoning tasks
+// Default Grok 4.1 model for reasoning tasks
 pub const GROK_REASONING_MODEL: &str = "grok-4-1-fast-reasoning";
 
-/// Alternative fast model (non-reasoning)
+// Alternative fast model (non-reasoning)
 pub const GROK_FAST_MODEL: &str = "grok-4-1-fast";
 
-/// Maximum context window (2M tokens)
+// Maximum context window (2M tokens)
 pub const MAX_CONTEXT_TOKENS: usize = 2_000_000;
 
-/// Estimated tokens per character (rough approximation)
+// Estimated tokens per character (rough approximation)
 pub const TOKENS_PER_CHAR: f64 = 0.25;
 
-/// Default max turns for agentic requests
+// Default max turns for agentic requests
 pub const DEFAULT_MAX_TURNS: usize = 5;
 
-/// Batch size thresholds based on file size
+// Batch size thresholds based on file size
 pub const SMALL_FILE_LOC: usize = 100;
 pub const MEDIUM_FILE_LOC: usize = 500;
 pub const LARGE_FILE_LOC: usize = 1000;
 
-/// Retry configuration for API calls
+// Retry configuration for API calls
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
-    /// Maximum number of retry attempts
+    // Maximum number of retry attempts
     pub max_retries: usize,
-    /// Initial delay between retries in milliseconds
+    // Initial delay between retries in milliseconds
     pub initial_delay_ms: u64,
-    /// Whether to use exponential backoff
+    // Whether to use exponential backoff
     pub exponential_backoff: bool,
-    /// Maximum delay cap in milliseconds
+    // Maximum delay cap in milliseconds
     pub max_delay_ms: u64,
 }
 
@@ -65,7 +65,7 @@ impl Default for RetryConfig {
 }
 
 impl RetryConfig {
-    /// Create from LimitsConfig
+    // Create from LimitsConfig
     pub fn from_limits(limits: &LimitsConfig) -> Self {
         Self {
             max_retries: limits.max_retries,
@@ -75,7 +75,7 @@ impl RetryConfig {
         }
     }
 
-    /// Calculate delay for a given attempt (0-indexed)
+    // Calculate delay for a given attempt (0-indexed)
     pub fn delay_for_attempt(&self, attempt: usize) -> Duration {
         let delay_ms = if self.exponential_backoff {
             let exp_delay = self.initial_delay_ms * 2u64.pow(attempt as u32);
@@ -87,138 +87,138 @@ impl RetryConfig {
     }
 }
 
-/// Grok 4.1 Reasoning Client
+// Grok 4.1 Reasoning Client
 pub struct GrokReasoningClient {
-    /// HTTP client
+    // HTTP client
     client: Client,
 
-    /// API key
+    // API key
     api_key: String,
 
-    /// Model to use
+    // Model to use
     model: String,
 
-    /// Base URL for xAI API
+    // Base URL for xAI API
     base_url: String,
 
-    /// Maximum tokens per request
+    // Maximum tokens per request
     max_tokens: usize,
 
-    /// Temperature for responses
+    // Temperature for responses
     temperature: f64,
 
-    /// Max turns for agentic requests
+    // Max turns for agentic requests
     max_turns: usize,
 
-    /// Enable code execution tool
+    // Enable code execution tool
     enable_code_execution: bool,
 
-    /// Enable reasoning mode
+    // Enable reasoning mode
     enable_reasoning: bool,
 
-    /// Request timeout (stored for future use)
+    // Request timeout (stored for future use)
     _timeout: Duration,
 
-    /// Retry configuration
+    // Retry configuration
     retry_config: RetryConfig,
 }
 
-/// Batch of files for analysis
+// Batch of files for analysis
 #[derive(Debug, Clone)]
 pub struct FileBatch {
-    /// Files in this batch
+    // Files in this batch
     pub files: Vec<FileForAnalysis>,
 
-    /// Batch ID
+    // Batch ID
     pub batch_id: usize,
 
-    /// Total estimated tokens
+    // Total estimated tokens
     pub estimated_tokens: usize,
 
-    /// Priority score (higher = analyze first)
+    // Priority score (higher = analyze first)
     pub priority: f64,
 
-    /// Category of files in this batch
+    // Category of files in this batch
     pub category: FileCategory,
 }
 
-/// Single file prepared for analysis
+// Single file prepared for analysis
 #[derive(Debug, Clone, Serialize)]
 pub struct FileForAnalysis {
-    /// File path
+    // File path
     pub path: String,
 
-    /// File content
+    // File content
     pub content: String,
 
-    /// Lines of code
+    // Lines of code
     pub lines: usize,
 
-    /// File score (if available)
+    // File score (if available)
     pub score: Option<FileScore>,
 
-    /// Category
+    // Category
     pub category: FileCategory,
 
-    /// Content hash for caching
+    // Content hash for caching
     pub content_hash: String,
 }
 
-/// Analysis result for a single file
+// Analysis result for a single file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAnalysisResult {
-    /// File path
+    // File path
     pub path: String,
 
-    /// Overall score (0-100)
+    // Overall score (0-100)
     #[serde(default = "default_score")]
     pub overall_score: f64,
 
-    /// Security score (0-100)
+    // Security score (0-100)
     #[serde(default = "default_score")]
     pub security_score: f64,
 
-    /// Quality score (0-100)
+    // Quality score (0-100)
     #[serde(default = "default_score")]
     pub quality_score: f64,
 
-    /// Complexity score (0-100, lower is better)
+    // Complexity score (0-100, lower is better)
     #[serde(default = "default_score")]
     pub complexity_score: f64,
 
-    /// Maintainability score (0-100)
+    // Maintainability score (0-100)
     #[serde(default = "default_score")]
     pub maintainability_score: f64,
 
-    /// Summary assessment
+    // Summary assessment
     #[serde(default)]
     pub summary: String,
 
-    /// Identified issues
+    // Identified issues
     #[serde(default)]
     pub issues: Vec<IdentifiedIssue>,
 
-    /// Suggested improvements
+    // Suggested improvements
     #[serde(default)]
     pub improvements: Vec<Improvement>,
 
-    /// Detected patterns (good and bad)
+    // Detected patterns (good and bad)
     #[serde(default)]
     pub patterns: Vec<DetectedPattern>,
 
-    /// Dependencies identified
+    // Dependencies identified
     #[serde(default)]
     pub dependencies: Vec<String>,
 
-    /// Test coverage assessment
+    // Test coverage assessment
     #[serde(default)]
     pub test_coverage: Option<String>,
 
-    /// Reasoning trace (if enabled)
+    // Reasoning trace (if enabled)
     #[serde(default)]
     pub reasoning_trace: Option<String>,
 
-    /// Tokens used (populated by client, not LLM response)
+    // Tokens used (populated by client, not LLM response)
     #[serde(default)]
     pub tokens_used: TokenUsage,
 }
@@ -227,51 +227,51 @@ fn default_score() -> f64 {
     50.0
 }
 
-/// Identified issue in code
+// Identified issue in code
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifiedIssue {
-    /// Severity (critical, high, medium, low)
+    // Severity (critical, high, medium, low)
     #[serde(default)]
     pub severity: String,
 
-    /// Issue category
-    /// Category (security, quality, performance, etc)
+    // Issue category
+    // Category (security, quality, performance, etc)
     #[serde(default)]
     pub category: String,
 
-    /// Line number (if applicable)
+    // Line number (if applicable)
     #[serde(default)]
     pub line: Option<usize>,
 
-    /// Description
+    // Description
     #[serde(default)]
     pub description: String,
 
-    /// Suggested fix
+    // Suggested fix
     #[serde(default)]
     pub suggested_fix: Option<String>,
 }
 
-/// Suggested improvement
+// Suggested improvement
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Improvement {
-    /// Priority (1 = highest)
+    // Priority (1 = highest)
     #[serde(default = "default_priority")]
     pub priority: usize,
 
-    /// Category
+    // Category
     #[serde(default)]
     pub category: String,
 
-    /// Description
+    // Description
     #[serde(default)]
     pub description: String,
 
-    /// Effort estimate
+    // Effort estimate
     #[serde(default)]
     pub effort: String,
 
-    /// Impact estimate
+    // Impact estimate
     #[serde(default)]
     pub impact: String,
 }
@@ -280,68 +280,68 @@ fn default_priority() -> usize {
     1
 }
 
-/// Detected pattern
+// Detected pattern
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedPattern {
-    /// Pattern name
+    // Pattern name
     #[serde(default)]
     pub name: String,
 
-    /// Whether it's positive or negative
+    // Whether it's positive or negative
     #[serde(default)]
     pub is_positive: bool,
 
-    /// Description
+    // Description
     #[serde(default)]
     pub description: String,
 
-    /// Number of occurrences
+    // Number of occurrences
     #[serde(default)]
     pub occurrences: usize,
 }
 
-/// Token usage tracking
+// Token usage tracking
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
-    /// Prompt tokens
+    // Prompt tokens
     pub prompt_tokens: usize,
 
-    /// Completion tokens
+    // Completion tokens
     pub completion_tokens: usize,
 
-    /// Reasoning tokens (Grok-specific)
+    // Reasoning tokens (Grok-specific)
     pub reasoning_tokens: usize,
 
-    /// Cached prompt tokens
+    // Cached prompt tokens
     pub cached_tokens: usize,
 
-    /// Total tokens
+    // Total tokens
     pub total_tokens: usize,
 }
 
-/// Batch analysis result
+// Batch analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchAnalysisResult {
-    /// Batch ID
+    // Batch ID
     pub batch_id: usize,
 
-    /// Individual file results
+    // Individual file results
     pub file_results: Vec<FileAnalysisResult>,
 
-    /// Batch-level insights
+    // Batch-level insights
     pub batch_insights: Option<String>,
 
-    /// Total tokens used
+    // Total tokens used
     pub total_tokens: TokenUsage,
 
-    /// Processing time in milliseconds
+    // Processing time in milliseconds
     pub processing_time_ms: u64,
 
-    /// Number of tool calls made
+    // Number of tool calls made
     pub tool_calls_count: usize,
 }
 
-/// Request for xAI Responses API
+// Request for xAI Responses API
 #[derive(Debug, Serialize)]
 struct ResponsesRequest {
     model: String,
@@ -356,21 +356,21 @@ struct ResponsesRequest {
     temperature: Option<f64>,
 }
 
-/// Message for API request
+// Message for API request
 #[derive(Debug, Serialize, Deserialize)]
 struct Message {
     role: String,
     content: String,
 }
 
-/// Tool definition
+// Tool definition
 #[derive(Debug, Serialize)]
 struct Tool {
     #[serde(rename = "type")]
     tool_type: String,
 }
 
-/// Response from xAI API
+// Response from xAI API
 #[derive(Debug, Deserialize)]
 struct ResponsesResponse {
     #[serde(default)]
@@ -382,31 +382,31 @@ struct ResponsesResponse {
     status: Option<String>,
 }
 
-/// Output item in response - this is a message object
+// Output item in response - this is a message object
 #[derive(Debug, Deserialize)]
 struct OutputItem {
     #[serde(rename = "type")]
     output_type: Option<String>,
-    /// Content can be a string (legacy) or an array of content items (current API)
+    // Content can be a string (legacy) or an array of content items (current API)
     #[serde(default)]
     content: Option<OutputContent>,
-    /// Direct text field (legacy format)
+    // Direct text field (legacy format)
     text: Option<String>,
     #[serde(default)]
     role: Option<String>,
 }
 
-/// Output content - can be array of content items or a string
+// Output content - can be array of content items or a string
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum OutputContent {
-    /// Array of content items (current API format)
+    // Array of content items (current API format)
     Items(Vec<ContentItem>),
-    /// Direct string content (legacy format)
+    // Direct string content (legacy format)
     Text(String),
 }
 
-/// Content item within an output message
+// Content item within an output message
 #[derive(Debug, Deserialize)]
 struct ContentItem {
     #[allow(dead_code)]
@@ -416,7 +416,7 @@ struct ContentItem {
     text: Option<String>,
 }
 
-/// Usage information
+// Usage information
 #[derive(Debug, Deserialize)]
 struct UsageInfo {
     #[serde(default)]
@@ -431,14 +431,14 @@ struct UsageInfo {
     output_tokens_details: Option<OutputTokenDetails>,
 }
 
-/// Input token details
+// Input token details
 #[derive(Debug, Deserialize)]
 struct TokenDetails {
     #[serde(default)]
     cached_tokens: usize,
 }
 
-/// Output token details
+// Output token details
 #[derive(Debug, Deserialize)]
 struct OutputTokenDetails {
     #[serde(default)]
@@ -446,7 +446,7 @@ struct OutputTokenDetails {
 }
 
 impl GrokReasoningClient {
-    /// Create a new Grok Reasoning client
+    // Create a new Grok Reasoning client
     pub fn new(api_key: String) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(300)) // 5 minute timeout for long reasoning
@@ -468,7 +468,7 @@ impl GrokReasoningClient {
         })
     }
 
-    /// Create with custom configuration
+    // Create with custom configuration
     pub fn with_config(
         api_key: String,
         model: Option<String>,
@@ -490,7 +490,7 @@ impl GrokReasoningClient {
         Ok(client)
     }
 
-    /// Create with custom configuration including retry settings
+    // Create with custom configuration including retry settings
     pub fn with_full_config(
         api_key: String,
         model: Option<String>,
@@ -514,27 +514,27 @@ impl GrokReasoningClient {
         Ok(client)
     }
 
-    /// Set retry configuration
+    // Set retry configuration
     pub fn set_retry_config(&mut self, config: RetryConfig) {
         self.retry_config = config;
     }
 
-    /// Set max turns for agentic requests
+    // Set max turns for agentic requests
     pub fn set_max_turns(&mut self, max_turns: usize) {
         self.max_turns = max_turns;
     }
 
-    /// Set temperature
+    // Set temperature
     pub fn set_temperature(&mut self, temperature: f64) {
         self.temperature = temperature;
     }
 
-    /// Estimate tokens for content
+    // Estimate tokens for content
     pub fn estimate_tokens(content: &str) -> usize {
         (content.len() as f64 * TOKENS_PER_CHAR) as usize
     }
 
-    /// Create batches from files for optimal context usage
+    // Create batches from files for optimal context usage
     pub fn create_batches(
         &self,
         files: Vec<FileForAnalysis>,
@@ -684,7 +684,7 @@ impl GrokReasoningClient {
         batches
     }
 
-    /// Build system prompt for code analysis
+    // Build system prompt for code analysis
     fn build_analysis_system_prompt(&self, category: FileCategory) -> String {
         let category_context = match category {
             FileCategory::Audit => {
@@ -760,7 +760,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         )
     }
 
-    /// Analyze a single file
+    // Analyze a single file
     pub async fn analyze_file(&self, file: &FileForAnalysis) -> Result<FileAnalysisResult> {
         let start = std::time::Instant::now();
 
@@ -788,7 +788,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         Ok(result)
     }
 
-    /// Analyze a batch of files
+    // Analyze a batch of files
     pub async fn analyze_batch(
         &self,
         batch: &FileBatch,
@@ -917,7 +917,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         })
     }
 
-    /// Generate insights across a batch of file results
+    // Generate insights across a batch of file results
     fn generate_batch_insights(&self, results: &[FileAnalysisResult]) -> String {
         let avg_score: f64 =
             results.iter().map(|r| r.overall_score).sum::<f64>() / results.len() as f64;
@@ -965,7 +965,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         insight
     }
 
-    /// Call the xAI Responses API with retry logic
+    // Call the xAI Responses API with retry logic
     async fn call_api(
         &self,
         system_prompt: &str,
@@ -1010,7 +1010,7 @@ When analyzing multiple files, return a JSON array of file results."#,
             .unwrap_or_else(|| AuditError::other("API call failed after all retries".to_string())))
     }
 
-    /// Check if an error is retryable
+    // Check if an error is retryable
     fn is_retryable_error(error: &str) -> bool {
         let retryable_patterns = [
             "timeout",
@@ -1031,7 +1031,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         retryable_patterns.iter().any(|p| error_lower.contains(p))
     }
 
-    /// Single API call attempt (no retry)
+    // Single API call attempt (no retry)
     async fn call_api_once(
         &self,
         system_prompt: &str,
@@ -1169,7 +1169,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         Ok((content, token_usage))
     }
 
-    /// Parse response for a single file
+    // Parse response for a single file
     fn parse_single_file_response(&self, response: &str, path: &str) -> Result<FileAnalysisResult> {
         // Try to extract JSON from response
         let json_str = self.extract_json(response)?;
@@ -1179,7 +1179,7 @@ When analyzing multiple files, return a JSON array of file results."#,
         })
     }
 
-    /// Parse response for multiple files
+    // Parse response for multiple files
     fn parse_batch_response(
         &self,
         response: &str,
@@ -1270,7 +1270,7 @@ When analyzing multiple files, return a JSON array of file results."#,
             .collect())
     }
 
-    /// Extract JSON from response (may be wrapped in markdown code blocks)
+    // Extract JSON from response (may be wrapped in markdown code blocks)
     fn extract_json(&self, response: &str) -> Result<String> {
         let trimmed = response.trim();
 
@@ -1315,26 +1315,26 @@ When analyzing multiple files, return a JSON array of file results."#,
         ))
     }
 
-    /// Get model info
+    // Get model info
     pub fn model(&self) -> &str {
         &self.model
     }
 
-    /// Get max turns setting
+    // Get max turns setting
     pub fn max_turns(&self) -> usize {
         self.max_turns
     }
 
-    /// Get retry config
+    // Get retry config
     pub fn retry_config(&self) -> &RetryConfig {
         &self.retry_config
     }
 }
 
-/// Progress callback for batch analysis
+// Progress callback for batch analysis
 pub type ProgressCallback = Box<dyn Fn(usize, usize, &str) + Send + Sync>;
 
-/// Analyze multiple batches with progress reporting
+// Analyze multiple batches with progress reporting
 pub async fn analyze_all_batches(
     client: &GrokReasoningClient,
     batches: Vec<FileBatch>,

@@ -1,55 +1,55 @@
-//! # Context Builder for RAG
-//!
-//! Smart context management for Grok's 2M token context window.
-//! Uses "context stuffing" approach - loads relevant code into context
-//! instead of using vector embeddings.
-//!
-//! ## Features
-//!
-//! - Load entire repositories into context
-//! - Smart filtering by language, path, or recency
-//! - Query-aware context selection
-//! - Cross-repository analysis
-//! - Token budget management
-//! - Response caching
-//!
-//! ## Usage
-//!
-//! ```rust,no_run
-//! use rustcode::context_builder::ContextBuilder;
-//! use rustcode::db::Database;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustcode.db").await?;
-//!     let builder = ContextBuilder::new(db);
-//!
-//!     // Build context for a query
-//!     let context = builder
-//!         .with_repository("myapp")
-//!         .with_language("Rust")
-//!         .with_recent_files(20)
-//!         .build()
-//!         .await?;
-//!
-//!     println!("Context: {} tokens", context.estimated_tokens());
-//!
-//!     Ok(())
-//! }
-//! ```
+// # Context Builder for RAG
+//
+// Smart context management for Grok's 2M token context window.
+// Uses "context stuffing" approach - loads relevant code into context
+// instead of using vector embeddings.
+//
+// ## Features
+//
+// - Load entire repositories into context
+// - Smart filtering by language, path, or recency
+// - Query-aware context selection
+// - Cross-repository analysis
+// - Token budget management
+// - Response caching
+//
+// ## Usage
+//
+// ```rust,no_run
+// use rustcode::context_rag::ContextBuilder;
+// use rustcode::db::Database;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let db = Database::new("data/rustcode.db").await?;
+//     let builder = ContextBuilder::new(db);
+//
+//     // Build context for a query
+//     let context = builder
+//         .with_repository("myapp")
+//         .with_language("Rust")
+//         .with_recent_files(20)
+//         .build()
+//         .await?;
+//
+//     println!("Context: {} tokens", context.estimated_tokens());
+//
+//     Ok(())
+// }
+// ```
 
 use crate::db::Database;
 use crate::repo_analysis::RepoAnalyzer;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Maximum tokens for Grok context window (grok-4-1-fast has 2M limit, use 1.5M to be safe)
+// Maximum tokens for Grok context window (grok-4-1-fast has 2M limit, use 1.5M to be safe)
 const MAX_CONTEXT_TOKENS: usize = 1_500_000;
 
-/// Estimated tokens per character (conservative)
+// Estimated tokens per character (conservative)
 const TOKENS_PER_CHAR: f64 = 0.3;
 
-/// Context builder for RAG queries
+// Context builder for RAG queries
 #[derive(Clone)]
 pub struct ContextBuilder {
     db: Database,
@@ -63,59 +63,59 @@ pub struct ContextBuilder {
     max_tokens: usize,
 }
 
-/// Built context ready for LLM
+// Built context ready for LLM
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
-    /// Files included in context
+    // Files included in context
     pub files: Vec<ContextFile>,
-    /// Notes included in context
+    // Notes included in context
     pub notes: Vec<String>,
-    /// Repositories included
+    // Repositories included
     pub repositories: Vec<String>,
-    /// Total character count
+    // Total character count
     pub total_chars: usize,
-    /// Estimated token count
+    // Estimated token count
     pub estimated_tokens: usize,
-    /// Metadata about context
+    // Metadata about context
     pub metadata: ContextMetadata,
 }
 
-/// A file in the context
+// A file in the context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextFile {
-    /// Repository name
+    // Repository name
     pub repository: String,
-    /// File path (relative to repo)
+    // File path (relative to repo)
     pub path: String,
-    /// File content
+    // File content
     pub content: String,
-    /// Programming language
+    // Programming language
     pub language: Option<String>,
-    /// File size in bytes
+    // File size in bytes
     pub size: usize,
 }
 
-/// Context metadata
+// Context metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextMetadata {
-    /// Number of files included
+    // Number of files included
     pub file_count: usize,
-    /// Number of notes included
+    // Number of notes included
     pub note_count: usize,
-    /// Number of repositories
+    // Number of repositories
     pub repository_count: usize,
-    /// Languages represented
+    // Languages represented
     pub languages: Vec<String>,
-    /// Total size in bytes
+    // Total size in bytes
     pub total_bytes: usize,
-    /// Estimated tokens
+    // Estimated tokens
     pub estimated_tokens: usize,
-    /// Whether context was truncated
+    // Whether context was truncated
     pub truncated: bool,
 }
 
 impl ContextBuilder {
-    /// Create a new context builder
+    // Create a new context builder
     pub fn new(db: Database) -> Self {
         Self {
             db,
@@ -135,61 +135,61 @@ impl ContextBuilder {
         }
     }
 
-    /// Add a repository to the context
+    // Add a repository to the context
     pub fn with_repository(mut self, name: impl Into<String>) -> Self {
         self.repositories.push(name.into());
         self
     }
 
-    /// Add all tracked repositories
+    // Add all tracked repositories
     pub fn with_all_repositories(mut self) -> Self {
         self.repositories.clear(); // Empty means all
         self
     }
 
-    /// Filter by programming language
+    // Filter by programming language
     pub fn with_language(mut self, language: impl Into<String>) -> Self {
         self.languages.push(language.into());
         self
     }
 
-    /// Filter by path pattern (glob-like)
+    // Filter by path pattern (glob-like)
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.paths.push(path.into());
         self
     }
 
-    /// Exclude pattern from context
+    // Exclude pattern from context
     pub fn exclude_pattern(mut self, pattern: impl Into<String>) -> Self {
         self.exclude_patterns.push(pattern.into());
         self
     }
 
-    /// Include only N most recent files
+    // Include only N most recent files
     pub fn with_recent_files(mut self, count: usize) -> Self {
         self.recent_only = Some(count);
         self
     }
 
-    /// Limit maximum number of files
+    // Limit maximum number of files
     pub fn max_files(mut self, count: usize) -> Self {
         self.max_files = Some(count);
         self
     }
 
-    /// Include notes in context
+    // Include notes in context
     pub fn with_notes(mut self) -> Self {
         self.include_notes = true;
         self
     }
 
-    /// Set maximum token budget
+    // Set maximum token budget
     pub fn max_tokens(mut self, tokens: usize) -> Self {
         self.max_tokens = tokens;
         self
     }
 
-    /// Build the context
+    // Build the context
     pub async fn build(self) -> Result<Context> {
         let mut files = Vec::new();
         let mut total_chars = 0usize;
@@ -362,7 +362,7 @@ impl ContextBuilder {
 }
 
 impl Context {
-    /// Get the context as a formatted string for LLM
+    // Get the context as a formatted string for LLM
     pub fn to_prompt(&self) -> String {
         let mut prompt = String::new();
 
@@ -405,27 +405,27 @@ impl Context {
         prompt
     }
 
-    /// Get estimated token count
+    // Get estimated token count
     pub fn estimated_tokens(&self) -> usize {
         self.estimated_tokens
     }
 
-    /// Get character count
+    // Get character count
     pub fn char_count(&self) -> usize {
         self.total_chars
     }
 
-    /// Get file count
+    // Get file count
     pub fn file_count(&self) -> usize {
         self.metadata.file_count
     }
 
-    /// Check if context was truncated
+    // Check if context was truncated
     pub fn is_truncated(&self) -> bool {
         self.metadata.truncated
     }
 
-    /// Get files by language
+    // Get files by language
     pub fn files_by_language(&self, language: &str) -> Vec<&ContextFile> {
         self.files
             .iter()
@@ -433,7 +433,7 @@ impl Context {
             .collect()
     }
 
-    /// Find files matching a path pattern
+    // Find files matching a path pattern
     pub fn find_files(&self, pattern: &str) -> Vec<&ContextFile> {
         self.files
             .iter()
@@ -441,7 +441,7 @@ impl Context {
             .collect()
     }
 
-    /// Get summary statistics
+    // Get summary statistics
     pub fn summary(&self) -> String {
         format!(
             "{} files, {} notes, {} repos, ~{} tokens, {} languages",
@@ -454,62 +454,62 @@ impl Context {
     }
 }
 
-/// Query builder for context-aware LLM queries
+// Query builder for context-aware LLM queries
 pub struct QueryBuilder {
-    context_builder: ContextBuilder,
+    context_rag: ContextBuilder,
     question: String,
     focus_files: Vec<String>,
     focus_language: Option<String>,
 }
 
 impl QueryBuilder {
-    /// Create a new query builder
+    // Create a new query builder
     pub fn new(db: Database, question: impl Into<String>) -> Self {
         Self {
-            context_builder: ContextBuilder::new(db),
+            context_rag: ContextBuilder::new(db),
             question: question.into(),
             focus_files: Vec::new(),
             focus_language: None,
         }
     }
 
-    /// Focus on specific files
+    // Focus on specific files
     pub fn focus_on_files(mut self, paths: Vec<String>) -> Self {
         self.focus_files = paths;
         self
     }
 
-    /// Focus on a specific language
+    // Focus on a specific language
     pub fn focus_on_language(mut self, language: impl Into<String>) -> Self {
         self.focus_language = Some(language.into());
         self
     }
 
-    /// Set repository
+    // Set repository
     pub fn in_repository(mut self, repo: impl Into<String>) -> Self {
-        self.context_builder = self.context_builder.with_repository(repo);
+        self.context_rag = self.context_rag.with_repository(repo);
         self
     }
 
-    /// Include notes
+    // Include notes
     pub fn with_notes(mut self) -> Self {
-        self.context_builder = self.context_builder.with_notes();
+        self.context_rag = self.context_rag.with_notes();
         self
     }
 
-    /// Build the query with context
+    // Build the query with context
     pub async fn build(mut self) -> Result<String> {
         // Apply focus filters
         if let Some(lang) = self.focus_language {
-            self.context_builder = self.context_builder.with_language(lang);
+            self.context_rag = self.context_rag.with_language(lang);
         }
 
         for path in self.focus_files {
-            self.context_builder = self.context_builder.with_path(path);
+            self.context_rag = self.context_rag.with_path(path);
         }
 
         // Build context
-        let context = self.context_builder.build().await?;
+        let context = self.context_rag.build().await?;
 
         // Construct query
         let prompt = format!(
@@ -527,7 +527,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_context_builder() -> Result<()> {
+    async fn test_context_rag() -> Result<()> {
         let db = Database::new(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string()
         }))

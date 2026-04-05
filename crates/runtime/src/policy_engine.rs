@@ -84,16 +84,16 @@ pub enum PolicyAction {
     Chain(Vec<PolicyAction>),
 }
 
-/// Why a lane was reconciled without further action.
+// Why a lane was reconciled without further action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconcileReason {
-    /// Branch already merged into main — no PR needed.
+    // Branch already merged into main — no PR needed.
     AlreadyMerged,
-    /// Work superseded by another lane or direct commit.
+    // Work superseded by another lane or direct commit.
     Superseded,
-    /// PR would be empty — all changes already landed.
+    // PR would be empty — all changes already landed.
     EmptyDiff,
-    /// Lane manually closed by operator.
+    // Lane manually closed by operator.
     ManualClose,
 }
 
@@ -165,7 +165,7 @@ impl LaneContext {
         }
     }
 
-    /// Create a lane context that is already reconciled (no further action needed).
+    // Create a lane context that is already reconciled (no further action needed).
     #[must_use]
     pub fn reconciled(lane_id: impl Into<String>) -> Self {
         Self {

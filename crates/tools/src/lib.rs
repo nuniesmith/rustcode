@@ -30,7 +30,7 @@ use runtime::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// Global task registry shared across tool invocations within a session.
+// Global task registry shared across tool invocations within a session.
 fn global_lsp_registry() -> &'static LspRegistry {
     use std::sync::OnceLock;
     static REGISTRY: OnceLock<LspRegistry> = OnceLock::new();
@@ -67,72 +67,63 @@ fn global_worker_registry() -> &'static WorkerRegistry {
     REGISTRY.get_or_init(WorkerRegistry::new)
 }
 
-/// Tool execution helpers and lane completion detection for the `claw` CLI.
-///
-/// ## Crate layout
-///
-/// - [`AgentOutput`] — the structured result produced by a finished agent run.
-/// - [`lane_completion`] — logic for automatically marking lanes as complete
-///   when an agent finishes with green tests and a pushed branch.
+// Tool execution helpers and lane completion detection for the `claw` CLI.
+//
+// ## Crate layout
+//
+// - [`AgentOutput`] — the structured result produced by a finished agent run.
+// - [`lane_completion`] — logic for automatically marking lanes as complete
+//   when an agent finishes with green tests and a pushed branch.
 
 mod lane_completion;
 
-pub use lane_completion::detect_lane_completion;
-
-// ============================================================================
-// AgentOutput
-// ============================================================================
-
-/// The result record written by an agent after it completes (or fails) a task.
-///
-/// This is the primary data structure passed between the task pipeline and the
-/// lane-completion detector.  It maps 1-to-1 with the JSON result files written
-/// to `tasks/results/{id}.json`.
+// The result record written by an agent after it completes (or fails) a task.
+//
+// This is the primary data structure passed between the task pipeline and the
+// lane-completion detector.  It maps 1-to-1 with the JSON result files written
+// to `tasks/results/{id}.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutput {
-    /// Unique identifier for this agent / lane (matches the task `id`).
+    // Unique identifier for this agent / lane (matches the task `id`).
+    #[serde(rename = "agentId")]
     pub agent_id: String,
-
-    /// Human-readable name of the agent run.
+    // Human-readable name of the agent run.
     pub name: String,
-
-    /// Short description of what the agent was asked to do.
+    // Short description of what the agent was asked to do.
     pub description: String,
-
-    /// Optional sub-agent type tag (e.g. `"scaffold"`, `"test-runner"`).
+    // Optional sub-agent type tag (e.g. `"scaffold"`, `"test-runner"`).
+    #[serde(rename = "subagentType")]
     pub subagent_type: Option<String>,
-
-    /// The LLM model used for this run, if known.
+    // The LLM model used for this run, if known.
     pub model: Option<String>,
-
-    /// Terminal status string.  Successful runs use `"Finished"` or
-    /// `"Completed"` (case-insensitive comparison in the detector).
+    // Terminal status string.  Successful runs use `"Finished"` or
+    // `"Completed"` (case-insensitive comparison in the detector).
     pub status: String,
-
-    /// Path to the primary output artefact (e.g. generated file, patch).
+    // Path to the primary output artefact (e.g. generated file, patch).
+    #[serde(rename = "outputFile")]
     pub output_file: String,
-
-    /// Path to the manifest JSON written alongside the output.
+    // Path to the manifest JSON written alongside the output.
+    #[serde(rename = "manifestFile")]
     pub manifest_file: String,
-
-    /// RFC 3339 timestamp when the agent was created / enqueued.
+    // RFC 3339 timestamp when the agent was created / enqueued.
+    #[serde(rename = "createdAt")]
     pub created_at: String,
-
-    /// RFC 3339 timestamp when the agent actually started executing.
+    // RFC 3339 timestamp when the agent actually started executing.
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
-
-    /// RFC 3339 timestamp when the agent reached a terminal state.
+    // RFC 3339 timestamp when the agent reached a terminal state.
+    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
-
-    /// Ordered list of lane lifecycle events emitted during execution.
+    // Ordered list of lane lifecycle events emitted during execution.
+    #[serde(rename = "laneEvents", default, skip_serializing_if = "Vec::is_empty")]
     pub lane_events: Vec<LaneEvent>,
-
-    /// If set, describes what is currently blocking the lane from progressing.
-    /// Must be [`None`] for lane-completion detection to succeed.
+    // If set, describes what is currently blocking the lane from progressing.
+    // Must be [`None`] for lane-completion detection to succeed.
+    #[serde(rename = "currentBlocker", skip_serializing_if = "Option::is_none")]
     pub current_blocker: Option<String>,
-
-    /// If set, describes the fatal error that caused this run to fail.
-    /// Must be [`None`] for lane-completion detection to succeed.
+    // If set, describes the fatal error that caused this run to fail.
+    // Must be [`None`] for lane-completion detection to succeed.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -1208,7 +1199,7 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
     ]
 }
 
-/// Check permission before executing a tool. Returns Err with denial reason if blocked.
+// Check permission before executing a tool. Returns Err with denial reason if blocked.
 pub fn enforce_permission_check(
     enforcer: &PermissionEnforcer,
     tool_name: &str,
@@ -2412,34 +2403,6 @@ struct SkillOutput {
     prompt: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AgentOutput {
-    #[serde(rename = "agentId")]
-    agent_id: String,
-    name: String,
-    description: String,
-    #[serde(rename = "subagentType")]
-    subagent_type: Option<String>,
-    model: Option<String>,
-    status: String,
-    #[serde(rename = "outputFile")]
-    output_file: String,
-    #[serde(rename = "manifestFile")]
-    manifest_file: String,
-    #[serde(rename = "createdAt")]
-    created_at: String,
-    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
-    started_at: Option<String>,
-    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
-    completed_at: Option<String>,
-    #[serde(rename = "laneEvents", default, skip_serializing_if = "Vec::is_empty")]
-    lane_events: Vec<LaneEvent>,
-    #[serde(rename = "currentBlocker", skip_serializing_if = "Option::is_none")]
-    current_blocker: Option<LaneEventBlocker>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
 #[derive(Debug, Clone)]
 struct AgentJob {
     manifest: AgentOutput,
@@ -3362,7 +3325,7 @@ fn persist_agent_terminal_state(
     let mut next_manifest = manifest.clone();
     next_manifest.status = status.to_string();
     next_manifest.completed_at = Some(iso8601_now());
-    next_manifest.current_blocker = blocker.clone();
+    next_manifest.current_blocker = blocker.as_ref().map(|b| b.to_string());
     next_manifest.error = error;
     if let Some(blocker) = blocker {
         next_manifest
@@ -5001,8 +4964,6 @@ fn parse_skill_description(contents: &str) -> Option<String> {
     None
 }
 
-pub mod lane_completion;
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -5482,12 +5443,12 @@ mod tests {
                 "#,
             )
         }));
-
         unsafe {
             std::env::set_var(
                 "CLAWD_WEB_SEARCH_BASE_URL",
                 format!("http://{}/search", server.addr()),
             );
+        }
             let result = execute_tool(
                 "WebSearch",
                 &json!({
@@ -5497,7 +5458,7 @@ mod tests {
                 }),
             )
             .expect("WebSearch should succeed");
-            std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL");
+            unsafe { std::env::remove_var("CLAWD_WEB_SEARCH_BASE_URL"); }
 
             let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
             assert_eq!(output["query"], "rust web search");
@@ -5510,7 +5471,6 @@ mod tests {
             assert_eq!(content.len(), 1);
             assert_eq!(content[0]["title"], "Reqwest docs");
             assert_eq!(content[0]["url"], "https://docs.rs/reqwest");
-        }
     }
 
     #[test]
@@ -7026,8 +6986,7 @@ printf 'pwsh:%s' "$1"
             .status()
             .expect("chmod");
         let original_path = std::env::var("PATH").unwrap_or_default();
-        unsafe {
-            std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
+        unsafe { std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path)); }
 
         let result = execute_tool(
             "PowerShell",
@@ -7041,7 +7000,7 @@ printf 'pwsh:%s' "$1"
         )
         .expect("PowerShell background should succeed");
 
-        std::env::set_var("PATH", original_path);
+        unsafe { std::env::set_var("PATH", original_path); }
         let _ = std::fs::remove_dir_all(dir);
 
         let output: serde_json::Value = serde_json::from_str(&result).expect("json");
@@ -7053,7 +7012,7 @@ printf 'pwsh:%s' "$1"
         assert_eq!(background_output["backgroundedByUser"], true);
         assert_eq!(background_output["assistantAutoBackgrounded"], false);
     }
-
+        
     #[test]
     fn powershell_errors_when_shell_is_missing() {
         let _guard = env_lock()
@@ -7304,5 +7263,4 @@ printf 'pwsh:%s' "$1"
             .into_bytes()
         }
     }
-}
 }

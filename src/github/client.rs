@@ -1,42 +1,42 @@
-//! GitHub API Client
-//!
-//! High-performance GitHub client supporting both REST and GraphQL APIs.
-//! Implements rate limiting, caching, and retry logic for production use.
-//!
-//! # Architecture
-//!
-//! This client follows the "cost optimization" pattern from the architectural
-//! research - GitHub API calls are FREE (rate-limited), so we maximize their
-//! use to avoid expensive LLM calls.
-//!
-//! # Features
-//!
-//! - Automatic token management and authentication
-//! - Rate limit tracking and backoff
-//! - Connection pooling and keep-alive
-//! - Comprehensive error handling
-//! - GraphQL support for complex queries
-//! - REST API for standard operations
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use rustcode::github::GitHubClient;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let client = GitHubClient::new("ghp_your_token")?;
-//!
-//!     // Fetch user repositories
-//!     let repos = client.list_user_repos("username").await?;
-//!
-//!     // Check rate limit
-//!     let limits = client.get_rate_limit().await?;
-//!     println!("Remaining: {}/{}", limits.resources.core.remaining, limits.resources.core.limit);
-//!
-//!     Ok(())
-//! }
-//! ```
+// GitHub API Client
+//
+// High-performance GitHub client supporting both REST and GraphQL APIs.
+// Implements rate limiting, caching, and retry logic for production use.
+//
+// # Architecture
+//
+// This client follows the "cost optimization" pattern from the architectural
+// research - GitHub API calls are FREE (rate-limited), so we maximize their
+// use to avoid expensive LLM calls.
+//
+// # Features
+//
+// - Automatic token management and authentication
+// - Rate limit tracking and backoff
+// - Connection pooling and keep-alive
+// - Comprehensive error handling
+// - GraphQL support for complex queries
+// - REST API for standard operations
+//
+// # Example
+//
+// ```rust,no_run
+// use rustcode::github::GitHubClient;
+//
+// #[tokio::main]
+// async fn main() -> anyhow::Result<()> {
+//     let client = GitHubClient::new("ghp_your_token")?;
+//
+//     // Fetch user repositories
+//     let repos = client.list_user_repos("username").await?;
+//
+//     // Check rate limit
+//     let limits = client.get_rate_limit().await?;
+//     println!("Remaining: {}/{}", limits.resources.core.remaining, limits.resources.core.limit);
+//
+//     Ok(())
+// }
+// ```
 
 use crate::github::{models::*, GitHubError, Result};
 use chrono::{DateTime, Utc};
@@ -45,6 +45,7 @@ use reqwest::{
     Client, StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use url::form_urlencoded;
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -57,28 +58,28 @@ const MAX_PER_PAGE: u32 = 100;
 // Client Configuration
 // ============================================================================
 
-/// GitHub client configuration
+// GitHub client configuration
 #[derive(Debug, Clone)]
 pub struct GitHubConfig {
-    /// Personal Access Token (PAT)
+    // Personal Access Token (PAT)
     pub token: String,
 
-    /// API base URL (default: https://api.github.com)
+    // API base URL (default: https://api.github.com)
     pub base_url: String,
 
-    /// GraphQL endpoint
+    // GraphQL endpoint
     pub graphql_url: String,
 
-    /// Request timeout in seconds
+    // Request timeout in seconds
     pub timeout_secs: u64,
 
-    /// User agent string
+    // User agent string
     pub user_agent: String,
 
-    /// Enable automatic rate limit handling
+    // Enable automatic rate limit handling
     pub auto_rate_limit: bool,
 
-    /// Minimum remaining rate limit before warning
+    // Minimum remaining rate limit before warning
     pub rate_limit_warning_threshold: i32,
 }
 
@@ -97,7 +98,7 @@ impl Default for GitHubConfig {
 }
 
 impl GitHubConfig {
-    /// Create new config with token
+    // Create new config with token
     pub fn new(token: impl Into<String>) -> Self {
         Self {
             token: token.into(),
@@ -105,13 +106,13 @@ impl GitHubConfig {
         }
     }
 
-    /// Set custom base URL (for GitHub Enterprise)
+    // Set custom base URL (for GitHub Enterprise)
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
         self
     }
 
-    /// Set request timeout
+    // Set request timeout
     pub fn with_timeout(mut self, secs: u64) -> Self {
         self.timeout_secs = secs;
         self
@@ -122,7 +123,7 @@ impl GitHubConfig {
 // Rate Limit Info
 // ============================================================================
 
-/// Rate limit information from response headers
+// Rate limit information from response headers
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
     pub limit: i32,
@@ -132,7 +133,7 @@ pub struct RateLimitInfo {
 }
 
 impl RateLimitInfo {
-    /// Parse rate limit from response headers
+    // Parse rate limit from response headers
     fn from_headers(headers: &HeaderMap) -> Option<Self> {
         let limit = headers
             .get("x-ratelimit-limit")?
@@ -172,7 +173,7 @@ impl RateLimitInfo {
         })
     }
 
-    /// Check if rate limit is approaching exhaustion
+    // Check if rate limit is approaching exhaustion
     pub fn is_exhausted(&self, threshold: i32) -> bool {
         self.remaining < threshold
     }
@@ -182,7 +183,7 @@ impl RateLimitInfo {
 // GitHub Client
 // ============================================================================
 
-/// Main GitHub API client
+// Main GitHub API client
 #[derive(Clone)]
 pub struct GitHubClient {
     config: GitHubConfig,
@@ -191,13 +192,13 @@ pub struct GitHubClient {
 }
 
 impl GitHubClient {
-    /// Create new GitHub client with token
+    // Create new GitHub client with token
     pub fn new(token: impl Into<String>) -> Result<Self> {
         let config = GitHubConfig::new(token);
         Self::with_config(config)
     }
 
-    /// Create client with custom configuration
+    // Create client with custom configuration
     pub fn with_config(config: GitHubConfig) -> Result<Self> {
         if config.token.is_empty() {
             return Err(GitHubError::ConfigError(
@@ -242,12 +243,12 @@ impl GitHubClient {
         })
     }
 
-    /// Get current rate limit info (cached)
+    // Get current rate limit info (cached)
     pub async fn get_cached_rate_limit(&self) -> Option<RateLimitInfo> {
         self.last_rate_limit.read().await.clone()
     }
 
-    /// Update rate limit from headers
+    // Update rate limit from headers
     async fn update_rate_limit(&self, headers: &HeaderMap) {
         if let Some(rate_limit) = RateLimitInfo::from_headers(headers) {
             if self.config.auto_rate_limit
@@ -262,7 +263,7 @@ impl GitHubClient {
         }
     }
 
-    /// Make authenticated GET request
+    // Make authenticated GET request
     async fn get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.config.base_url, path);
         debug!("GET {}", url);
@@ -281,7 +282,7 @@ impl GitHubClient {
         Ok(data)
     }
 
-    /// Make authenticated GET request with pagination
+    // Make authenticated GET request with pagination
     async fn get_paginated<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
@@ -318,7 +319,7 @@ impl GitHubClient {
         Ok(all_items)
     }
 
-    /// Make authenticated POST request
+    // Make authenticated POST request
     async fn post<T: for<'de> Deserialize<'de>, B: Serialize>(
         &self,
         path: &str,
@@ -339,7 +340,7 @@ impl GitHubClient {
         Ok(data)
     }
 
-    /// Make GraphQL query
+    // Make GraphQL query
     #[allow(dead_code)]
     async fn graphql<T: for<'de> Deserialize<'de>>(
         &self,
@@ -396,7 +397,7 @@ impl GitHubClient {
             .ok_or_else(|| GitHubError::ApiError("No data in GraphQL response".to_string()))
     }
 
-    /// Handle error response
+    // Handle error response
     async fn handle_error_response(
         &self,
         status: StatusCode,
@@ -434,23 +435,23 @@ impl GitHubClient {
     // Repository Operations
     // ========================================================================
 
-    /// Get authenticated user's repositories
+    // Get authenticated user's repositories
     pub async fn list_user_repos(&self, username: &str) -> Result<Vec<Repository>> {
         self.get_paginated(&format!("/users/{}/repos", username), None)
             .await
     }
 
-    /// Get repositories for authenticated user
+    // Get repositories for authenticated user
     pub async fn list_my_repos(&self) -> Result<Vec<Repository>> {
         self.get_paginated("/user/repos", None).await
     }
 
-    /// Get a specific repository
+    // Get a specific repository
     pub async fn get_repo(&self, owner: &str, repo: &str) -> Result<Repository> {
         self.get(&format!("/repos/{}/{}", owner, repo)).await
     }
 
-    /// List repository languages
+    // List repository languages
     pub async fn get_repo_languages(
         &self,
         owner: &str,
@@ -464,7 +465,7 @@ impl GitHubClient {
     // Issue Operations
     // ========================================================================
 
-    /// List issues for a repository
+    // List issues for a repository
     pub async fn list_issues(
         &self,
         owner: &str,
@@ -506,13 +507,13 @@ impl GitHubClient {
         Ok(all_items)
     }
 
-    /// Get a specific issue
+    // Get a specific issue
     pub async fn get_issue(&self, owner: &str, repo: &str, number: i32) -> Result<Issue> {
         self.get(&format!("/repos/{}/{}/issues/{}", owner, repo, number))
             .await
     }
 
-    /// Create a new issue
+    // Create a new issue
     pub async fn create_issue(
         &self,
         owner: &str,
@@ -543,7 +544,7 @@ impl GitHubClient {
     // Pull Request Operations
     // ========================================================================
 
-    /// List pull requests for a repository
+    // List pull requests for a repository
     pub async fn list_pull_requests(
         &self,
         owner: &str,
@@ -585,7 +586,7 @@ impl GitHubClient {
         Ok(all_items)
     }
 
-    /// Get a specific pull request
+    // Get a specific pull request
     pub async fn get_pull_request(
         &self,
         owner: &str,
@@ -600,7 +601,7 @@ impl GitHubClient {
     // Commit Operations
     // ========================================================================
 
-    /// List commits for a repository
+    // List commits for a repository
     pub async fn list_commits(
         &self,
         owner: &str,
@@ -611,7 +612,7 @@ impl GitHubClient {
             .await
     }
 
-    /// Get a specific commit
+    // Get a specific commit
     pub async fn get_commit(&self, owner: &str, repo: &str, sha: &str) -> Result<Commit> {
         self.get(&format!("/repos/{}/{}/commits/{}", owner, repo, sha))
             .await
@@ -621,7 +622,7 @@ impl GitHubClient {
     // Rate Limit Operations
     // ========================================================================
 
-    /// Get current rate limit status
+    // Get current rate limit status
     pub async fn get_rate_limit(&self) -> Result<RateLimitResponse> {
         self.get("/rate_limit").await
     }
@@ -630,7 +631,7 @@ impl GitHubClient {
     // Search Operations
     // ========================================================================
 
-    /// Search repositories
+    // Search repositories
     pub async fn search_repositories(&self, query: &str) -> Result<SearchResponse<Repository>> {
         self.get(&format!(
             "/search/repositories?q={}",
@@ -639,7 +640,7 @@ impl GitHubClient {
         .await
     }
 
-    /// Search issues
+    // Search issues
     pub async fn search_issues(&self, query: &str) -> Result<SearchResponse<Issue>> {
         self.get(&format!("/search/issues?q={}", urlencoding::encode(query)))
             .await
@@ -649,12 +650,12 @@ impl GitHubClient {
     // User Operations
     // ========================================================================
 
-    /// Get authenticated user
+    // Get authenticated user
     pub async fn get_authenticated_user(&self) -> Result<User> {
         self.get("/user").await
     }
 
-    /// Get a specific user
+    // Get a specific user
     pub async fn get_user(&self, username: &str) -> Result<User> {
         self.get(&format!("/users/{}", username)).await
     }
