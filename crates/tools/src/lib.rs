@@ -4,31 +4,31 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use api::{
-    max_tokens_for_model, resolve_model_alias, ContentBlockDelta, InputContentBlock, InputMessage,
-    MessageRequest, MessageResponse, OutputContentBlock, ProviderClient,
-    StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest, MessageResponse,
+    OutputContentBlock, ProviderClient, StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition,
+    ToolResultContentBlock, max_tokens_for_model, resolve_model_alias,
 };
 use plugins::PluginTool;
 use reqwest::blocking::Client;
 use runtime::{
-    check_freshness, edit_file, execute_bash, glob_search, grep_search, load_system_prompt,
+    ApiClient, ApiRequest, AssistantEvent, BashCommandInput, BashCommandOutput, BranchFreshness,
+    ContentBlock, ConversationMessage, ConversationRuntime, GrepSearchInput, LaneEvent,
+    LaneEventBlocker, LaneEventName, LaneEventStatus, LaneFailureClass, McpDegradedReport,
+    MessageRole, PermissionMode, PermissionPolicy, PromptCacheEvent, RuntimeError, Session,
+    TaskPacket, ToolError, ToolExecutor, check_freshness, edit_file, execute_bash, glob_search,
+    grep_search, load_system_prompt,
     lsp_client::LspRegistry,
     mcp_tool_bridge::McpToolRegistry,
     permission_enforcer::{EnforcementResult, PermissionEnforcer},
     read_file,
     summary_compression::compress_summary_text,
-    TaskPacket,
     task_registry::TaskRegistry,
     team_cron_registry::{CronRegistry, TeamRegistry},
     worker_boot::{WorkerReadySnapshot, WorkerRegistry},
-    write_file, ApiClient, ApiRequest, AssistantEvent, BashCommandInput, BashCommandOutput,
-    BranchFreshness, ContentBlock, ConversationMessage, ConversationRuntime, GrepSearchInput,
-    LaneEvent, LaneEventBlocker, LaneEventName, LaneEventStatus, LaneFailureClass,
-    McpDegradedReport, MessageRole, PermissionMode, PermissionPolicy, PromptCacheEvent,
-    RuntimeError, Session, ToolError, ToolExecutor,
+    write_file,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Global task registry shared across tool invocations within a session.
 fn global_lsp_registry() -> &'static LspRegistry {
@@ -65,6 +65,75 @@ fn global_worker_registry() -> &'static WorkerRegistry {
     use std::sync::OnceLock;
     static REGISTRY: OnceLock<WorkerRegistry> = OnceLock::new();
     REGISTRY.get_or_init(WorkerRegistry::new)
+}
+
+//! Tool execution helpers and lane completion detection for the `claw` CLI.
+//!
+//! ## Crate layout
+//!
+//! - [`AgentOutput`] — the structured result produced by a finished agent run.
+//! - [`lane_completion`] — logic for automatically marking lanes as complete
+//!   when an agent finishes with green tests and a pushed branch.
+
+mod lane_completion;
+
+pub use lane_completion::detect_lane_completion;
+
+// ============================================================================
+// AgentOutput
+// ============================================================================
+
+/// The result record written by an agent after it completes (or fails) a task.
+///
+/// This is the primary data structure passed between the task pipeline and the
+/// lane-completion detector.  It maps 1-to-1 with the JSON result files written
+/// to `tasks/results/{id}.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentOutput {
+    /// Unique identifier for this agent / lane (matches the task `id`).
+    pub agent_id: String,
+
+    /// Human-readable name of the agent run.
+    pub name: String,
+
+    /// Short description of what the agent was asked to do.
+    pub description: String,
+
+    /// Optional sub-agent type tag (e.g. `"scaffold"`, `"test-runner"`).
+    pub subagent_type: Option<String>,
+
+    /// The LLM model used for this run, if known.
+    pub model: Option<String>,
+
+    /// Terminal status string.  Successful runs use `"Finished"` or
+    /// `"Completed"` (case-insensitive comparison in the detector).
+    pub status: String,
+
+    /// Path to the primary output artefact (e.g. generated file, patch).
+    pub output_file: String,
+
+    /// Path to the manifest JSON written alongside the output.
+    pub manifest_file: String,
+
+    /// RFC 3339 timestamp when the agent was created / enqueued.
+    pub created_at: String,
+
+    /// RFC 3339 timestamp when the agent actually started executing.
+    pub started_at: Option<String>,
+
+    /// RFC 3339 timestamp when the agent reached a terminal state.
+    pub completed_at: Option<String>,
+
+    /// Ordered list of lane lifecycle events emitted during execution.
+    pub lane_events: Vec<LaneEvent>,
+
+    /// If set, describes what is currently blocking the lane from progressing.
+    /// Must be [`None`] for lane-completion detection to succeed.
+    pub current_blocker: Option<String>,
+
+    /// If set, describes the fatal error that caused this run to fail.
+    /// Must be [`None`] for lane-completion detection to succeed.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,8 +560,7 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "WebFetch",
-            description:
-                "Fetch a URL, convert it into readable text, and answer a prompt about it.",
+            description: "Fetch a URL, convert it into readable text, and answer a prompt about it.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -3297,12 +3365,12 @@ fn persist_agent_terminal_state(
     next_manifest.current_blocker = blocker.clone();
     next_manifest.error = error;
     if let Some(blocker) = blocker {
-        next_manifest.lane_events.push(
-            LaneEvent::blocked(iso8601_now(), &blocker),
-        );
-        next_manifest.lane_events.push(
-            LaneEvent::failed(iso8601_now(), &blocker),
-        );
+        next_manifest
+            .lane_events
+            .push(LaneEvent::blocked(iso8601_now(), &blocker));
+        next_manifest
+            .lane_events
+            .push(LaneEvent::failed(iso8601_now(), &blocker));
     } else {
         next_manifest.current_blocker = None;
         let compressed_detail = result
@@ -4534,7 +4602,7 @@ fn normalize_config_value(spec: ConfigSettingSpec, value: ConfigValue) -> Result
             }
         }
         (ConfigKind::Boolean, ConfigValue::Number(_)) => {
-            return Err(String::from("setting requires true or false"))
+            return Err(String::from("setting requires true or false"));
         }
         (ConfigKind::String, ConfigValue::String(value)) => Value::String(value),
         (ConfigKind::String, ConfigValue::Bool(value)) => Value::String(value.to_string()),
@@ -4949,16 +5017,16 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        agent_permission_policy, allowed_tools_for_subagent, classify_lane_failure,
-        execute_agent_with_spawn, execute_tool, final_assistant_text, mvp_tool_specs,
-        permission_mode_from_plugin, persist_agent_terminal_state, push_output_block,
-        run_task_packet, AgentInput, AgentJob, GlobalToolRegistry, LaneEventName,
-        LaneFailureClass, SubagentToolExecutor,
+        AgentInput, AgentJob, GlobalToolRegistry, LaneEventName, LaneFailureClass,
+        SubagentToolExecutor, agent_permission_policy, allowed_tools_for_subagent,
+        classify_lane_failure, execute_agent_with_spawn, execute_tool, final_assistant_text,
+        mvp_tool_specs, permission_mode_from_plugin, persist_agent_terminal_state,
+        push_output_block, run_task_packet,
     };
     use api::OutputContentBlock;
     use runtime::{
-        permission_enforcer::PermissionEnforcer, ApiRequest, AssistantEvent, ConversationRuntime,
-        PermissionMode, PermissionPolicy, RuntimeError, Session, TaskPacket, ToolExecutor,
+        ApiRequest, AssistantEvent, ConversationRuntime, PermissionMode, PermissionPolicy,
+        RuntimeError, Session, TaskPacket, ToolExecutor, permission_enforcer::PermissionEnforcer,
     };
     use serde_json::json;
 
@@ -5239,9 +5307,11 @@ mod tests {
             .expect_err("subagent write tool should be denied before dispatch");
 
         // then
-        assert!(error
-            .to_string()
-            .contains("requires workspace-write permission"));
+        assert!(
+            error
+                .to_string()
+                .contains("requires workspace-write permission")
+        );
     }
 
     #[test]
@@ -5379,10 +5449,12 @@ mod tests {
 
         let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
         assert_eq!(output["url"], format!("http://{}/plain", server.addr()));
-        assert!(output["result"]
-            .as_str()
-            .expect("result")
-            .contains("plain text response"));
+        assert!(
+            output["result"]
+                .as_str()
+                .expect("result")
+                .contains("plain text response")
+        );
 
         let error = execute_tool(
             "WebFetch",
@@ -5672,14 +5744,18 @@ mod tests {
 
         let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
         assert_eq!(output["skill"], "help");
-        assert!(output["path"]
-            .as_str()
-            .expect("path")
-            .ends_with("/help/SKILL.md"));
-        assert!(output["prompt"]
-            .as_str()
-            .expect("prompt")
-            .contains("Guide on using oh-my-codex plugin"));
+        assert!(
+            output["path"]
+                .as_str()
+                .expect("path")
+                .ends_with("/help/SKILL.md")
+        );
+        assert!(
+            output["prompt"]
+                .as_str()
+                .expect("prompt")
+                .contains("Guide on using oh-my-codex plugin")
+        );
 
         let dollar_result = execute_tool(
             "Skill",
@@ -5691,10 +5767,12 @@ mod tests {
         let dollar_output: serde_json::Value =
             serde_json::from_str(&dollar_result).expect("valid json");
         assert_eq!(dollar_output["skill"], "$help");
-        assert!(dollar_output["path"]
-            .as_str()
-            .expect("path")
-            .ends_with("/help/SKILL.md"));
+        assert!(
+            dollar_output["path"]
+                .as_str()
+                .expect("path")
+                .ends_with("/help/SKILL.md")
+        );
 
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
@@ -5977,7 +6055,10 @@ mod tests {
                 "gateway routing rejected the request",
                 LaneFailureClass::GatewayRouting,
             ),
-            ("tool failed: denied tool execution from hook", LaneFailureClass::ToolRuntime),
+            (
+                "tool failed: denied tool execution from hook",
+                LaneFailureClass::ToolRuntime,
+            ),
             ("thread creation failed", LaneFailureClass::Infra),
         ];
 
@@ -6000,11 +6081,17 @@ mod tests {
             (LaneEventName::MergeReady, "lane.merge.ready"),
             (LaneEventName::Finished, "lane.finished"),
             (LaneEventName::Failed, "lane.failed"),
-            (LaneEventName::BranchStaleAgainstMain, "branch.stale_against_main"),
+            (
+                LaneEventName::BranchStaleAgainstMain,
+                "branch.stale_against_main",
+            ),
         ];
 
         for (event, expected) in cases {
-            assert_eq!(serde_json::to_value(event).expect("serialize lane event"), json!(expected));
+            assert_eq!(
+                serde_json::to_value(event).expect("serialize lane event"),
+                json!(expected)
+            );
         }
     }
 
@@ -6091,16 +6178,18 @@ mod tests {
             final_assistant_text(&summary),
             "Scope: completed mock review"
         );
-        assert!(runtime
-            .session()
-            .messages
-            .iter()
-            .flat_map(|message| message.blocks.iter())
-            .any(|block| matches!(
-                block,
-                runtime::ContentBlock::ToolResult { output, .. }
-                    if output.contains("hello from child")
-            )));
+        assert!(
+            runtime
+                .session()
+                .messages
+                .iter()
+                .flat_map(|message| message.blocks.iter())
+                .any(|block| matches!(
+                    block,
+                    runtime::ContentBlock::ToolResult { output, .. }
+                        if output.contains("hello from child")
+                ))
+        );
 
         let _ = std::fs::remove_file(path);
     }
@@ -6264,20 +6353,24 @@ mod tests {
             .expect("bash failure should still return structured output");
         let failure_output: serde_json::Value = serde_json::from_str(&failure).expect("json");
         assert_eq!(failure_output["returnCodeInterpretation"], "exit_code:7");
-        assert!(failure_output["stderr"]
-            .as_str()
-            .expect("stderr")
-            .contains("oops"));
+        assert!(
+            failure_output["stderr"]
+                .as_str()
+                .expect("stderr")
+                .contains("oops")
+        );
 
         let timeout = execute_tool("bash", &json!({ "command": "sleep 1", "timeout": 10 }))
             .expect("bash timeout should return output");
         let timeout_output: serde_json::Value = serde_json::from_str(&timeout).expect("json");
         assert_eq!(timeout_output["interrupted"], true);
         assert_eq!(timeout_output["returnCodeInterpretation"], "timeout");
-        assert!(timeout_output["stderr"]
-            .as_str()
-            .expect("stderr")
-            .contains("Command exceeded timeout"));
+        assert!(
+            timeout_output["stderr"]
+                .as_str()
+                .expect("stderr")
+                .contains("Command exceeded timeout")
+        );
 
         let background = execute_tool(
             "bash",
@@ -6318,10 +6411,12 @@ mod tests {
             output_json["returnCodeInterpretation"],
             "preflight_blocked:branch_divergence"
         );
-        assert!(output_json["stderr"]
-            .as_str()
-            .expect("stderr")
-            .contains("branch divergence detected before workspace tests"));
+        assert!(
+            output_json["stderr"]
+                .as_str()
+                .expect("stderr")
+                .contains("branch divergence detected before workspace tests")
+        );
         assert_eq!(
             output_json["structuredContent"][0]["event"],
             "branch.stale_against_main"
@@ -6505,10 +6600,12 @@ mod tests {
             .expect("glob should succeed");
         let globbed_output: serde_json::Value = serde_json::from_str(&globbed).expect("json");
         assert_eq!(globbed_output["numFiles"], 1);
-        assert!(globbed_output["filenames"][0]
-            .as_str()
-            .expect("filename")
-            .ends_with("nested/lib.rs"));
+        assert!(
+            globbed_output["filenames"][0]
+                .as_str()
+                .expect("filename")
+                .ends_with("nested/lib.rs")
+        );
 
         let glob_error = execute_tool("glob_search", &json!({ "pattern": "[" }))
             .expect_err("invalid glob should fail");
@@ -6532,10 +6629,12 @@ mod tests {
         assert_eq!(grep_content_output["numFiles"], 0);
         assert!(grep_content_output["appliedLimit"].is_null());
         assert_eq!(grep_content_output["appliedOffset"], 1);
-        assert!(grep_content_output["content"]
-            .as_str()
-            .expect("content")
-            .contains("let alpha = 2;"));
+        assert!(
+            grep_content_output["content"]
+                .as_str()
+                .expect("content")
+                .contains("let alpha = 2;")
+        );
 
         let grep_count = execute_tool(
             "grep_search",
@@ -6564,10 +6663,12 @@ mod tests {
         let elapsed = started.elapsed();
         let output: serde_json::Value = serde_json::from_str(&result).expect("json");
         assert_eq!(output["duration_ms"], 20);
-        assert!(output["message"]
-            .as_str()
-            .expect("message")
-            .contains("Slept for 20ms"));
+        assert!(
+            output["message"]
+                .as_str()
+                .expect("message")
+                .contains("Slept for 20ms")
+        );
         assert!(elapsed >= Duration::from_millis(15));
     }
 
@@ -6735,11 +6836,12 @@ mod tests {
         let local_settings = std::fs::read_to_string(cwd.join(".claw").join("settings.local.json"))
             .expect("local settings after exit");
         assert!(local_settings.contains(r#""defaultMode": "acceptEdits""#));
-        assert!(!cwd
-            .join(".claw")
-            .join("tool-state")
-            .join("plan-mode.json")
-            .exists());
+        assert!(
+            !cwd.join(".claw")
+                .join("tool-state")
+                .join("plan-mode.json")
+                .exists()
+        );
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
         match original_home {
@@ -6796,11 +6898,12 @@ mod tests {
             None,
             "permissions override should be removed on exit"
         );
-        assert!(!cwd
-            .join(".claw")
-            .join("tool-state")
-            .join("plan-mode.json")
-            .exists());
+        assert!(
+            !cwd.join(".claw")
+                .join("tool-state")
+                .join("plan-mode.json")
+                .exists()
+        );
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
         match original_home {
@@ -6957,8 +7060,8 @@ printf 'pwsh:%s' "$1"
     }
 
     fn read_only_registry() -> super::GlobalToolRegistry {
-        use runtime::permission_enforcer::PermissionEnforcer;
         use runtime::PermissionPolicy;
+        use runtime::permission_enforcer::PermissionEnforcer;
 
         let policy = mvp_tool_specs().into_iter().fold(
             PermissionPolicy::new(runtime::PermissionMode::ReadOnly),
@@ -7094,26 +7197,29 @@ printf 'pwsh:%s' "$1"
             let addr = listener.local_addr().expect("local addr");
             let (tx, rx) = std::sync::mpsc::channel::<()>();
 
-            let handle = thread::spawn(move || loop {
-                if rx.try_recv().is_ok() {
-                    break;
-                }
+            let handle = thread::spawn(move || {
+                loop {
+                    if rx.try_recv().is_ok() {
+                        break;
+                    }
 
-                match listener.accept() {
-                    Ok((mut stream, _)) => {
-                        let mut buffer = [0_u8; 4096];
-                        let size = stream.read(&mut buffer).expect("read request");
-                        let request = String::from_utf8_lossy(&buffer[..size]).into_owned();
-                        let request_line = request.lines().next().unwrap_or_default().to_string();
-                        let response = handler(&request_line);
-                        stream
-                            .write_all(response.to_bytes().as_slice())
-                            .expect("write response");
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let mut buffer = [0_u8; 4096];
+                            let size = stream.read(&mut buffer).expect("read request");
+                            let request = String::from_utf8_lossy(&buffer[..size]).into_owned();
+                            let request_line =
+                                request.lines().next().unwrap_or_default().to_string();
+                            let response = handler(&request_line);
+                            stream
+                                .write_all(response.to_bytes().as_slice())
+                                .expect("write response");
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("server accept failed: {error}"),
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(error) => panic!("server accept failed: {error}"),
                 }
             });
 

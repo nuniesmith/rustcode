@@ -1,0 +1,102 @@
+# ============================================================================
+# rustcode — AI coding assistant
+# ============================================================================
+# This crate lives at src/rc inside the FKS workspace.
+# All [workspace.*] keys are inherited from the root FKS Cargo.toml.
+# Do NOT add a [workspace] section here — this is a workspace member, not root.
+# ============================================================================
+
+[package]
+name        = "rustcode"
+version.workspace   = true
+edition.workspace   = true
+authors.workspace   = true
+license.workspace   = true
+repository.workspace = true
+publish.workspace   = true
+
+# ============================================================================
+# Binaries
+# ============================================================================
+
+[[bin]]
+name = "rustcode"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "rustcode-cli"
+path = "src/bin/cli.rs"
+
+[[bin]]
+name = "github-sync-daemon"
+path = "src/bin/github-sync-daemon.rs"
+
+# ============================================================================
+# Dependencies
+# ============================================================================
+
+[dependencies]
+
+# ---------------------------------------------------------------------------
+# Internal rc crates
+# ---------------------------------------------------------------------------
+api = { path = "crates/api" }
+
+# ---------------------------------------------------------------------------
+# Workspace deps — versions + features defined in root FKS Cargo.toml
+# ---------------------------------------------------------------------------
+anyhow          = { workspace = true }
+axum            = { workspace = true }
+chrono          = { workspace = true }
+clap            = { workspace = true }
+dotenvy         = { workspace = true }
+hex             = { workspace = true }
+redis           = { workspace = true }
+regex           = { workspace = true }
+reqwest         = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+sha2            = { workspace = true }
+thiserror       = { workspace = true }
+tokio           = { workspace = true }
+tower-http      = { workspace = true }
+tracing         = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+uuid            = { workspace = true }
+walkdir         = { workspace = true }
+
+# sqlx — default-features = false in workspace; add what rustcode needs on top
+sqlx = { workspace = true, features = [
+    "postgres",
+    "uuid",
+    "chrono",
+    "macros",
+    "runtime-tokio",
+    "tls-rustls-ring",
+] }
+
+# ---------------------------------------------------------------------------
+# Local deps — not yet in FKS workspace; add here until alignment
+# ---------------------------------------------------------------------------
+
+# Terminal output colouring (CLI only — used in src/bin/cli.rs and src/cli/)
+colored = "2"
+
+# Embedding model runtime (fastembed uses ONNX under the hood)
+fastembed = "4"
+
+# Git repository access (used in src/git.rs, src/repo_analysis.rs, etc.)
+git2 = "0.19"
+
+# File-system watcher for the P0 async task agent pipeline (TASK-A)
+# Not yet wired — included here so the dep is in place for implementation.
+notify = { version = "6", features = ["macos_kqueue"] }
+
+# OpenTelemetry — distributed tracing (src/telemetry.rs)
+opentelemetry            = "0.27"
+opentelemetry-otlp       = { version = "0.27", features = ["grpc-tonic"] }
+opentelemetry_sdk        = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.27"
+
+[lints]
+workspace = true
