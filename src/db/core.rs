@@ -378,7 +378,7 @@ pub async fn create_note_with_tags(
     }
 
     Ok(Note {
-        id,
+        id: content.to_string(),
         title,
         content: content.to_string(),
         tags: if tags.is_empty() {

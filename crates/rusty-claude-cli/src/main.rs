@@ -143,8 +143,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 use clap::Parser as _;
 
 fn main() {
-    let cli = args::Cli::parse();
-
     // Initialise the project skeleton (.claw/ directory, .gitignore entries)
     // in the current working directory.  Non-fatal — we just warn and continue.
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -152,65 +150,7 @@ fn main() {
         eprintln!("warning: could not initialise .claw/: {e}");
     }
 
-    // Handle subcommands that don't require a live session first.
-    match &cli.command {
-        Some(args::Command::Login) => {
-            // OAuth login — delegates to runtime OAuth flow.
-            // TODO RC-CRATES-E: wire runtime::oauth::begin_device_flow()
-            eprintln!("Login not yet implemented — set ANTHROPIC_API_KEY instead.");
-            return;
-        }
-        Some(args::Command::Logout) => {
-            // Remove saved OAuth token.
-            // TODO RC-CRATES-E: wire runtime::oauth::clear_saved_token()
-            eprintln!("Logout not yet implemented.");
-            return;
-        }
-        Some(args::Command::DumpManifests) => {
-            // Debug helper: read upstream TS sources and dump counts.
-            // TODO RC-CRATES-C: wire runtime::worker_boot manifest extraction
-            eprintln!("DumpManifests not yet implemented.");
-            return;
-        }
-        Some(args::Command::BootstrapPlan) => {
-            // Print the current bootstrap phase skeleton from runtime.
-            // TODO RC-CRATES-C: wire runtime::bootstrap::BootstrapPlan::current()
-            eprintln!("BootstrapPlan not yet implemented.");
-            return;
-        }
-        Some(args::Command::Prompt { .. }) | None => {
-            // Fall through to session startup below.
-        }
-    }
-
-    // Build a session config from parsed flags.
-    let config = app::SessionConfig {
-        model: cli.model.clone(),
-        permission_mode: cli.permission_mode,
-        config: cli.config.clone(),
-        output_format: cli.output_format,
-    };
-
-    let mut session = match app::CliApp::new(config) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("error: failed to start claw: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // One-shot prompt mode: `claw prompt "do something"`
-    if let Some(args::Command::Prompt { prompt }) = &cli.command {
-        let joined = prompt.join(" ");
-        if let Err(e) = session.run_prompt(&joined, &mut std::io::stdout()) {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    // Interactive REPL mode (no subcommand given).
-    if let Err(e) = session.run_repl() {
+    if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);
     }

@@ -1,0 +1,36 @@
+{
+  "name": "file-summary",
+  "version": "0.1.0",
+  "description": "Generate a structured LLM summary for a single source file",
+  "defaultEnabled": true,
+  "tools": [
+    {
+      "name": "file_summary",
+      "description": "Summarise a file using Grok 4.20. Returns purpose, language, complexity, and key exports.",
+      "command": "rustcode",
+      "args": ["tool", "file-summary"],
+      "requiredPermission": "read-only",
+      "inputSchema": {
+        "type": "object",
+        "required": ["file_path"],
+        "additionalProperties": false,
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the file to summarise"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 8000,
+            "description": "Maximum response tokens (default: 1024)"
+          },
+          "include_code_snippet": {
+            "type": "boolean",
+            "description": "Include a representative code snippet in the output (default: false)"
+          }
+        }
+      }
+    }
+  ]
+}

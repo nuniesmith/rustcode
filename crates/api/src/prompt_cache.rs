@@ -509,6 +509,8 @@ mod tests {
     };
     use crate::types::{InputMessage, MessageRequest, MessageResponse, OutputContentBlock, Usage};
 
+    use runtime::{test_remove_var, test_set_var};
+
     fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))

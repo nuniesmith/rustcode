@@ -35,8 +35,18 @@ pub enum Command {
     Login,
     // Clear saved OAuth credentials
     Logout,
+    // Show current conversation status
+    Status,
+    // Resume a previous conversation
+    Resume {
+        /// Conversation ID to resume
+        #[arg(short, long)]
+        id: String,
+    },
     // Run a non-interactive prompt and exit
-    Prompt { prompt: Vec<String> },
+    Prompt {
+        prompt: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]

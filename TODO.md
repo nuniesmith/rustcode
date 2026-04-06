@@ -4,6 +4,7 @@
 > **Last synced from master todo:** 2026-04-03
 > **RC-CRATES-A resolved:** 2026-04-05
 > **Code review completed:** 2026-04-05 — see notes below each relevant item
+> **RC-CRATES-D plugin migration prep completed:** 2026-04-06 — three tools migrated to bundled plugins
 
 ---
 
@@ -109,8 +110,19 @@
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
-  > Next: wire `plugins::PluginLifecycle` into the task executor (TASK-C) so that
-  > bundled plugins (example-bundled, sample-hooks) run pre/post hooks around each step.
+  >
+  > **Preparation step completed (2026-04-06):**
+  > - Migrated three plugin manifests from project root `.toml` files to bundled plugin structure:
+  >   - `crates/plugins/bundled/todo-scan/` — TodoScanner plugin for repository TODO/FIXME/HACK marker scanning
+  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization using Grok 4.20
+  >   - `crates/plugins/bundled/code-review/` — Automated code review using Grok multi-agent
+  > - Converted all manifests from TOML to JSON format per project plugin standard
+  > - Added comprehensive README.md documentation for each plugin
+  > - All three plugins follow the same layout as `example-bundled` and `sample-hooks`
+  >
+  > **Next:** wire `plugins::PluginLifecycle` into the task executor (TASK-C) so that
+  > bundled plugins (example-bundled, sample-hooks, todo-scan, file-summary, code-review)
+  > run pre/post hooks around each step.
 
 - [ ] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
   > Add `--mcp-server` flag to `src/bin/server.rs`. When set, start a second Axum

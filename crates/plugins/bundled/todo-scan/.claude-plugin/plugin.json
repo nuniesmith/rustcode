@@ -1,0 +1,39 @@
+{
+  "name": "todo-scan",
+  "version": "0.1.0",
+  "description": "Scan a repository for TODO/FIXME/HACK markers and produce a prioritised task list",
+  "defaultEnabled": true,
+  "tools": [
+    {
+      "name": "todo_scan",
+      "description": "Scan the current workspace for TODO markers. Returns a prioritised JSON list.",
+      "command": "rustcode",
+      "args": ["tool", "todo-scan"],
+      "requiredPermission": "read-only",
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Root path to scan (defaults to current directory)"
+          },
+          "include_fixme": {
+            "type": "boolean",
+            "description": "Include FIXME markers (default: true)"
+          },
+          "include_hack": {
+            "type": "boolean",
+            "description": "Include HACK markers (default: true)"
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum number of results to return (default: 50)"
+          }
+        }
+      }
+    }
+  ]
+}

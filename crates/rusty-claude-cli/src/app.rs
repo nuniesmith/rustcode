@@ -135,113 +135,12 @@ const SLASH_COMMAND_HANDLERS: &[SlashCommandHandler] = &[
 /// Helper: accumulate a single StreamEvent into the running list of assistant messages.
 ///
 /// This mirrors the accumulation logic used by the streaming loop so it can be exercised in unit tests.
+/// Wrapper around the streaming module's accumulate_stream_event to maintain the old API for tests.
 fn accumulate_stream_event(collected: &mut Vec<ConversationMessage>, event: &api::StreamEvent) {
-    match event {
-        api::StreamEvent::MessageStart(start) => {
-            for block in &start.message.content {
-                match block {
-                    api::OutputContentBlock::Text { text } => {
-                        if let Some(last) = collected.last_mut() {
-                            if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut()
-                            {
-                                prev.push_str(text);
-                            } else {
-                                last.blocks.push(ContentBlock::Text { text: text.clone() });
-                            }
-                        } else {
-                            collected.push(ConversationMessage {
-                                role: MessageRole::Assistant,
-                                blocks: vec![ContentBlock::Text { text: text.clone() }],
-                                usage: None,
-                            });
-                        }
-                    }
-                    api::OutputContentBlock::ToolUse { id, name, input } => {
-                        collected.push(ConversationMessage {
-                            role: MessageRole::Assistant,
-                            blocks: vec![ContentBlock::ToolUse {
-                                id: id.clone(),
-                                name: name.clone(),
-                                input: input.to_string(),
-                            }],
-                            usage: None,
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        }
-        api::StreamEvent::ContentBlockStart(start) => match &start.content_block {
-            api::OutputContentBlock::Text { text } => {
-                if let Some(last) = collected.last_mut() {
-                    if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut() {
-                        prev.push_str(text);
-                    } else {
-                        last.blocks.push(ContentBlock::Text { text: text.clone() });
-                    }
-                } else {
-                    collected.push(ConversationMessage {
-                        role: MessageRole::Assistant,
-                        blocks: vec![ContentBlock::Text { text: text.clone() }],
-                        usage: None,
-                    });
-                }
-            }
-            api::OutputContentBlock::ToolUse { id, name, input } => {
-                collected.push(ConversationMessage {
-                    role: MessageRole::Assistant,
-                    blocks: vec![ContentBlock::ToolUse {
-                        id: id.clone(),
-                        name: name.clone(),
-                        input: input.to_string(),
-                    }],
-                    usage: None,
-                });
-            }
-            _ => {}
-        },
-        api::StreamEvent::ContentBlockDelta(delta) => match &delta.delta {
-            api::ContentBlockDelta::TextDelta { text } => {
-                if !text.is_empty() {
-                    if let Some(last) = collected.last_mut() {
-                        if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut() {
-                            prev.push_str(text);
-                        } else {
-                            last.blocks.push(ContentBlock::Text { text: text.clone() });
-                        }
-                    } else {
-                        collected.push(ConversationMessage {
-                            role: MessageRole::Assistant,
-                            blocks: vec![ContentBlock::Text { text: text.clone() }],
-                            usage: None,
-                        });
-                    }
-                }
-            }
-            api::ContentBlockDelta::InputJsonDelta { partial_json } => {
-                if let Some(last) = collected.last_mut() {
-                    last.blocks.push(ContentBlock::ToolResult {
-                        tool_use_id: "unknown".to_string(),
-                        tool_name: "unknown".to_string(),
-                        output: partial_json.clone(),
-                        is_error: false,
-                    });
-                }
-            }
-            api::ContentBlockDelta::ThinkingDelta { .. }
-            | api::ContentBlockDelta::SignatureDelta { .. } => {}
-        },
-        api::StreamEvent::ContentBlockStop(_) => {
-            // no-op for accumulation
-        }
-        api::StreamEvent::MessageDelta(delta) => {
-            // we don't mutate collected here; usage is kept elsewhere
-            let _ = delta;
-        }
-        api::StreamEvent::MessageStop(_) => {
-            // end marker - nothing special
-        }
-    }
+    // This test helper doesn't track usage - it's just for message accumulation testing.
+    // In real streaming, usage is tracked separately.
+    let mut dummy_usage = api::Usage::default();
+    streaming::accumulate_stream_event(collected, &mut dummy_usage, event);
 }
 
 pub struct CliApp {
