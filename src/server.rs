@@ -4,10 +4,9 @@ use crate::api::auth::require_api_key;
 use crate::api::proxy::{ProxyState, proxy_router};
 use crate::api::repos::{RepoAppState, repo_router};
 use crate::audit::endpoint::{AuditState, audit_router};
-use crate::auto_scanner::{AutoScanner, AutoScannerConfig};
+use crate::auto_scanner::{AutoScannerConfig, AutoScanner};
 use crate::config::Config;
-use crate::db::Database;
-use crate::db::{self, Repository, init_db};
+use crate::db::{self, Database,Repository, init_db};
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::github::webhook::{WebhookHandler, WebhookPayload};
@@ -20,6 +19,9 @@ use crate::scanner::Scanner;
 use crate::scanner::github::sync_repos_to_db;
 use crate::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
 use crate::tags::TagScanner;
+use crate::task_executor::{TaskExecutor, TaskExecutorOptions};
+use crate::task_watcher::{WatchedTaskFile, TaskWatcherConfig,watch_tasks_directory};
+
 use crate::types::{AuditRequest, AuditTag};
 use axum::{
     Router,
@@ -33,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
@@ -316,6 +319,214 @@ pub async fn run_server(config: Config) -> Result<()> {
         });
     } else {
         info!("Auto-scanner is disabled");
+    }
+
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
+    }
+
+    info!("RustCode API-only server on http://{}/", socket_addr);
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
+    }
+
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
+    }
+
+    info!("RustCode API-only server on http://{}/", socket_addr);
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
+    }
+
+    info!("RustCode API-only server on http://{}/", socket_addr);
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
+    }
+
+    info!("RustCode API-only server on http://{}/", socket_addr);
+    // Start task watcher in background if enabled
+    if config.task_watcher.enabled {
+        info!("Starting task watcher");
+        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let tasks_dir = PathBuf::from("tasks");
+        tokio::spawn(async move {
+            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
+                tracing::error!("Task watcher error: {}", e);
+            }
+        });
+        let task_executor = Arc::new(TaskExecutor::new(
+            TaskExecutorOptions {
+                workspace_dir: config.git.repos_dir.clone(),
+                dry_run: true,
+            },
+            state.git_manager.clone(),
+        ));
+        tokio::spawn(async move {
+            while let Some(watched_task) = task_rx.recv().await {
+                match task_executor.execute_dry_run(&watched_task.task).await {
+                    Ok(()) => info!(
+                        "Task {} executed successfully in dry-run",
+                        watched_task.task.id
+                    ),
+                    Err(e) => {
+                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                    }
+                }
+            }
+        });
+    } else {
+        info!("Task watcher is disabled");
     }
 
     info!("RustCode API-only server on http://{}/", socket_addr);

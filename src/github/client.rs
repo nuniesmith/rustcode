@@ -585,6 +585,40 @@ impl GitHubClient {
         Ok(all_items)
     }
 
+    // Create a new pull request
+    pub async fn create_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        head: &str, // branch name (e.g. "feature/branch" or "username:feature/branch")
+        base: &str, // target branch (e.g. "main")
+        body: Option<&str>,
+        draft: bool,
+    ) -> Result<PullRequest> {
+        #[derive(Serialize)]
+        struct CreatePr<'a> {
+            title: &'a str,
+            head: &'a str,
+            base: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            draft: Option<bool>,
+        }
+
+        let request = CreatePr {
+            title,
+            head,
+            base,
+            body,
+            draft: if draft { Some(true) } else { None },
+        };
+
+        self.post(&format!("/repos/{}/{}/pulls", owner, repo), &request)
+            .await
+    }
+
     // Get a specific pull request
     pub async fn get_pull_request(
         &self,
@@ -615,6 +649,33 @@ impl GitHubClient {
     pub async fn get_commit(&self, owner: &str, repo: &str, sha: &str) -> Result<Commit> {
         self.get(&format!("/repos/{}/{}/commits/{}", owner, repo, sha))
             .await
+    }
+
+    // Get combined status for a commit (check runs + statuses)
+    //
+    // Returns the raw JSON payload from the GitHub combined status endpoint:
+    // GET /repos/{owner}/{repo}/commits/{ref}/status
+    // The structure includes `state`, `statuses`, and related metadata.
+    pub async fn get_commit_combined_status(
+        &self,
+        owner: &str,
+        repo: &str,
+        sha: &str,
+    ) -> Result<serde_json::Value> {
+        let path = format!("/repos/{}/{}/commits/{}/status", owner, repo, sha);
+        let url = format!("{}{}", self.config.base_url, path);
+        debug!("GET {}", url);
+
+        let response = self.client.get(&url).send().await?;
+        self.update_rate_limit(response.headers()).await;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(self.handle_error_response(status, response).await);
+        }
+
+        let data: serde_json::Value = response.json().await?;
+        Ok(data)
     }
 
     // ========================================================================

@@ -1,6 +1,8 @@
 // Configuration for the audit service
 
 use crate::error::{AuditError, Result};
+use crate::task_executor::TaskExecutorOptions;
+use crate::task_watcher::TaskWatcherConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +30,10 @@ pub struct Config {
     pub model: ModelConfig,
     // Auto-scanner configuration
     pub auto_scan: AutoScanConfig,
+    // Task executor configuration
+    pub task_executor: TaskExecutorOptions,
+    // Task watcher configuration
+    pub task_watcher: TaskWatcherConfig,
 }
 
 impl Config {

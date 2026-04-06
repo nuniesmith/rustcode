@@ -26,8 +26,20 @@ impl GitManager {
         })
     }
 
-    // Clone a repository
+    /// Get a reference to the configured workspace directory.
+    ///
+    /// This accessor allows other modules to read the manager's workspace path
+    /// without accessing the private field directly.
+    pub fn workspace_dir(&self) -> &PathBuf {
+        &self.workspace_dir
+    }
+
+    // Clone a repository using the git CLI for simplicity.
+    // Falls back to using the system `git` command which tends to be more robust
+    // across credential helpers and user environments than libgit2 in some cases.
     pub fn clone_repo(&self, url: &str, name: Option<&str>) -> Result<PathBuf> {
+        use std::process::Command;
+
         let repo_name = name.unwrap_or_else(|| {
             url.split('/')
                 .next_back()
@@ -45,10 +57,85 @@ impl GitManager {
 
         info!("Cloning repository {} to {}", url, target_path.display());
 
-        // For now, use simple clone (can be enhanced with shallow clone options)
-        Repository::clone(url, &target_path).map_err(|e| {
-            AuditError::other(format!("Failed to clone repository from {}: {}", url, e))
-        })?;
+        // Use git CLI for cloning. This avoids lower-level libgit2 pitfalls and aligns with
+        // typical developer environments.
+        let status = Command::new("git")
+            .arg("clone")
+            .arg("--depth=1")
+            .arg(url)
+            .arg(&target_path)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
+
+        if !status.success() {
+            return Err(AuditError::other(format!(
+                "git clone failed for {} (exit {})",
+                url, status
+            )));
+        }
+
+        Ok(target_path)
+    }
+
+    /// Clone a repository using an embedded token in the HTTPS URL.
+    ///
+    /// This helper is intended for programmatic workflows where a personal access token
+    /// is available. It constructs an authenticated HTTPS URL of the form:
+    /// `https://<token>@github.com/owner/repo.git` and performs a shallow clone.
+    ///
+    /// NOTE: Callers must avoid logging the token or the constructed URL.
+    pub fn clone_repo_with_token(
+        &self,
+        url: &str,
+        name: Option<&str>,
+        token: &str,
+    ) -> Result<PathBuf> {
+        use std::process::Command;
+
+        let repo_name = name.unwrap_or_else(|| {
+            url.split('/')
+                .next_back()
+                .unwrap_or("repo")
+                .trim_end_matches(".git")
+        });
+
+        let target_path = self.workspace_dir.join(repo_name);
+
+        // Remove existing directory if it exists
+        if target_path.exists() {
+            info!("Removing existing repository at {}", target_path.display());
+            std::fs::remove_dir_all(&target_path)?;
+        }
+
+        // Validate HTTPS URL
+        if !url.starts_with("https://") {
+            return Err(AuditError::other(format!(
+                "Unsupported clone URL (only https supported): {}",
+                url
+            )));
+        }
+
+        // Build authenticated URL (do not log)
+        let auth_url = url.replacen("https://", &format!("https://{}@", token), 1);
+
+        info!("Cloning (auth) repository to {}", target_path.display());
+
+        let status = Command::new("git")
+            .arg("clone")
+            .arg("--depth=1")
+            .arg(&auth_url)
+            .arg(&target_path)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
+
+        if !status.success() {
+            return Err(AuditError::other(format!(
+                "git clone (auth) failed for {} (exit {})",
+                url, status
+            )));
+        }
 
         Ok(target_path)
     }
@@ -62,6 +149,126 @@ impl GitManager {
                 e
             ))
         })
+    }
+
+    /// Clone a repository using a temporary GIT_ASKPASS helper to provide the token securely.
+    ///
+    /// This avoids embedding the token into the remote URL and reduces the chance of leaking
+    /// credentials to process listings. The helper is written to a temporary file and removed
+    /// after the clone completes.
+    pub fn clone_with_askpass(
+        &self,
+        remote_repo_url: &str,
+        name: Option<&str>,
+        token: &str,
+    ) -> Result<PathBuf> {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        if !remote_repo_url.starts_with("https://") {
+            return Err(AuditError::other(format!(
+                "Unsupported clone URL (only https supported): {}",
+                remote_repo_url
+            )));
+        }
+
+        let repo_name = name.unwrap_or_else(|| {
+            remote_repo_url
+                .split('/')
+                .next_back()
+                .unwrap_or("repo")
+                .trim_end_matches(".git")
+        });
+
+        let target_path = self.workspace_dir.join(repo_name);
+
+        if target_path.exists() {
+            info!("Removing existing repository at {}", target_path.display());
+            std::fs::remove_dir_all(&target_path)?;
+        }
+
+        // Create an askpass helper script in the system temp directory.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let askpass_path = std::env::temp_dir().join(format!("git_askpass_{}.sh", nanos));
+        let script = format!("#!/bin/sh\nprintf '%s' '{}'\n", token);
+
+        std::fs::write(&askpass_path, script)?;
+        // Make it executable
+        let mut perms = std::fs::metadata(&askpass_path)?.permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&askpass_path, perms)?;
+
+        // Run git clone with GIT_ASKPASS pointing to the helper.
+        let status = std::process::Command::new("git")
+            .arg("clone")
+            .arg("--depth=1")
+            .arg(remote_repo_url)
+            .arg(&target_path)
+            .env("GIT_ASKPASS", &askpass_path)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
+
+        // Remove helper script regardless of outcome
+        let _ = std::fs::remove_file(&askpass_path);
+
+        if !status.success() {
+            return Err(AuditError::other(format!(
+                "git clone (askpass) failed for {} (exit {})",
+                remote_repo_url, status
+            )));
+        }
+
+        Ok(target_path)
+    }
+
+    /// Push a branch using a temporary GIT_ASKPASS helper to provide the token securely.
+    ///
+    /// This encourages avoiding token-in-URL usage and keeps the token out of process arguments.
+    pub fn push_with_askpass(&self, repo_path: &Path, branch: &str, token: &str) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Create askpass helper
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let askpass_path = std::env::temp_dir().join(format!("git_askpass_push_{}.sh", nanos));
+        let script = format!("#!/bin/sh\nprintf '%s' '{}'\n", token);
+
+        std::fs::write(&askpass_path, script)?;
+        let mut perms = std::fs::metadata(&askpass_path)?.permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&askpass_path, perms)?;
+
+        // Use origin remote and let askpass supply credentials
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("push")
+            .arg("-u")
+            .arg("origin")
+            .arg(branch)
+            .env("GIT_ASKPASS", &askpass_path)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .map_err(|e| AuditError::other(format!("Failed to spawn git push: {}", e)))?;
+
+        // Cleanup helper
+        let _ = std::fs::remove_file(&askpass_path);
+
+        if !status.success() {
+            return Err(AuditError::other(format!(
+                "git push (askpass) failed for branch {} (exit {})",
+                branch, status
+            )));
+        }
+
+        Ok(())
     }
 
     // Get the diff for a repository
@@ -150,6 +357,60 @@ impl GitManager {
         }
 
         info!("Checked out branch: {}", branch);
+        Ok(())
+    }
+
+    /// Push a local branch to the remote repository using a token-authenticated HTTPS URL.
+    ///
+    /// This helper performs a `git push` using an authenticated HTTPS remote of the form:
+    /// `https://<token>@github.com/owner/repo.git`. The function avoids logging the token and
+    /// sets `GIT_TERMINAL_PROMPT=0` to prevent interactive credential prompts.
+    ///
+    /// Arguments:
+    /// * `repo_path` - local repository working directory
+    /// * `remote_repo_url` - standard HTTPS clone URL (e.g. "https://github.com/owner/repo.git")
+    /// * `branch` - branch name to push
+    /// * `token` - personal access token used for authentication
+    pub fn push_branch_with_token(
+        &self,
+        repo_path: &Path,
+        remote_repo_url: &str,
+        branch: &str,
+        token: &str,
+    ) -> Result<()> {
+        use std::process::Command;
+
+        // Validate remote URL and construct an authenticated URL for the push.
+        // We intentionally do not log `auth_url` since it contains sensitive credentials.
+        if !remote_repo_url.starts_with("https://") {
+            return Err(AuditError::other(format!(
+                "Unsupported remote URL (must be https): {}",
+                remote_repo_url
+            )));
+        }
+
+        // Insert token into URL: https://<token>@github.com/owner/repo.git
+        let auth_url = remote_repo_url.replacen("https://", &format!("https://{}@", token), 1);
+
+        // Execute: git -C <repo_path> push -u <auth_url> <branch>
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("push")
+            .arg("-u")
+            .arg(&auth_url)
+            .arg(branch)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .map_err(|e| AuditError::other(format!("Failed to spawn git push: {}", e)))?;
+
+        if !status.success() {
+            return Err(AuditError::other(format!(
+                "git push failed with status: {}",
+                status
+            )));
+        }
+
         Ok(())
     }
 

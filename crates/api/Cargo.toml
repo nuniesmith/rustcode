@@ -38,7 +38,7 @@ zstd.workspace = true
 
 # Internal crates
 runtime = { path = "../runtime" }
-tools = { path = "../tools" }
+telemetry = { path = "../telemetry" }
 
 [dev-dependencies]
 # Inherit from workspace

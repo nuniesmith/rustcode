@@ -80,6 +80,8 @@ pub mod sync_scheduler;
 pub mod tag_schema;
 pub mod tags;
 pub mod task;
+pub mod task_executor;
+pub mod task_watcher;
 pub mod tasks;
 pub mod telemetry;
 pub mod test_generator;

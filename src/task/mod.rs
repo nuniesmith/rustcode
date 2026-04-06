@@ -7,6 +7,7 @@
 //
 // - **Models**: Core task types and database operations
 // - **Grouping**: Smart task grouping for efficient batch processing
+// - **Schema**: JSON schema for task files dropped into the tasks/ directory
 //
 // ## Usage
 //
@@ -18,9 +19,28 @@
 //     .with_priority(8)
 //     .with_source_file("rustcode", "src/processor.rs", Some(45));
 // ```
+//
+// ## Task Files
+//
+// Drop JSON files into the `tasks/` directory to trigger async execution:
+//
+// ```rust,no_run
+// use rustcode::task::TaskFile;
+//
+// let task_file = TaskFile {
+//     id: "feat-001".to_string(),
+//     repo: "owner/repo".to_string(),
+//     description: "Add new feature".to_string(),
+//     steps: vec!["Create src/lib.rs".to_string()],
+//     branch: "feat/new".to_string(),
+//     labels: vec!["enhancement".to_string()],
+//     auto_merge: true,
+// };
+// ```
 
 pub mod grouping;
 pub mod models;
+pub mod schema;
 
 // Re-export commonly used types
 pub use grouping::{
@@ -33,3 +53,5 @@ pub use models::{
     check_duplicate, create_task, get_pending_tasks, get_task, get_task_stats, get_tasks_by_status,
     mark_task_failed, update_task_analysis, update_task_status,
 };
+
+pub use schema::{StepResult, TaskFile, TaskResult};

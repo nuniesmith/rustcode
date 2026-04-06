@@ -873,7 +873,7 @@ impl ChunkStore {
                     .collect();
 
                 duplicates.push(CrossRepoDuplicate {
-                    content_hash: string(hash),
+                    content_hash: hash,
                     entity_type: chunk.entity_type,
                     entity_name: chunk.entity_name,
                     language: chunk.language,
