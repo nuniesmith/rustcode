@@ -1302,7 +1302,12 @@ pub fn analyze_batch(
 
     info!(
         "Static analysis batch complete: {} files → {} skip, {} minimal, {} standard, {} deep_dive ({:.0}% savings)",
-        total, skip_count, minimal_count, standard_count, deep_dive_count, estimated_savings_percent
+        total,
+        skip_count,
+        minimal_count,
+        standard_count,
+        deep_dive_count,
+        estimated_savings_percent
     );
 
     BatchAnalysisReport {

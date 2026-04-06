@@ -2192,9 +2192,7 @@ pub fn chunk_to_location(chunk: &CodeChunk) -> ChunkLocationRecord {
 }
 
 // Convert a batch of [`CodeChunk`]s into paired record + location vecs.
-pub fn chunks_to_records(
-    chunks: &[CodeChunk],
-) -> (Vec<ChunkRecord>, Vec<ChunkLocationRecord>) {
+pub fn chunks_to_records(chunks: &[CodeChunk]) -> (Vec<ChunkRecord>, Vec<ChunkLocationRecord>) {
     let mut records = Vec::with_capacity(chunks.len());
     let mut locations = Vec::with_capacity(chunks.len());
     for chunk in chunks {

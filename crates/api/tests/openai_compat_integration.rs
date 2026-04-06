@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::sync::Arc;
-use std::sync::{Mutex as StdMutex, OnceLock};
+use std::sync::{Mutex as StdMutex, MutexGuard, OnceLock};
 
 use api::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
@@ -9,6 +8,7 @@ use api::{
     OpenAiCompatConfig, OutputContentBlock, ProviderClient, StreamEvent, ToolChoice,
     ToolDefinition,
 };
+use runtime::{test_remove_var, test_set_var};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -463,7 +463,7 @@ fn sample_request(stream: bool) -> MessageRequest {
     }
 }
 
-fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+fn env_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| StdMutex::new(()))
         .lock()
@@ -472,13 +472,13 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
 
 struct ScopedEnvVar {
     key: &'static str,
-    previous: Option<OsString>,
+    previous: Option<String>,
 }
 
 impl ScopedEnvVar {
     fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, value); }
+        let previous = std::env::var(key).ok();
+        test_set_var(key, value.as_ref().to_string_lossy().as_ref());
         Self { key, previous }
     }
 }
@@ -486,8 +486,8 @@ impl ScopedEnvVar {
 impl Drop for ScopedEnvVar {
     fn drop(&mut self) {
         match &self.previous {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
+            Some(value) => test_set_var(self.key, value),
+            None => test_remove_var(self.key),
         }
     }
 }

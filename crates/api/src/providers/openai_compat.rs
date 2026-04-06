@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::time::Duration;
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::ApiError;
 use crate::types::{
@@ -940,19 +940,16 @@ trait StringExt {
 
 impl StringExt for String {
     fn if_empty_then(self, fallback: String) -> String {
-        if self.is_empty() {
-            fallback
-        } else {
-            self
-        }
+        if self.is_empty() { fallback } else { self }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        build_chat_completion_request, chat_completions_endpoint, normalize_finish_reason,
-        openai_tool_choice, parse_tool_arguments, OpenAiCompatClient, OpenAiCompatConfig,
+        OpenAiCompatClient, OpenAiCompatConfig, build_chat_completion_request,
+        chat_completions_endpoint, normalize_finish_reason, openai_tool_choice,
+        parse_tool_arguments,
     };
     use crate::error::ApiError;
     use crate::types::{
@@ -1059,9 +1056,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn missing_xai_api_key_is_provider_specific() {
         let _lock = env_lock();
-        unsafe { std::env::remove_var("XAI_API_KEY"); }
+        // SAFETY: We hold the env_lock() guard throughout, preventing races
+        unsafe {
+            std::env::remove_var("XAI_API_KEY");
+        }
         let error = OpenAiCompatClient::from_env(OpenAiCompatConfig::xai())
             .expect_err("missing key should error");
         assert!(matches!(

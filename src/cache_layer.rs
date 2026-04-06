@@ -37,7 +37,7 @@
 
 use anyhow::{Context, Result};
 use redis::AsyncCommands;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -806,16 +806,20 @@ mod tests {
         let count = cache.invalidate_pattern("user:1:").await.unwrap();
         assert_eq!(count, 2);
 
-        assert!(cache
-            .get::<String>("user:1:profile")
-            .await
-            .unwrap()
-            .is_none());
-        assert!(cache
-            .get::<String>("user:2:profile")
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            cache
+                .get::<String>("user:1:profile")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            cache
+                .get::<String>("user:2:profile")
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]

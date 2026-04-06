@@ -3,7 +3,7 @@ use crate::prompt_cache::{PromptCache, PromptCacheRecord, PromptCacheStats};
 use crate::providers::anthropic::{self, AnthropicClient, AuthSource};
 use crate::providers::openai_compat::{self, OpenAiCompatClient, OpenAiCompatConfig};
 use crate::providers::{self, ProviderKind};
-use crate::types::{MessageRequest, MessageResponse, StreamEvent, Usage};
+use crate::types::{MessageRequest, MessageResponse, StreamEvent};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
@@ -121,7 +121,7 @@ impl MessageStream {
 }
 
 pub use anthropic::{
-    oauth_token_is_expired, resolve_saved_oauth_token, resolve_startup_auth_source, OAuthTokenSet,
+    OAuthTokenSet, oauth_token_is_expired, resolve_saved_oauth_token, resolve_startup_auth_source,
 };
 #[must_use]
 pub fn read_base_url() -> String {
@@ -135,7 +135,7 @@ pub fn read_xai_base_url() -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::providers::{detect_provider_kind, resolve_model_alias, ProviderKind};
+    use crate::providers::{ProviderKind, detect_provider_kind, resolve_model_alias};
 
     #[test]
     fn resolves_existing_and_grok_aliases() {

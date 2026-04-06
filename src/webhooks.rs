@@ -109,7 +109,10 @@ pub enum WebhookEvent {
     },
 
     // Document indexing failed
-    DocumentIndexingFailed { document_id: i64, error: String },
+    DocumentIndexingFailed {
+        document_id: i64,
+        error: String,
+    },
 
     // Search was performed
     SearchPerformed {
@@ -135,13 +138,21 @@ pub enum WebhookEvent {
     },
 
     // Indexing job failed
-    JobFailed { job_id: String, error: String },
+    JobFailed {
+        job_id: String,
+        error: String,
+    },
 
     // Document was deleted
-    DocumentDeleted { document_id: i64 },
+    DocumentDeleted {
+        document_id: i64,
+    },
 
     // System health check failed
-    HealthCheckFailed { service: String, error: String },
+    HealthCheckFailed {
+        service: String,
+        error: String,
+    },
 }
 
 impl WebhookEvent {

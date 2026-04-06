@@ -440,9 +440,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         // then
-        assert!(results
-            .iter()
-            .all(|result| matches!(result, McpPhaseResult::Success { .. })));
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, McpPhaseResult::Success { .. }))
+        );
         assert_eq!(
             validator.state().current_phase(),
             Some(McpLifecyclePhase::Cleanup)
@@ -599,7 +601,10 @@ mod tests {
             ));
 
             match result {
-                McpPhaseResult::Failure { phase: failed_phase, error } => {
+                McpPhaseResult::Failure {
+                    phase: failed_phase,
+                    error,
+                } => {
                     assert_eq!(failed_phase, phase);
                     assert_eq!(error.phase, phase);
                     assert_eq!(
@@ -733,10 +738,12 @@ mod tests {
             validator.state().current_phase(),
             Some(McpLifecyclePhase::Cleanup)
         );
-        assert!(validator
-            .state()
-            .phase_timestamp(McpLifecyclePhase::ErrorSurfacing)
-            .is_some());
+        assert!(
+            validator
+                .state()
+                .phase_timestamp(McpLifecyclePhase::ErrorSurfacing)
+                .is_some()
+        );
     }
 
     #[test]

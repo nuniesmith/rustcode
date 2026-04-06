@@ -58,8 +58,8 @@ pub mod webhook;
 
 // Re-export commonly used types for convenience
 pub use background_sync::{
-    start_background_sync, start_background_sync_with_config, BackgroundSyncConfig,
-    BackgroundSyncManager,
+    BackgroundSyncConfig, BackgroundSyncManager, start_background_sync,
+    start_background_sync_with_config,
 };
 pub use client::{GitHubClient, GitHubConfig, RateLimitInfo};
 pub use models::{

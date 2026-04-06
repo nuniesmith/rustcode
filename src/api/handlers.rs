@@ -1,10 +1,10 @@
 // API handlers for RAG system endpoints
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use std::sync::Arc;
 use std::time::Instant;

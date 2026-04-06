@@ -406,7 +406,10 @@ impl LlmAuditor {
                 .collect(),
             quality_observations: vec![
                 format!("Deprecated files: {}", analysis.deprecated_files.len()),
-                format!("Architecture issues: {}", analysis.architecture_issues.len()),
+                format!(
+                    "Architecture issues: {}",
+                    analysis.architecture_issues.len()
+                ),
             ],
             tech_debt_areas: Vec::new(),
             recommendations: vec![Recommendation {

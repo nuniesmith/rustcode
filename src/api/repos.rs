@@ -608,8 +608,7 @@ impl RepoAppState {
         let cache_config = CacheConfig {
             enable_redis: std::env::var("REDIS_URL").is_ok(),
             redis_url: std::env::var("REDIS_URL").ok(),
-            redis_prefix: std::env::var("CACHE_PREFIX")
-                .unwrap_or_else(|_| "rustcode:".to_string()),
+            redis_prefix: std::env::var("CACHE_PREFIX").unwrap_or_else(|_| "rustcode:".to_string()),
             ..CacheConfig::default()
         };
 

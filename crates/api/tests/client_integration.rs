@@ -9,6 +9,7 @@ use api::{
     OutputContentBlock, PromptCache, PromptCacheConfig, ProviderClient, StreamEvent, ToolChoice,
     ToolDefinition,
 };
+use runtime::{test_remove_var, test_set_var};
 use serde_json::json;
 use telemetry::{ClientIdentity, MemoryTelemetrySink, SessionTracer, TelemetryEvent};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -253,7 +254,7 @@ async fn stream_message_parses_sse_events_with_tool_use() {
             .expect("time")
             .as_nanos()
     ));
-    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
+    test_set_var("CLAUDE_CONFIG_HOME", temp_root.to_string_lossy().as_ref());
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let sse = concat!(
         "event: message_start\n",
@@ -351,7 +352,7 @@ async fn stream_message_parses_sse_events_with_tool_use() {
     );
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
+    test_remove_var("CLAUDE_CONFIG_HOME");
 }
 
 #[tokio::test]
@@ -488,7 +489,7 @@ async fn send_message_reuses_recent_completion_cache_entries() {
             .expect("time")
             .as_nanos()
     ));
-    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
+    test_set_var("CLAUDE_CONFIG_HOME", temp_root.to_string_lossy().as_ref());
 
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let server = spawn_server(
@@ -525,7 +526,7 @@ async fn send_message_reuses_recent_completion_cache_entries() {
     assert_eq!(cache_stats.completion_cache_writes, 1);
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
+    test_remove_var("CLAUDE_CONFIG_HOME");
 }
 
 #[tokio::test]
@@ -540,7 +541,7 @@ async fn send_message_tracks_unexpected_prompt_cache_breaks() {
             .expect("time")
             .as_nanos()
     ));
-    unsafe { std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root); }
+    test_set_var("CLAUDE_CONFIG_HOME", temp_root.to_string_lossy().as_ref());
 
     let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
     let server = spawn_server(
@@ -588,7 +589,7 @@ async fn send_message_tracks_unexpected_prompt_cache_breaks() {
     );
 
     std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
-    unsafe { std::env::remove_var("CLAUDE_CONFIG_HOME"); }
+    test_remove_var("CLAUDE_CONFIG_HOME");
 }
 
 #[tokio::test]

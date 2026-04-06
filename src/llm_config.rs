@@ -500,7 +500,10 @@ pub enum BudgetStatus {
         usage_pct: f64,
     },
     // Budget exceeded
-    Exceeded { current: f64, limit: f64 },
+    Exceeded {
+        current: f64,
+        limit: f64,
+    },
 }
 
 impl BudgetStatus {

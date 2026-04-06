@@ -330,9 +330,9 @@ fn format_no_managed_sessions() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_managed_session_handle_for, fork_managed_session_for, is_session_reference_alias,
-        list_managed_sessions_for, load_managed_session_for, resolve_session_reference_for,
-        ManagedSessionSummary, LATEST_SESSION_REFERENCE,
+        LATEST_SESSION_REFERENCE, ManagedSessionSummary, create_managed_session_handle_for,
+        fork_managed_session_for, is_session_reference_alias, list_managed_sessions_for,
+        load_managed_session_for, resolve_session_reference_for,
     };
     use crate::session::Session;
     use std::fs;

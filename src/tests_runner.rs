@@ -952,9 +952,11 @@ mod tests {
         // Failed test name is captured
         let mod_a = by_file.get("src/mod_a.rs").unwrap();
         assert_eq!(mod_a.failed, 1);
-        assert!(mod_a
-            .failures
-            .contains(&"mod_a::tests::test_two".to_string()));
+        assert!(
+            mod_a
+                .failures
+                .contains(&"mod_a::tests::test_two".to_string())
+        );
     }
 
     #[test]

@@ -3,12 +3,12 @@
 // Commands for managing the processing queue, scanning repos, and viewing status.
 
 use crate::db::queue::{
-    create_queue_tables, QueuePriority, QueueSource, QueueStage, GITHUB_USERNAME,
+    GITHUB_USERNAME, QueuePriority, QueueSource, QueueStage, create_queue_tables,
 };
 use crate::llm::grok::GrokAnalyzer;
 use crate::queue::processor::{
-    capture_note, capture_thought, get_pending_items, get_queue_stats, LlmAnalyzer,
-    ProcessorConfig, QueueProcessor,
+    LlmAnalyzer, ProcessorConfig, QueueProcessor, capture_note, capture_thought, get_pending_items,
+    get_queue_stats,
 };
 use crate::scanner::github::{
     build_dir_tree, get_unanalyzed_files, save_dir_tree, scan_repo_for_todos, sync_repos_to_db,

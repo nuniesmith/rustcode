@@ -6,7 +6,7 @@ pub mod processor;
 
 // Re-export main types
 pub use processor::{
+    AnalysisResult, FileAnalysisResult, LlmAnalyzer, ProcessorConfig, QueueProcessor, QueueStats,
     advance_stage, capture_note, capture_thought, capture_todo, enqueue, get_pending_items,
     get_queue_item, get_queue_stats, get_retriable_items, mark_failed, update_analysis,
-    AnalysisResult, FileAnalysisResult, LlmAnalyzer, ProcessorConfig, QueueProcessor, QueueStats,
 };

@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use telemetry::SessionTracer;
 
 use crate::compact::{
-    compact_session, estimate_session_tokens, CompactionConfig, CompactionResult,
+    CompactionConfig, CompactionResult, compact_session, estimate_session_tokens,
 };
 use crate::config::RuntimeFeatureConfig;
 use crate::hooks::{HookAbortSignal, HookProgressReporter, HookRunResult, HookRunner};
@@ -784,10 +784,11 @@ impl ToolExecutor for StaticToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_assistant_message, parse_auto_compaction_threshold, ApiClient, ApiRequest,
-        AssistantEvent, AutoCompactionEvent, ConversationRuntime, PromptCacheEvent, RuntimeError,
-        StaticToolExecutor, ToolExecutor, DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD,
+        ApiClient, ApiRequest, AssistantEvent, AutoCompactionEvent, ConversationRuntime,
+        DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD, PromptCacheEvent, RuntimeError,
+        StaticToolExecutor, ToolExecutor, build_assistant_message, parse_auto_compaction_threshold,
     };
+    use crate::ToolError;
     use crate::compact::CompactionConfig;
     use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
     use crate::permissions::{
@@ -797,7 +798,6 @@ mod tests {
     use crate::prompt::{ProjectContext, SystemPromptBuilder};
     use crate::session::{ContentBlock, MessageRole, Session};
     use crate::usage::TokenUsage;
-    use crate::ToolError;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -813,10 +813,12 @@ mod tests {
             self.call_count += 1;
             match self.call_count {
                 1 => {
-                    assert!(request
-                        .messages
-                        .iter()
-                        .any(|message| message.role == MessageRole::User));
+                    assert!(
+                        request
+                            .messages
+                            .iter()
+                            .any(|message| message.role == MessageRole::User)
+                    );
                     Ok(vec![
                         AssistantEvent::TextDelta("Let me calculate that.".to_string()),
                         AssistantEvent::ToolUse {
@@ -1159,10 +1161,12 @@ mod tests {
                         AssistantEvent::MessageStop,
                     ]),
                     2 => {
-                        assert!(request
-                            .messages
-                            .iter()
-                            .any(|message| message.role == MessageRole::Tool));
+                        assert!(
+                            request
+                                .messages
+                                .iter()
+                                .any(|message| message.role == MessageRole::Tool)
+                        );
                         Ok(vec![
                             AssistantEvent::TextDelta("done".to_string()),
                             AssistantEvent::MessageStop,
@@ -1234,10 +1238,12 @@ mod tests {
                         AssistantEvent::MessageStop,
                     ]),
                     2 => {
-                        assert!(request
-                            .messages
-                            .iter()
-                            .any(|message| message.role == MessageRole::Tool));
+                        assert!(
+                            request
+                                .messages
+                                .iter()
+                                .any(|message| message.role == MessageRole::Tool)
+                        );
                         Ok(vec![
                             AssistantEvent::TextDelta("done".to_string()),
                             AssistantEvent::MessageStop,
@@ -1582,9 +1588,11 @@ mod tests {
             .expect_err("assistant messages should require a stop event");
 
         // then
-        assert!(error
-            .to_string()
-            .contains("assistant stream ended without a message stop event"));
+        assert!(
+            error
+                .to_string()
+                .contains("assistant stream ended without a message stop event")
+        );
     }
 
     #[test]
@@ -1597,9 +1605,11 @@ mod tests {
             build_assistant_message(events).expect_err("assistant messages should require content");
 
         // then
-        assert!(error
-            .to_string()
-            .contains("assistant stream produced no content"));
+        assert!(
+            error
+                .to_string()
+                .contains("assistant stream produced no content")
+        );
     }
 
     #[test]
@@ -1652,9 +1662,11 @@ mod tests {
             .expect_err("conversation loop should stop after the configured limit");
 
         // then
-        assert!(error
-            .to_string()
-            .contains("conversation loop exceeded the maximum number of iterations"));
+        assert!(
+            error
+                .to_string()
+                .contains("conversation loop exceeded the maximum number of iterations")
+        );
     }
 
     #[test]

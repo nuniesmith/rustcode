@@ -62,9 +62,7 @@ pub enum ProxyClientError {
     #[error("Both RustCode and Grok fallback failed: RUSTCODE={rc}, Grok={grok}")]
     BothFailed { rc: String, grok: String },
 
-    #[error(
-        "Grok fallback is not configured (XAI_API_KEY is unset) and RustCode failed: {rc}"
-    )]
+    #[error("Grok fallback is not configured (XAI_API_KEY is unset) and RustCode failed: {rc}")]
     FallbackUnconfigured { rc: String },
 
     #[error("Request serialisation failed: {0}")]
@@ -171,7 +169,9 @@ impl ProxyClientConfig {
             ra_api_key: std::env::var("RUSTCODE_API_KEY").unwrap_or_default(),
             ra_timeout: Duration::from_secs(ra_timeout),
             ra_model: std::env::var("RUSTCODE_MODEL").unwrap_or_else(|_| "auto".to_string()),
-            ra_repo_id: std::env::var("RUSTCODE_REPO_ID").ok().filter(|v| !v.is_empty()),
+            ra_repo_id: std::env::var("RUSTCODE_REPO_ID")
+                .ok()
+                .filter(|v| !v.is_empty()),
             ra_force_remote,
             disable_ra,
             xai_api_key: std::env::var("XAI_API_KEY").ok().filter(|v| !v.is_empty()),
@@ -839,6 +839,7 @@ impl ChatReply {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use runtime::{test_remove_var, test_set_var};
     use std::sync::Mutex;
 
     // Env-var tests mutate the process-global environment.  Rust runs tests
@@ -867,13 +868,10 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         // Clear relevant env vars so we get defaults.
-        // SAFETY: This test is single-threaded and guarded by ENV_LOCK.
-        unsafe {
-            std::env::remove_var("RUSTCODE_BASE_URL");
-            std::env::remove_var("RUSTCODE_TIMEOUT_SECS");
-            std::env::remove_var("RUSTCODE_MODEL");
-            std::env::remove_var("PROXY_CLIENT_DISABLE_RA");
-        }
+        test_remove_var("RUSTCODE_BASE_URL");
+        test_remove_var("RUSTCODE_TIMEOUT_SECS");
+        test_remove_var("RUSTCODE_MODEL");
+        test_remove_var("PROXY_CLIENT_DISABLE_RA");
 
         let cfg = ProxyClientConfig::from_env();
         assert_eq!(cfg.ra_base_url, "http://localhost:3500");
@@ -886,13 +884,11 @@ mod tests {
     fn config_from_env_reads_overrides() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        // SAFETY: This test is single-threaded and guarded by ENV_LOCK.
-        unsafe {
-            std::env::set_var("RUSTCODE_BASE_URL", "http://oryx:3500");
-            std::env::set_var("RUSTCODE_TIMEOUT_SECS", "30");
-            std::env::set_var("RUSTCODE_MODEL", "remote");
-            std::env::set_var("PROXY_CLIENT_DISABLE_RA", "true");
-        }
+        // Use safe helpers guarded by ENV_LOCK from runtime.
+        test_set_var("RUSTCODE_BASE_URL", "http://oryx:3500");
+        test_set_var("RUSTCODE_TIMEOUT_SECS", "30");
+        test_set_var("RUSTCODE_MODEL", "remote");
+        test_set_var("PROXY_CLIENT_DISABLE_RA", "true");
 
         let cfg = ProxyClientConfig::from_env();
         assert_eq!(cfg.ra_base_url, "http://oryx:3500");
@@ -901,13 +897,10 @@ mod tests {
         assert!(cfg.disable_ra);
 
         // Clean up — always runs because _guard is still in scope.
-        // SAFETY: This test is single-threaded and guarded by ENV_LOCK.
-        unsafe {
-            std::env::remove_var("RUSTCODE_BASE_URL");
-            std::env::remove_var("RUSTCODE_TIMEOUT_SECS");
-            std::env::remove_var("RUSTCODE_MODEL");
-            std::env::remove_var("PROXY_CLIENT_DISABLE_RA");
-        }
+        test_remove_var("RUSTCODE_BASE_URL");
+        test_remove_var("RUSTCODE_TIMEOUT_SECS");
+        test_remove_var("RUSTCODE_MODEL");
+        test_remove_var("PROXY_CLIENT_DISABLE_RA");
     }
 
     #[test]

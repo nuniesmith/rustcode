@@ -155,9 +155,7 @@ impl BackupManager {
 
     // Create a local snapshot of databases
     fn create_snapshot(&self, timestamp: &str) -> Result<PathBuf> {
-        let snapshot_dir = std::env::temp_dir()
-            .join("rustcode-backup")
-            .join(timestamp);
+        let snapshot_dir = std::env::temp_dir().join("rustcode-backup").join(timestamp);
 
         std::fs::create_dir_all(&snapshot_dir)?;
 

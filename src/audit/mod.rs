@@ -52,9 +52,9 @@ pub mod types;
 pub use cache::{AuditCache, AuditCacheConfig};
 pub use endpoint::{audit_router, handle_audit_get, handle_audit_post};
 pub use full_audit::{
-    db_get_audit_report_json, db_get_audit_report_markdown, db_get_audit_status,
-    db_get_runs_for_repo, db_list_audit_runs, AuditRunStatus, AuditRunSummary, FileAuditResult,
-    FileSeverity, FullAuditConfig, FullAuditEngine, FullAuditReport,
+    AuditRunStatus, AuditRunSummary, FileAuditResult, FileSeverity, FullAuditConfig,
+    FullAuditEngine, FullAuditReport, db_get_audit_report_json, db_get_audit_report_markdown,
+    db_get_audit_status, db_get_runs_for_repo, db_list_audit_runs,
 };
 pub use report::{AuditReport, ReportFormat};
 pub use runner::{AuditRunner, AuditRunnerConfig};

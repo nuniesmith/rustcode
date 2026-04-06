@@ -1,7 +1,7 @@
 // GitHub API Client
 //
 // High-performance GitHub client supporting both REST and GraphQL APIs.
-// Implements rate limiting, caching, and retry logic for production use.
+// Implements rate limiting and retry logic for production use.
 //
 // # Architecture
 //
@@ -37,15 +37,14 @@
 //     Ok(())
 // }
 // ```
-
-use crate::github::{models::*, GitHubError, Result};
+//
+use crate::github::{GitHubError, Result, models::*};
 use chrono::{DateTime, Utc};
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT},
     Client, StatusCode,
+    header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},
 };
 use serde::{Deserialize, Serialize};
-use url::form_urlencoded;
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -57,7 +56,7 @@ const MAX_PER_PAGE: u32 = 100;
 // ============================================================================
 // Client Configuration
 // ============================================================================
-
+//
 // GitHub client configuration
 #[derive(Debug, Clone)]
 pub struct GitHubConfig {

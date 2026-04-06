@@ -285,7 +285,7 @@ pub async fn handle_github_command(command: GithubCommands, pool: &PgPool) -> Re
 
                 let search_pattern = format!("%{}%", question);
                 let mut query = String::from(
-                    "SELECT sha, author_name, message, author_date FROM github_commits WHERE message LIKE $1"
+                    "SELECT sha, author_name, message, author_date FROM github_commits WHERE message LIKE $1",
                 );
 
                 if let Some(ref _repo_name) = repo {

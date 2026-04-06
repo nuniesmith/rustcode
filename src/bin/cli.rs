@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 // Import from our crate
 use rustcode::cli::{
-    handle_github_command, handle_queue_command, handle_report_command, handle_scan_command,
-    GithubCommands, QueueCommands, ReportCommands, ScanCommands,
+    GithubCommands, QueueCommands, ReportCommands, ScanCommands, handle_github_command,
+    handle_queue_command, handle_report_command, handle_scan_command,
 };
 use rustcode::db::{
     self, create_note, get_next_task, get_stats, list_notes, list_repositories, list_tasks,
@@ -496,9 +496,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Get database URL
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgresql://rustcode:changeme@localhost:5432/rustcode.db".into()
-    });
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://rustcode:changeme@localhost:5432/rustcode.db".into());
 
     // Initialize database
     let pool = db::init_db(&database_url).await?;
@@ -961,8 +960,7 @@ async fn handle_todo_work(
                                         rolled_back += 1;
                                     }
                                     Err(e) => {
-                                        rollback_errors
-                                            .push(format!("  restore {rel_path}: {e}"));
+                                        rollback_errors.push(format!("  restore {rel_path}: {e}"));
                                     }
                                 }
                             }
@@ -1057,7 +1055,8 @@ async fn handle_todo_work(
         // manually.  Only runs when --auto-sync is set and not in dry-run.
         // ------------------------------------------------------------------
         if auto_sync && !dry_run && result.items_succeeded > 0 {
-            let todo_md_path = auto_sync_todo_md.map_or_else(|| repo_path.join("todo.md"), std::path::PathBuf::from);
+            let todo_md_path = auto_sync_todo_md
+                .map_or_else(|| repo_path.join("todo.md"), std::path::PathBuf::from);
 
             if todo_md_path.exists() {
                 eprintln!(
@@ -1340,10 +1339,15 @@ async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::
             } else {
                 println!("📂 Tracked repositories ({}):\n", repos.len());
                 for repo in repos {
-                    let analyzed = repo
-                        .last_analyzed.map_or_else(|| "never".into(), |ts| {
-                            chrono::DateTime::from_timestamp(ts, 0).map_or_else(|| "unknown".into(), |dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                        });
+                    let analyzed = repo.last_analyzed.map_or_else(
+                        || "never".into(),
+                        |ts| {
+                            chrono::DateTime::from_timestamp(ts, 0).map_or_else(
+                                || "unknown".into(),
+                                |dt| dt.format("%Y-%m-%d %H:%M").to_string(),
+                            )
+                        },
+                    );
 
                     println!("  📁 {} ({})", repo.name.cyan(), repo.id.dimmed());
                     println!("     {} {}", "Path:".dimmed(), repo.path);
@@ -1496,9 +1500,10 @@ fn print_task(task: &db::Task) {
     println!("     {} {}", "Priority:".dimmed(), priority_label);
 
     if let Some(desc) = &task.description
-        && !desc.is_empty() {
-            println!("     {}", desc.dimmed());
-        }
+        && !desc.is_empty()
+    {
+        println!("     {}", desc.dimmed());
+    }
 
     if let Some(file) = &task.file_path {
         let line = task

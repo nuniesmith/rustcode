@@ -17,7 +17,6 @@
 // The structs and trait are fully defined. Implement the Redis I/O in the
 // `RedisAuditCache` methods — everything is stubbed with `todo!()`.
 
-use redis::AsyncCommands;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

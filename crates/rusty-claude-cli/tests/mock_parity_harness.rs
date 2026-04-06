@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use mock_anthropic_service::{MockAnthropicService, SCENARIO_PREFIX};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -188,9 +188,11 @@ fn clean_env_cli_reaches_mock_anthropic_service_across_scripted_parity_scenarios
         21,
         "twelve scenarios should produce twenty-one requests"
     );
-    assert!(captured
-        .iter()
-        .all(|request| request.path == "/v1/messages"));
+    assert!(
+        captured
+            .iter()
+            .all(|request| request.path == "/v1/messages")
+    );
     assert!(captured.iter().all(|request| request.stream));
 
     let scenarios = captured
@@ -486,10 +488,12 @@ fn assert_read_file_roundtrip(workspace: &HarnessWorkspace, run: &ScenarioRun) {
         run.response["tool_uses"][0]["input"],
         Value::String(r#"{"path":"fixture.txt"}"#.to_string())
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("alpha parity line"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("alpha parity line")
+    );
     let output = run.response["tool_results"][0]["output"]
         .as_str()
         .expect("tool output");
@@ -509,10 +513,12 @@ fn assert_grep_chunk_assembly(_: &HarnessWorkspace, run: &ScenarioRun) {
             r#"{"pattern":"parity","path":"fixture.txt","output_mode":"count"}"#.to_string()
         )
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("2 occurrences"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("2 occurrences")
+    );
     assert_eq!(
         run.response["tool_results"][0]["is_error"],
         Value::Bool(false)
@@ -525,10 +531,12 @@ fn assert_write_file_allowed(workspace: &HarnessWorkspace, run: &ScenarioRun) {
         run.response["tool_uses"][0]["name"],
         Value::String("write_file".to_string())
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("generated/output.txt"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("generated/output.txt")
+    );
     let generated = workspace.root.join("generated").join("output.txt");
     let contents = fs::read_to_string(&generated).expect("generated file should exist");
     assert_eq!(contents, "created by mock service\n");
@@ -552,10 +560,12 @@ fn assert_write_file_denied(workspace: &HarnessWorkspace, run: &ScenarioRun) {
         run.response["tool_results"][0]["is_error"],
         Value::Bool(true)
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("denied as expected"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("denied as expected")
+    );
     assert!(!workspace.root.join("generated").join("denied.txt").exists());
 }
 
@@ -582,14 +592,18 @@ fn assert_multi_tool_turn_roundtrip(_: &HarnessWorkspace, run: &ScenarioRun) {
         2,
         "expected two tool results in a single turn"
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("alpha parity line"));
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("2 occurrences"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("alpha parity line")
+    );
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("2 occurrences")
+    );
 }
 
 fn assert_bash_stdout_roundtrip(_: &HarnessWorkspace, run: &ScenarioRun) {
@@ -610,10 +624,12 @@ fn assert_bash_stdout_roundtrip(_: &HarnessWorkspace, run: &ScenarioRun) {
         run.response["tool_results"][0]["is_error"],
         Value::Bool(false)
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("alpha from bash"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("alpha from bash")
+    );
 }
 
 fn assert_bash_permission_prompt_approved(_: &HarnessWorkspace, run: &ScenarioRun) {
@@ -632,10 +648,12 @@ fn assert_bash_permission_prompt_approved(_: &HarnessWorkspace, run: &ScenarioRu
         parsed["stdout"],
         Value::String("approved via prompt".to_string())
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("approved and executed"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("approved and executed")
+    );
 }
 
 fn assert_bash_permission_prompt_denied(_: &HarnessWorkspace, run: &ScenarioRun) {
@@ -650,10 +668,12 @@ fn assert_bash_permission_prompt_denied(_: &HarnessWorkspace, run: &ScenarioRun)
         run.response["tool_results"][0]["is_error"],
         Value::Bool(true)
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("denied as expected"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("denied as expected")
+    );
 }
 
 fn assert_plugin_tool_roundtrip(_: &HarnessWorkspace, run: &ScenarioRun) {
@@ -675,10 +695,12 @@ fn assert_plugin_tool_roundtrip(_: &HarnessWorkspace, run: &ScenarioRun) {
         parsed["input"]["message"],
         Value::String("hello from plugin parity".to_string())
     );
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("hello from plugin parity"));
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("hello from plugin parity")
+    );
 }
 
 fn assert_auto_compact_triggered(_: &HarnessWorkspace, run: &ScenarioRun) {
@@ -713,10 +735,12 @@ fn assert_auto_compact_triggered(_: &HarnessWorkspace, run: &ScenarioRun) {
 
 fn assert_token_cost_reporting(_: &HarnessWorkspace, run: &ScenarioRun) {
     assert_eq!(run.response["iterations"], Value::from(1));
-    assert!(run.response["message"]
-        .as_str()
-        .expect("message text")
-        .contains("token cost reporting parity complete."),);
+    assert!(
+        run.response["message"]
+            .as_str()
+            .expect("message text")
+            .contains("token cost reporting parity complete."),
+    );
     let usage = &run.response["usage"];
     assert!(
         usage["input_tokens"].as_u64().unwrap_or(0) > 0,

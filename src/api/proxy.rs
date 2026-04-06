@@ -1339,6 +1339,7 @@ fn unix_now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use runtime::test_remove_var;
 
     #[test]
     fn hash_key_is_deterministic() {
@@ -1421,8 +1422,7 @@ mod tests {
     #[test]
     fn proxy_state_auth_disabled_when_no_keys() {
         // When RUSTCODE_PROXY_API_KEYS is not set, is_authorised returns true for anything.
-        // SAFETY: This test is single-threaded and no other thread reads this var.
-        unsafe { std::env::remove_var("RUSTCODE_PROXY_API_KEYS") };
+        test_remove_var("RUSTCODE_PROXY_API_KEYS");
         // We can't construct a real ProxyState without a RepoAppState, so we test
         // the key-hash logic in isolation.
         let hashes: Vec<String> = vec![];

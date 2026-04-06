@@ -142,20 +142,24 @@ fn config_command_loads_defaults_from_standard_config_locations() {
     assert!(stdout.contains("Loaded files      3"));
     assert!(stdout.contains("Merged section: model"));
     assert!(stdout.contains("opus"));
-    assert!(stdout.contains(
-        config_home
-            .join("settings.json")
-            .to_str()
-            .expect("utf8 path")
-    ));
+    assert!(
+        stdout.contains(
+            config_home
+                .join("settings.json")
+                .to_str()
+                .expect("utf8 path")
+        )
+    );
     assert!(stdout.contains(temp_dir.join(".claw.json").to_str().expect("utf8 path")));
-    assert!(stdout.contains(
-        temp_dir
-            .join(".claw")
-            .join("settings.local.json")
-            .to_str()
-            .expect("utf8 path")
-    ));
+    assert!(
+        stdout.contains(
+            temp_dir
+                .join(".claw")
+                .join("settings.local.json")
+                .to_str()
+                .expect("utf8 path")
+        )
+    );
 
     fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
 }

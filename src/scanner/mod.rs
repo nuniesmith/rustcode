@@ -7,9 +7,9 @@ pub mod github;
 
 // Re-export main types and functions
 pub use github::{
-    build_dir_tree, fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree,
-    save_file_analysis, scan_directory_for_todos, scan_repo_for_todos, sync_repos_to_db,
-    DetectedTodo, GitHubRepo, ScanResult, TreeNode,
+    DetectedTodo, GitHubRepo, ScanResult, TreeNode, build_dir_tree, fetch_user_repos, get_dir_tree,
+    get_unanalyzed_files, save_dir_tree, save_file_analysis, scan_directory_for_todos,
+    scan_repo_for_todos, sync_repos_to_db,
 };
 
 // Re-export compatibility scanner

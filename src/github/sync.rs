@@ -37,7 +37,7 @@
 // }
 // ```
 
-use crate::github::{client::GitHubClient, models::*, Result};
+use crate::github::{Result, client::GitHubClient, models::*};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};

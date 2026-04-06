@@ -1,11 +1,8 @@
-use std::ffi::OsString;
-use std::sync::{Mutex, OnceLock};
-
-use api::{read_xai_base_url, ApiError, AuthSource, ProviderClient, ProviderKind};
+use api::{ApiError, AuthSource, ProviderClient, ProviderKind, read_xai_base_url};
+use runtime::{test_remove_var, test_set_var};
 
 #[test]
 fn provider_client_routes_grok_aliases_through_xai() {
-    let _lock = env_lock();
     let _xai_api_key = EnvVarGuard::set("XAI_API_KEY", Some("xai-test-key"));
 
     let client = ProviderClient::from_model("grok-mini").expect("grok alias should resolve");
@@ -15,7 +12,6 @@ fn provider_client_routes_grok_aliases_through_xai() {
 
 #[test]
 fn provider_client_reports_missing_xai_credentials_for_grok_models() {
-    let _lock = env_lock();
     let _xai_api_key = EnvVarGuard::set("XAI_API_KEY", None);
 
     let error = ProviderClient::from_model("grok-3")
@@ -32,7 +28,6 @@ fn provider_client_reports_missing_xai_credentials_for_grok_models() {
 
 #[test]
 fn provider_client_uses_explicit_anthropic_auth_without_env_lookup() {
-    let _lock = env_lock();
     let _anthropic_api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", None);
     let _anthropic_auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", None);
 
@@ -47,30 +42,22 @@ fn provider_client_uses_explicit_anthropic_auth_without_env_lookup() {
 
 #[test]
 fn read_xai_base_url_prefers_env_override() {
-    let _lock = env_lock();
     let _xai_base_url = EnvVarGuard::set("XAI_BASE_URL", Some("https://example.xai.test/v1"));
 
     assert_eq!(read_xai_base_url(), "https://example.xai.test/v1");
 }
 
-fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 struct EnvVarGuard {
     key: &'static str,
-    original: Option<OsString>,
+    original: Option<String>,
 }
 
 impl EnvVarGuard {
     fn set(key: &'static str, value: Option<&str>) -> Self {
-        let original = std::env::var_os(key);
+        let original = std::env::var(key).ok();
         match value {
-            Some(value) => unsafe { std::env::set_var(key, value) },
-            None => unsafe { std::env::remove_var(key) },
+            Some(value) => test_set_var(key, value),
+            None => test_remove_var(key),
         }
         Self { key, original }
     }
@@ -79,8 +66,8 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         match &self.original {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
+            Some(value) => test_set_var(self.key, value),
+            None => test_remove_var(self.key),
         }
     }
 }

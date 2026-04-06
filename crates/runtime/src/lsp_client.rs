@@ -398,17 +398,21 @@ mod tests {
         let registry = LspRegistry::new();
         registry.register("rust", LspServerStatus::Disconnected, None, vec![]);
 
-        assert!(registry
-            .dispatch("hover", Some("src/main.rs"), Some(1), Some(0), None)
-            .is_err());
+        assert!(
+            registry
+                .dispatch("hover", Some("src/main.rs"), Some(1), Some(0), None)
+                .is_err()
+        );
     }
 
     #[test]
     fn rejects_unknown_action() {
         let registry = LspRegistry::new();
-        assert!(registry
-            .dispatch("unknown_action", Some("file.rs"), None, None, None)
-            .is_err());
+        assert!(
+            registry
+                .dispatch("unknown_action", Some("file.rs"), None, None, None)
+                .is_err()
+        );
     }
 
     #[test]
@@ -723,12 +727,16 @@ mod tests {
 
         // then
         assert_eq!(diagnostics.len(), 2);
-        assert!(diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message == "warn"));
-        assert!(diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message == "err"));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message == "warn")
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message == "err")
+        );
     }
 
     #[test]

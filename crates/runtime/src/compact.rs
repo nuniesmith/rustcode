@@ -1,7 +1,6 @@
 use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
 
-const COMPACT_CONTINUATION_PREAMBLE: &str =
-    "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n";
+const COMPACT_CONTINUATION_PREAMBLE: &str = "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n";
 const COMPACT_RECENT_MESSAGES_NOTE: &str = "Recent messages are preserved verbatim.";
 const COMPACT_DIRECT_RESUME_INSTRUCTION: &str = "Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, and do not preface with continuation text.";
 
@@ -510,8 +509,9 @@ fn extract_summary_timeline(summary: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_key_files, compact_session, estimate_session_tokens, format_compact_summary,
-        get_compact_continuation_message, infer_pending_work, should_compact, CompactionConfig,
+        CompactionConfig, collect_key_files, compact_session, estimate_session_tokens,
+        format_compact_summary, get_compact_continuation_message, infer_pending_work,
+        should_compact,
     };
     use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
 
@@ -613,18 +613,26 @@ mod tests {
         second_session.messages = follow_up_messages;
         let second = compact_session(&second_session, config);
 
-        assert!(second
-            .formatted_summary
-            .contains("Previously compacted context:"));
-        assert!(second
-            .formatted_summary
-            .contains("Scope: 2 earlier messages compacted"));
-        assert!(second
-            .formatted_summary
-            .contains("Newly compacted context:"));
-        assert!(second
-            .formatted_summary
-            .contains("Also update rust/crates/runtime/src/conversation.rs"));
+        assert!(
+            second
+                .formatted_summary
+                .contains("Previously compacted context:")
+        );
+        assert!(
+            second
+                .formatted_summary
+                .contains("Scope: 2 earlier messages compacted")
+        );
+        assert!(
+            second
+                .formatted_summary
+                .contains("Newly compacted context:")
+        );
+        assert!(
+            second
+                .formatted_summary
+                .contains("Also update rust/crates/runtime/src/conversation.rs")
+        );
         assert!(matches!(
             &second.compacted_session.messages[0].blocks[0],
             ContentBlock::Text { text }

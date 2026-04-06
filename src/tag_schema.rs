@@ -338,8 +338,7 @@ impl SimpleIssueDetector {
                 pattern: r"\.unwrap\(\)",
                 severity: "medium",
                 category: "error-handling",
-                description:
-                    "Using unwrap() can cause panics - consider using proper error handling",
+                description: "Using unwrap() can cause panics - consider using proper error handling",
             },
             SimpleIssuePattern {
                 name: "expect_without_context",

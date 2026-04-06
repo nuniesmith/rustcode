@@ -205,15 +205,17 @@ impl EnhancedScanner {
         // Convert analysis results to tasks
         // Parse analysis text for issues (simplified - in production use structured output)
         // For now, create a single task with the analysis
-        let tasks = vec![Task::new(
-            "Deep Codebase Analysis".to_string(),
-            analysis_text.clone(),
-            PathBuf::new(),
-            None,
-            TaskPriority::High,
-            crate::types::Category::Other,
-        )
-        .with_tag("deep-analysis")];
+        let tasks = vec![
+            Task::new(
+                "Deep Codebase Analysis".to_string(),
+                analysis_text.clone(),
+                PathBuf::new(),
+                None,
+                TaskPriority::High,
+                crate::types::Category::Other,
+            )
+            .with_tag("deep-analysis"),
+        ];
 
         // Note: In the future, we could parse analysis_text to extract structured tasks
         // For now, the single analysis task contains all findings

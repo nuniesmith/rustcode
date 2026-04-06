@@ -257,7 +257,9 @@ impl WorkerRegistry {
             let prompt_preview = prompt_preview(worker.last_prompt.as_deref().unwrap_or_default());
             let message = match observation.target {
                 WorkerPromptTarget::Shell => {
-                    format!("worker prompt landed in shell instead of coding agent: {prompt_preview}")
+                    format!(
+                        "worker prompt landed in shell instead of coding agent: {prompt_preview}"
+                    )
                 }
                 WorkerPromptTarget::WrongTarget => format!(
                     "worker prompt landed in the wrong target instead of {}: {}",
@@ -312,7 +314,9 @@ impl WorkerRegistry {
             worker.last_error = None;
         }
 
-        if detect_ready_for_prompt(screen_text, &lowered) && worker.status != WorkerStatus::ReadyForPrompt {
+        if detect_ready_for_prompt(screen_text, &lowered)
+            && worker.status != WorkerStatus::ReadyForPrompt
+        {
             worker.status = WorkerStatus::ReadyForPrompt;
             worker.prompt_in_flight = false;
             if matches!(
@@ -412,7 +416,10 @@ impl WorkerRegistry {
             worker_id: worker.worker_id.clone(),
             status: worker.status,
             ready: worker.status == WorkerStatus::ReadyForPrompt,
-            blocked: matches!(worker.status, WorkerStatus::TrustRequired | WorkerStatus::Failed),
+            blocked: matches!(
+                worker.status,
+                WorkerStatus::TrustRequired | WorkerStatus::Failed
+            ),
             replay_prompt_ready: worker.replay_prompt.is_some(),
             last_error: worker.last_error.clone(),
         })
@@ -807,9 +814,11 @@ mod tests {
         );
 
         let send_before_resolve = registry.send_prompt(&worker.worker_id, Some("ship it"));
-        assert!(send_before_resolve
-            .expect_err("prompt delivery should be gated")
-            .contains("not ready for prompt delivery"));
+        assert!(
+            send_before_resolve
+                .expect_err("prompt delivery should be gated")
+                .contains("not ready for prompt delivery")
+        );
 
         let resolved = registry
             .resolve_trust(&worker.worker_id)
@@ -932,11 +941,13 @@ mod tests {
             recovered.replay_prompt.as_deref(),
             Some("Run the worker bootstrap tests")
         );
-        assert!(recovered
-            .last_error
-            .expect("wrong target error should exist")
-            .message
-            .contains("wrong target"));
+        assert!(
+            recovered
+                .last_error
+                .expect("wrong target error should exist")
+                .message
+                .contains("wrong target")
+        );
         let misdelivery = recovered
             .events
             .iter()
@@ -1013,10 +1024,12 @@ mod tests {
             .terminate(&worker.worker_id)
             .expect("terminate should succeed");
         assert_eq!(finished.status, WorkerStatus::Finished);
-        assert!(finished
-            .events
-            .iter()
-            .any(|event| event.kind == WorkerEventKind::Finished));
+        assert!(
+            finished
+                .events
+                .iter()
+                .any(|event| event.kind == WorkerEventKind::Finished)
+        );
     }
 
     #[test]
@@ -1038,10 +1051,12 @@ mod tests {
         let error = failed.last_error.expect("provider error should exist");
         assert_eq!(error.kind, WorkerFailureKind::Provider);
         assert!(error.message.contains("provider degraded"));
-        assert!(failed
-            .events
-            .iter()
-            .any(|event| event.kind == WorkerEventKind::Failed));
+        assert!(
+            failed
+                .events
+                .iter()
+                .any(|event| event.kind == WorkerEventKind::Failed)
+        );
     }
 
     #[test]
@@ -1061,9 +1076,11 @@ mod tests {
 
         assert_eq!(finished.status, WorkerStatus::Finished);
         assert!(finished.last_error.is_none());
-        assert!(finished
-            .events
-            .iter()
-            .any(|event| event.kind == WorkerEventKind::Finished));
+        assert!(
+            finished
+                .events
+                .iter()
+                .any(|event| event.kind == WorkerEventKind::Finished)
+        );
     }
 }

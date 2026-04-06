@@ -781,10 +781,12 @@ mod tests {
         let result = serde_json::json!({"score": 95});
 
         // Should be a miss initially
-        assert!(cache
-            .get(CacheType::Refactor, file_path, content)
-            .unwrap()
-            .is_none());
+        assert!(
+            cache
+                .get(CacheType::Refactor, file_path, content)
+                .unwrap()
+                .is_none()
+        );
 
         // Store entry
         cache
@@ -837,16 +839,20 @@ mod tests {
             .unwrap();
 
         // Should hit with same content
-        assert!(cache
-            .get(CacheType::Refactor, file_path, content1)
-            .unwrap()
-            .is_some());
+        assert!(
+            cache
+                .get(CacheType::Refactor, file_path, content1)
+                .unwrap()
+                .is_some()
+        );
 
         // Should miss with different content (stale)
-        assert!(cache
-            .get(CacheType::Refactor, file_path, content2)
-            .unwrap()
-            .is_none());
+        assert!(
+            cache
+                .get(CacheType::Refactor, file_path, content2)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

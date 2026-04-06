@@ -1,11 +1,11 @@
 // Research and Backup CLI Commands
 
-use crate::backup::{print_rclone_setup_instructions, BackupConfig, BackupManager};
+use crate::backup::{BackupConfig, BackupManager, print_rclone_setup_instructions};
 use crate::llm::GrokClient;
 use crate::research::aggregator::Aggregator;
 use crate::research::worker::{ResearchOrchestrator, WorkerConfig};
 use crate::research::{
-    get_research_with_results, list_research, save_research_request, ResearchDepth, ResearchRequest,
+    ResearchDepth, ResearchRequest, get_research_with_results, list_research, save_research_request,
 };
 use anyhow::Result;
 use clap::Subcommand;
@@ -314,10 +314,7 @@ pub async fn handle_backup_command(cmd: BackupCommands) -> Result<()> {
             }
 
             println!("\n{} Restoring from: {}\n", "📦".bold(), name.cyan());
-            println!(
-                "{} Make sure rustcode service is stopped!",
-                "⚠".yellow()
-            );
+            println!("{} Make sure rustcode service is stopped!", "⚠".yellow());
             println!("Press Enter to continue or Ctrl+C to cancel...");
 
             let mut input = String::new();

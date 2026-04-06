@@ -2,16 +2,17 @@
     dead_code,
     unused_imports,
     unused_variables,
+    unsafe_code,
     clippy::unneeded_struct_pattern,
     clippy::unnecessary_wraps,
     clippy::unused_self
 )]
 
+mod app;
+mod args;
 mod init;
 mod input;
 mod render;
-mod app;
-mod args;
 
 use std::collections::BTreeSet;
 use std::env;
@@ -27,29 +28,30 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use api::{
-    resolve_startup_auth_source, AnthropicClient, AuthSource, ContentBlockDelta, InputContentBlock,
-    InputMessage, MessageRequest, MessageResponse, OutputContentBlock, PromptCache,
+    AnthropicClient, AuthSource, ContentBlockDelta, InputContentBlock, InputMessage,
+    MessageRequest, MessageResponse, OutputContentBlock, PromptCache,
     StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    resolve_startup_auth_source,
 };
 
 use commands::{
-    handle_agents_slash_command, handle_mcp_slash_command, handle_plugins_slash_command,
-    handle_skills_slash_command, render_slash_command_help, resume_supported_slash_commands,
-    slash_command_specs, validate_slash_command_input, SlashCommand,
+    SlashCommand, handle_agents_slash_command, handle_mcp_slash_command,
+    handle_plugins_slash_command, handle_skills_slash_command, render_slash_command_help,
+    resume_supported_slash_commands, slash_command_specs, validate_slash_command_input,
 };
-use compat_harness::{extract_manifest, UpstreamPaths};
+use compat_harness::{UpstreamPaths, extract_manifest};
 use init::initialize_repo;
 use plugins::{PluginHooks, PluginManager, PluginManagerConfig, PluginRegistry};
 use render::{MarkdownStreamState, Spinner, TerminalRenderer};
 use runtime::{
+    ApiClient, ApiRequest, AssistantEvent, CompactionConfig, ConfigLoader, ConfigSource,
+    ContentBlock, ConversationMessage, ConversationRuntime, McpServerManager, McpTool, MessageRole,
+    ModelPricing, OAuthAuthorizationRequest, OAuthConfig, OAuthTokenExchangeRequest,
+    PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent, ResolvedPermissionMode,
+    RuntimeError, Session, TokenUsage, ToolError, ToolExecutor, UsageTracker,
     clear_oauth_credentials, format_usd, generate_pkce_pair, generate_state, load_system_prompt,
     parse_oauth_callback_request_target, pricing_for_model, resolve_sandbox_status,
-    save_oauth_credentials, ApiClient, ApiRequest, AssistantEvent, CompactionConfig, ConfigLoader,
-    ConfigSource, ContentBlock, ConversationMessage, ConversationRuntime, McpServerManager,
-    McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest, OAuthConfig,
-    OAuthTokenExchangeRequest, PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent,
-    ResolvedPermissionMode, RuntimeError, Session, TokenUsage, ToolError, ToolExecutor,
-    UsageTracker,
+    save_oauth_credentials,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -183,10 +185,10 @@ fn main() {
 
     // Build a session config from parsed flags.
     let config = app::SessionConfig {
-        model:           cli.model.clone(),
+        model: cli.model.clone(),
         permission_mode: cli.permission_mode,
-        config:          cli.config.clone(),
-        output_format:   cli.output_format,
+        config: cli.config.clone(),
+        output_format: cli.output_format,
     };
 
     let mut session = match app::CliApp::new(config) {
@@ -381,7 +383,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 index += 1;
             }
             other if rest.is_empty() && other.starts_with('-') => {
-                return Err(format_unknown_option(other))
+                return Err(format_unknown_option(other));
             }
             other => {
                 rest.push(other.to_string());
@@ -411,8 +413,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
     if rest.first().map(String::as_str) == Some("--resume") {
         return parse_resume_args(&rest[1..]);
     }
-    if let Some(action) = parse_single_word_command_alias(&rest, &model, permission_mode_override)
-    {
+    if let Some(action) = parse_single_word_command_alias(&rest, &model, permission_mode_override) {
         return action;
     }
 
@@ -1821,37 +1822,38 @@ impl RuntimeMcpState {
             .into_iter()
             .filter(|server_name| !failed_server_names.contains(server_name))
             .collect::<Vec<_>>();
-        let failed_servers = discovery
-            .failed_servers
-            .iter()
-            .map(|failure| runtime::McpFailedServer {
-                server_name: failure.server_name.clone(),
-                phase: runtime::McpLifecyclePhase::ToolDiscovery,
-                error: runtime::McpErrorSurface::new(
-                    runtime::McpLifecyclePhase::ToolDiscovery,
-                    Some(failure.server_name.clone()),
-                    failure.error.clone(),
-                    std::collections::BTreeMap::new(),
-                    true,
-                ),
-            })
-            .chain(discovery.unsupported_servers.iter().map(|server| {
-                runtime::McpFailedServer {
-                    server_name: server.server_name.clone(),
-                    phase: runtime::McpLifecyclePhase::ServerRegistration,
+        let failed_servers =
+            discovery
+                .failed_servers
+                .iter()
+                .map(|failure| runtime::McpFailedServer {
+                    server_name: failure.server_name.clone(),
+                    phase: runtime::McpLifecyclePhase::ToolDiscovery,
                     error: runtime::McpErrorSurface::new(
-                        runtime::McpLifecyclePhase::ServerRegistration,
-                        Some(server.server_name.clone()),
-                        server.reason.clone(),
-                        std::collections::BTreeMap::from([(
-                            "transport".to_string(),
-                            format!("{:?}", server.transport).to_ascii_lowercase(),
-                        )]),
-                        false,
+                        runtime::McpLifecyclePhase::ToolDiscovery,
+                        Some(failure.server_name.clone()),
+                        failure.error.clone(),
+                        std::collections::BTreeMap::new(),
+                        true,
                     ),
-                }
-            }))
-            .collect::<Vec<_>>();
+                })
+                .chain(discovery.unsupported_servers.iter().map(|server| {
+                    runtime::McpFailedServer {
+                        server_name: server.server_name.clone(),
+                        phase: runtime::McpLifecyclePhase::ServerRegistration,
+                        error: runtime::McpErrorSurface::new(
+                            runtime::McpLifecyclePhase::ServerRegistration,
+                            Some(server.server_name.clone()),
+                            server.reason.clone(),
+                            std::collections::BTreeMap::from([(
+                                "transport".to_string(),
+                                format!("{:?}", server.transport).to_ascii_lowercase(),
+                            )]),
+                            false,
+                        ),
+                    }
+                }))
+                .collect::<Vec<_>>();
         let degraded_report = (!failed_servers.is_empty()).then(|| {
             runtime::McpDegradedReport::new(
                 working_servers,
@@ -4233,10 +4235,12 @@ impl InternalPromptProgressRun {
 
         let (heartbeat_stop, heartbeat_rx) = mpsc::channel();
         let heartbeat_reporter = reporter.clone();
-        let heartbeat_handle = thread::spawn(move || loop {
-            match heartbeat_rx.recv_timeout(INTERNAL_PROGRESS_HEARTBEAT_INTERVAL) {
-                Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => heartbeat_reporter.emit_heartbeat(),
+        let heartbeat_handle = thread::spawn(move || {
+            loop {
+                match heartbeat_rx.recv_timeout(INTERNAL_PROGRESS_HEARTBEAT_INTERVAL) {
+                    Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => heartbeat_reporter.emit_heartbeat(),
+                }
             }
         });
 
@@ -5646,7 +5650,10 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
         out,
         "  --dangerously-skip-permissions  Skip all permission checks"
     )?;
-    writeln!(out, "  --allowedTools TOOLS       Restrict enabled tools (repeatable; comma-separated aliases supported)")?;
+    writeln!(
+        out,
+        "  --allowedTools TOOLS       Restrict enabled tools (repeatable; comma-separated aliases supported)"
+    )?;
     writeln!(
         out,
         "  --version, -V              Print version and build information locally"
@@ -5708,7 +5715,9 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_runtime_plugin_state_with_loader, build_runtime_with_plugin_state,
+        CliAction, CliOutputFormat, CliToolExecutor, DEFAULT_MODEL, GitWorkspaceSummary,
+        InternalPromptProgressEvent, InternalPromptProgressState, LiveCli, SlashCommand,
+        StatusUsage, build_runtime_plugin_state_with_loader, build_runtime_with_plugin_state,
         create_managed_session_handle, describe_tool_progress, filter_tool_specs,
         format_bughunter_report, format_commit_preflight_report, format_commit_skipped_report,
         format_compact_report, format_cost_report, format_internal_prompt_progress_line,
@@ -5723,9 +5732,7 @@ mod tests {
         render_resume_usage, resolve_model_alias, resolve_session_reference, response_to_events,
         resume_supported_slash_commands, run_resume_command,
         slash_command_completion_candidates_with_sessions, status_context, validate_no_args,
-        write_mcp_server_fixture, CliAction, CliOutputFormat, CliToolExecutor, GitWorkspaceSummary,
-        InternalPromptProgressEvent, InternalPromptProgressState, LiveCli, SlashCommand,
-        StatusUsage, DEFAULT_MODEL,
+        write_mcp_server_fixture,
     };
     use api::{MessageResponse, OutputContentBlock, Usage};
     use plugins::{
@@ -5854,7 +5861,7 @@ mod tests {
     #[test]
     fn defaults_to_repl_when_no_args() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         assert_eq!(
             parse_args(&[]).expect("args should parse"),
             CliAction::Repl {
@@ -5881,18 +5888,20 @@ mod tests {
 
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        unsafe { std::env::set_var("CLAW_CONFIG_HOME", &config_home); }
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_set_var("CLAW_CONFIG_HOME", &config_home.to_string_lossy());
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
-        match original_config_home {
-            Some(value) => unsafe { std::env::set_var("CLAW_CONFIG_HOME", value) },
-            None => unsafe { std::env::remove_var("CLAW_CONFIG_HOME") },
+        if let Some(value) = original_config_home {
+            runtime::test_set_var("CLAW_CONFIG_HOME", &value);
+        } else {
+            runtime::test_remove_var("CLAW_CONFIG_HOME");
         }
-        match original_permission_mode {
-            Some(value) => unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value) },
-            None => unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE") },
+        if let Some(value) = original_permission_mode {
+            runtime::test_set_var("RUSTY_CLAUDE_PERMISSION_MODE", &value);
+        } else {
+            runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         }
         std::fs::remove_dir_all(root).expect("temp config root should clean up");
 
@@ -5915,18 +5924,20 @@ mod tests {
 
         let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        unsafe { std::env::set_var("CLAW_CONFIG_HOME", &config_home); }
-        unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", "read-only"); }
+        runtime::test_set_var("CLAW_CONFIG_HOME", &config_home.to_string_lossy());
+        runtime::test_set_var("RUSTY_CLAUDE_PERMISSION_MODE", "read-only");
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
-        match original_config_home {
-            Some(value) => unsafe { std::env::set_var("CLAW_CONFIG_HOME", value) },
-            None => unsafe { std::env::remove_var("CLAW_CONFIG_HOME") },
+        if let Some(value) = original_config_home {
+            runtime::test_set_var("CLAW_CONFIG_HOME", &value);
+        } else {
+            runtime::test_remove_var("CLAW_CONFIG_HOME");
         }
-        match original_permission_mode {
-            Some(value) => unsafe { std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value) },
-            None => unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE") },
+        if let Some(value) = original_permission_mode {
+            runtime::test_set_var("RUSTY_CLAUDE_PERMISSION_MODE", &value);
+        } else {
+            runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         }
         std::fs::remove_dir_all(root).expect("temp config root should clean up");
 
@@ -5936,7 +5947,7 @@ mod tests {
     #[test]
     fn parses_prompt_subcommand() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         let args = vec![
             "prompt".to_string(),
             "hello".to_string(),
@@ -5957,7 +5968,7 @@ mod tests {
     #[test]
     fn parses_bare_prompt_and_json_output_flag() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         let args = vec![
             "--output-format=json".to_string(),
             "--model".to_string(),
@@ -5980,7 +5991,7 @@ mod tests {
     #[test]
     fn resolves_model_aliases_in_args() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         let args = vec![
             "--model".to_string(),
             "opus".to_string(),
@@ -6035,7 +6046,7 @@ mod tests {
     #[test]
     fn parses_allowed_tools_flags_with_aliases_and_lists() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         let args = vec![
             "--allowedTools".to_string(),
             "read,glob".to_string(),
@@ -6119,7 +6130,7 @@ mod tests {
     #[test]
     fn parses_single_word_command_aliases_without_falling_back_to_prompt_mode() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         assert_eq!(
             parse_args(&["help".to_string()]).expect("help should parse"),
             CliAction::Help
@@ -6151,7 +6162,7 @@ mod tests {
     #[test]
     fn multi_word_prompt_still_uses_shorthand_prompt_mode() {
         let _guard = env_lock();
-        unsafe { std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE"); }
+        runtime::test_remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
         assert_eq!(
             parse_args(&["help".to_string(), "me".to_string(), "debug".to_string()])
                 .expect("prompt shorthand should still work"),
@@ -6434,7 +6445,7 @@ mod tests {
     fn startup_banner_mentions_workflow_completions() {
         let _guard = env_lock();
         // Inject dummy credentials so LiveCli can construct without real Anthropic key
-        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-banner-test"); }
+        runtime::test_set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-banner-test");
         let root = temp_dir();
         fs::create_dir_all(&root).expect("root dir");
 
@@ -6453,7 +6464,7 @@ mod tests {
         assert!(banner.contains("workflow completions"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
-        unsafe { std::env::remove_var("ANTHROPIC_API_KEY"); }
+        runtime::test_remove_var("ANTHROPIC_API_KEY");
     }
 
     #[test]
@@ -6640,16 +6651,22 @@ mod tests {
         assert!(preflight.contains("Result           ready"));
         assert!(preflight.contains("Branch           feature/ux"));
         assert!(preflight.contains("Workspace        dirty · 2 files · 1 staged, 1 unstaged"));
-        assert!(preflight
-            .contains("Action           create a git commit from the current workspace changes"));
+        assert!(
+            preflight.contains(
+                "Action           create a git commit from the current workspace changes"
+            )
+        );
     }
 
     #[test]
     fn commit_skipped_report_points_to_next_steps() {
         let report = format_commit_skipped_report();
         assert!(report.contains("Reason           no workspace changes"));
-        assert!(report
-            .contains("Action           create a git commit from the current workspace changes"));
+        assert!(
+            report.contains(
+                "Action           create a git commit from the current workspace changes"
+            )
+        );
         assert!(report.contains("/status to inspect context"));
         assert!(report.contains("/diff to inspect repo changes"));
     }
@@ -7579,8 +7596,12 @@ UU conflicted.rs",
         let runtime_config = loader.load().expect("runtime config should load");
         let state = build_runtime_plugin_state_with_loader(&workspace, &loader, &runtime_config)
             .expect("runtime plugin state should load");
-        let mut executor =
-            CliToolExecutor::new(None, false, state.tool_registry.clone(), state.mcp_state.clone());
+        let mut executor = CliToolExecutor::new(
+            None,
+            false,
+            state.tool_registry.clone(),
+            state.mcp_state.clone(),
+        );
 
         let search_output = executor
             .execute("ToolSearch", r#"{"query":"remote","max_results":5}"#)
@@ -7610,7 +7631,9 @@ UU conflicted.rs",
         let config_home = temp_dir();
         // Inject a dummy API key so runtime construction succeeds without real credentials.
         // This test only exercises plugin lifecycle (init/shutdown), never calls the API.
-        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-plugin-lifecycle"); }
+        unsafe {
+            std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key-for-plugin-lifecycle");
+        }
         let workspace = temp_dir();
         let source_root = temp_dir();
         fs::create_dir_all(&config_home).expect("config home");
@@ -7659,7 +7682,9 @@ UU conflicted.rs",
         let _ = fs::remove_dir_all(config_home);
         let _ = fs::remove_dir_all(workspace);
         let _ = fs::remove_dir_all(source_root);
-        unsafe { std::env::remove_var("ANTHROPIC_API_KEY"); }
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+        }
     }
 }
 
@@ -7764,7 +7789,7 @@ fn write_mcp_server_fixture(script_path: &Path) {
 
 #[cfg(test)]
 mod sandbox_report_tests {
-    use super::{format_sandbox_report, HookAbortMonitor};
+    use super::{HookAbortMonitor, format_sandbox_report};
     use runtime::HookAbortSignal;
     use std::sync::mpsc;
     use std::time::Duration;

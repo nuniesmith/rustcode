@@ -504,8 +504,8 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        detect_cache_break, read_json, request_hash_hex, sanitize_path_segment, PromptCache,
-        PromptCacheConfig, PromptCachePaths, TrackedPromptState, REQUEST_FINGERPRINT_PREFIX,
+        PromptCache, PromptCacheConfig, PromptCachePaths, REQUEST_FINGERPRINT_PREFIX,
+        TrackedPromptState, detect_cache_break, read_json, request_hash_hex, sanitize_path_segment,
     };
     use crate::types::{InputMessage, MessageRequest, MessageResponse, OutputContentBlock, Usage};
 
@@ -586,6 +586,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn completion_cache_round_trip_persists_recent_response() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -596,6 +597,7 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
+        // SAFETY: We hold the env_lock() guard throughout, preventing races
         unsafe {
             std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
             std::env::remove_var("CLAUDE_CONFIG_HOME");
@@ -626,6 +628,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn distinct_requests_do_not_collide_in_completion_cache() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -636,6 +639,7 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
+        // SAFETY: We hold the env_lock() guard throughout, preventing races
         unsafe {
             std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
             std::env::remove_var("CLAUDE_CONFIG_HOME");
@@ -653,6 +657,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn expired_completion_entries_are_not_reused() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -663,6 +668,7 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
+        // SAFETY: We hold the env_lock() guard throughout, preventing races
         unsafe {
             std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
             std::env::remove_var("CLAUDE_CONFIG_HOME");

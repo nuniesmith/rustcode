@@ -555,9 +555,11 @@ mod tests {
         assert!(error.contains("MCP server manager is not configured"));
 
         // Unknown tool should fail
-        assert!(registry
-            .call_tool("srv", "missing", &serde_json::json!({}))
-            .is_err());
+        assert!(
+            registry
+                .call_tool("srv", "missing", &serde_json::json!({}))
+                .is_err()
+        );
     }
 
     #[test]
@@ -632,9 +634,11 @@ mod tests {
             None,
         );
 
-        assert!(registry
-            .call_tool("srv", "greet", &serde_json::json!({}))
-            .is_err());
+        assert!(
+            registry
+                .call_tool("srv", "greet", &serde_json::json!({}))
+                .is_err()
+        );
     }
 
     #[test]
@@ -665,12 +669,16 @@ mod tests {
         assert!(registry.list_resources("missing").is_err());
         assert!(registry.read_resource("missing", "uri").is_err());
         assert!(registry.list_tools("missing").is_err());
-        assert!(registry
-            .call_tool("missing", "tool", &serde_json::json!({}))
-            .is_err());
-        assert!(registry
-            .set_auth_status("missing", McpConnectionStatus::Connected)
-            .is_err());
+        assert!(
+            registry
+                .call_tool("missing", "tool", &serde_json::json!({}))
+                .is_err()
+        );
+        assert!(
+            registry
+                .set_auth_status("missing", McpConnectionStatus::Connected)
+                .is_err()
+        );
     }
 
     #[test]

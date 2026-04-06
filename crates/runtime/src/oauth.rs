@@ -458,11 +458,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        clear_oauth_credentials, code_challenge_s256, credentials_path, generate_pkce_pair,
-        generate_state, load_oauth_credentials, loopback_redirect_uri, parse_oauth_callback_query,
-        parse_oauth_callback_request_target, save_oauth_credentials, OAuthAuthorizationRequest,
-        OAuthConfig, OAuthRefreshRequest, OAuthTokenExchangeRequest, OAuthTokenSet,
+        OAuthAuthorizationRequest, OAuthConfig, OAuthRefreshRequest, OAuthTokenExchangeRequest,
+        OAuthTokenSet, clear_oauth_credentials, code_challenge_s256, credentials_path,
+        generate_pkce_pair, generate_state, load_oauth_credentials, loopback_redirect_uri,
+        parse_oauth_callback_query, parse_oauth_callback_request_target, save_oauth_credentials,
     };
+    use crate::{test_remove_var, test_set_var};
 
     fn sample_config() -> OAuthConfig {
         OAuthConfig {
@@ -548,7 +549,7 @@ mod tests {
     fn oauth_credentials_round_trip_and_clear_preserves_other_fields() {
         let _guard = env_lock();
         let config_home = temp_config_home();
-        unsafe { std::env::set_var("CLAW_CONFIG_HOME", &config_home); }
+        test_set_var("CLAW_CONFIG_HOME", config_home.to_string_lossy().as_ref());
         let path = credentials_path().expect("credentials path");
         std::fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
         std::fs::write(&path, "{\"other\":\"value\"}\n").expect("seed credentials");
@@ -574,7 +575,7 @@ mod tests {
         assert!(cleared.contains("\"other\": \"value\""));
         assert!(!cleared.contains("\"oauth\""));
 
-        unsafe { std::env::remove_var("CLAW_CONFIG_HOME"); }
+        test_remove_var("CLAW_CONFIG_HOME");
         std::fs::remove_dir_all(config_home).expect("cleanup temp dir");
     }
 

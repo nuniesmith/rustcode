@@ -66,11 +66,7 @@ pub fn validate_packet(packet: TaskPacket) -> Result<ValidatedPacket, TaskPacket
         &packet.reporting_contract,
         &mut errors,
     );
-    validate_required(
-        "escalation_policy",
-        &packet.escalation_policy,
-        &mut errors,
-    );
+    validate_required("escalation_policy", &packet.escalation_policy, &mut errors);
 
     for (index, test) in packet.acceptance_tests.iter().enumerate() {
         if test.trim().is_empty() {
@@ -137,18 +133,26 @@ mod tests {
         let error = validate_packet(packet).expect_err("packet should be rejected");
 
         assert!(error.errors().len() >= 7);
-        assert!(error
-            .errors()
-            .contains(&"objective must not be empty".to_string()));
-        assert!(error
-            .errors()
-            .contains(&"scope must not be empty".to_string()));
-        assert!(error
-            .errors()
-            .contains(&"repo must not be empty".to_string()));
-        assert!(error.errors().contains(
-            &"acceptance_tests contains an empty value at index 1".to_string()
-        ));
+        assert!(
+            error
+                .errors()
+                .contains(&"objective must not be empty".to_string())
+        );
+        assert!(
+            error
+                .errors()
+                .contains(&"scope must not be empty".to_string())
+        );
+        assert!(
+            error
+                .errors()
+                .contains(&"repo must not be empty".to_string())
+        );
+        assert!(
+            error
+                .errors()
+                .contains(&"acceptance_tests contains an empty value at index 1".to_string())
+        );
     }
 
     #[test]

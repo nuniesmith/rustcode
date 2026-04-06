@@ -182,6 +182,13 @@ name = "github-sync-daemon"
 path = "src/bin/github-sync-daemon.rs"
 
 # ============================================================================
+# Features
+# ============================================================================
+
+[features]
+clipboard = []
+
+# ============================================================================
 # Dependencies
 # ============================================================================
 
@@ -259,6 +266,7 @@ tokio-test = { workspace = true }
 mockito    = { workspace = true }
 tempfile   = { workspace = true }
 criterion  = { workspace = true }
+runtime    = { path = "crates/runtime" }
 
 # ============================================================================
 # Build profiles

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use plugins::{PluginError, PluginManager, PluginSummary};
 use runtime::{
-    compact_session, CompactionConfig, ConfigLoader, ConfigSource, McpOAuthConfig, McpServerConfig,
-    ScopedMcpServerConfig, Session,
+    CompactionConfig, ConfigLoader, ConfigSource, McpOAuthConfig, McpServerConfig,
+    ScopedMcpServerConfig, Session, compact_session,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1513,7 +1513,10 @@ fn parse_session_command(args: &[&str]) -> Result<SlashCommand, SlashCommandPars
             action: Some("list".to_string()),
             target: None,
         }),
-        ["list", ..] => Err(usage_error("session", "[list|switch <session-id>|fork [branch-name]]")),
+        ["list", ..] => Err(usage_error(
+            "session",
+            "[list|switch <session-id>|fork [branch-name]]",
+        )),
         ["switch"] => Err(usage_error("session switch", "<session-id>")),
         ["switch", target] => Ok(SlashCommand::Session {
             action: Some("switch".to_string()),
@@ -2120,14 +2123,19 @@ pub fn handle_plugins_slash_command(
                 message: format!(
                     "Plugins\n  Result           updated {}\n  Name             {}\n  Old version      {}\n  New version      {}\n  Status           {}",
                     update.plugin_id,
-                    plugin
-                        .as_ref()
-                        .map_or_else(|| update.plugin_id.clone(), |plugin| plugin.metadata.name.clone()),
+                    plugin.as_ref().map_or_else(
+                        || update.plugin_id.clone(),
+                        |plugin| plugin.metadata.name.clone()
+                    ),
                     update.old_version,
                     update.new_version,
                     plugin
                         .as_ref()
-                        .map_or("unknown", |plugin| if plugin.enabled { "enabled" } else { "disabled" }),
+                        .map_or("unknown", |plugin| if plugin.enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }),
                 ),
                 reload_runtime: true,
             })
@@ -3261,11 +3269,11 @@ pub fn handle_slash_command(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_plugins_slash_command, handle_slash_command, load_agents_from_roots,
-        load_skills_from_roots, render_agents_report, render_plugins_report, render_skills_report,
-        render_slash_command_help, render_slash_command_help_detail,
-        resume_supported_slash_commands, slash_command_specs, suggest_slash_commands,
-        validate_slash_command_input, DefinitionSource, SkillOrigin, SkillRoot, SlashCommand,
+        DefinitionSource, SkillOrigin, SkillRoot, SlashCommand, handle_plugins_slash_command,
+        handle_slash_command, load_agents_from_roots, load_skills_from_roots, render_agents_report,
+        render_plugins_report, render_skills_report, render_slash_command_help,
+        render_slash_command_help_detail, resume_supported_slash_commands, slash_command_specs,
+        suggest_slash_commands, validate_slash_command_input,
     };
     use plugins::{PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary};
     use runtime::{
@@ -3640,8 +3648,10 @@ mod tests {
         assert!(show_error.contains("  Usage            /mcp show <server>"));
 
         let action_error = parse_error_message("/mcp inspect alpha");
-        assert!(action_error
-            .contains("Unknown /mcp action 'inspect'. Use list, show <server>, or help."));
+        assert!(
+            action_error
+                .contains("Unknown /mcp action 'inspect'. Use list, show <server>, or help.")
+        );
         assert!(action_error.contains("  Usage            /mcp [list|show <server>|help]"));
     }
 
@@ -3807,30 +3817,36 @@ mod tests {
         assert!(
             handle_slash_command("/model claude", &session, CompactionConfig::default()).is_none()
         );
-        assert!(handle_slash_command(
-            "/permissions read-only",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
+        assert!(
+            handle_slash_command(
+                "/permissions read-only",
+                &session,
+                CompactionConfig::default()
+            )
+            .is_none()
+        );
         assert!(handle_slash_command("/clear", &session, CompactionConfig::default()).is_none());
         assert!(
             handle_slash_command("/clear --confirm", &session, CompactionConfig::default())
                 .is_none()
         );
         assert!(handle_slash_command("/cost", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command(
-            "/resume session.json",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
-        assert!(handle_slash_command(
-            "/resume session.jsonl",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
+        assert!(
+            handle_slash_command(
+                "/resume session.json",
+                &session,
+                CompactionConfig::default()
+            )
+            .is_none()
+        );
+        assert!(
+            handle_slash_command(
+                "/resume session.jsonl",
+                &session,
+                CompactionConfig::default()
+            )
+            .is_none()
+        );
         assert!(handle_slash_command("/config", &session, CompactionConfig::default()).is_none());
         assert!(
             handle_slash_command("/config env", &session, CompactionConfig::default()).is_none()
@@ -4135,11 +4151,13 @@ mod tests {
         assert_eq!(installed.display_name.as_deref(), Some("help"));
         assert!(installed.installed_path.ends_with(Path::new("help")));
         assert!(installed.installed_path.join("SKILL.md").is_file());
-        assert!(installed
-            .installed_path
-            .join("scripts")
-            .join("run.sh")
-            .is_file());
+        assert!(
+            installed
+                .installed_path
+                .join("scripts")
+                .join("run.sh")
+                .is_file()
+        );
 
         let report = super::render_skill_install_report(&installed);
         assert!(report.contains("Result           installed help"));

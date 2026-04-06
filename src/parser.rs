@@ -508,9 +508,11 @@ mod tests {
     #[test]
     fn test_parser_new() {
         let parser = Parser::new().unwrap();
-        assert!(parser
-            .parse_file(Path::new("test.rs"), "", Category::Janus)
-            .is_ok());
+        assert!(
+            parser
+                .parse_file(Path::new("test.rs"), "", Category::Janus)
+                .is_ok()
+        );
     }
 
     #[test]

@@ -5,11 +5,11 @@
 
 use std::time::Duration;
 
-use runtime::green_contract::{GreenContract, GreenContractOutcome, GreenLevel};
+use runtime::green_contract::{GreenContract, GreenLevel};
 use runtime::{
-    apply_policy, BranchFreshness, DiffScope, LaneBlocker, LaneContext, PolicyAction,
-    PolicyCondition, PolicyEngine, PolicyRule, ReconcileReason, ReviewStatus, StaleBranchAction,
-    StaleBranchPolicy,
+    BranchFreshness, DiffScope, LaneBlocker, LaneContext, PolicyAction, PolicyCondition,
+    PolicyEngine, PolicyRule, ReconcileReason, ReviewStatus, StaleBranchAction, StaleBranchPolicy,
+    apply_policy,
 };
 
 // stale_branch + policy_engine integration:
@@ -290,7 +290,7 @@ fn fresh_approved_lane_gets_merge_action() {
 #[test]
 fn worker_provider_failure_flows_through_recovery_to_policy() {
     use runtime::recovery_recipes::{
-        attempt_recovery, FailureScenario, RecoveryContext, RecoveryResult, RecoveryStep,
+        FailureScenario, RecoveryContext, RecoveryResult, attempt_recovery,
     };
     use runtime::worker_boot::{WorkerFailureKind, WorkerRegistry, WorkerStatus};
 

@@ -8,15 +8,15 @@ pub mod research_backup_commands;
 pub mod task_commands;
 
 // Re-export command types
-pub use github_commands::{handle_github_command, GithubCommands};
+pub use github_commands::{GithubCommands, handle_github_command};
 
 pub use queue_commands::{
-    handle_queue_command, handle_report_command, handle_scan_command, QueueCommands,
-    ReportCommands, ScanCommands,
+    QueueCommands, ReportCommands, ScanCommands, handle_queue_command, handle_report_command,
+    handle_scan_command,
 };
 
 pub use research_backup_commands::{
-    handle_backup_command, handle_research_command, BackupCommands, ResearchCommands,
+    BackupCommands, ResearchCommands, handle_backup_command, handle_research_command,
 };
 
-pub use task_commands::{handle_task_command, TaskCommands};
+pub use task_commands::{TaskCommands, handle_task_command};

@@ -39,7 +39,7 @@
 // }
 // ```
 
-use crate::github::{models::*, GitHubError, Result};
+use crate::github::{GitHubError, Result, models::*};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};

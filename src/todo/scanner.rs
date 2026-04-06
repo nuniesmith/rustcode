@@ -488,11 +488,7 @@ impl TodoCommentScanner {
                 let keyword = caps.get(1).map_or("", |m| m.as_str());
                 let assignee = caps.get(2).and_then(|m| {
                     let s = m.as_str().trim().to_string();
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s)
-                    }
+                    if s.is_empty() { None } else { Some(s) }
                 });
                 let text = caps
                     .get(3)
@@ -527,11 +523,7 @@ impl TodoCommentScanner {
                 let keyword = caps.get(1).map_or("", |m| m.as_str());
                 let assignee = caps.get(2).and_then(|m| {
                     let s = m.as_str().trim().to_string();
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s)
-                    }
+                    if s.is_empty() { None } else { Some(s) }
                 });
                 let text = caps.get(3).map_or("", |m| m.as_str()).trim().to_string();
 

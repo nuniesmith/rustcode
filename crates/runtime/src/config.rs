@@ -1085,9 +1085,9 @@ fn push_unique(target: &mut Vec<String>, value: String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        deep_merge_objects, parse_permission_mode_label, ConfigLoader, ConfigSource,
-        McpServerConfig, McpTransport, ResolvedPermissionMode, RuntimeHookConfig,
-        RuntimePluginConfig, CLAW_SETTINGS_SCHEMA_NAME,
+        CLAW_SETTINGS_SCHEMA_NAME, ConfigLoader, ConfigSource, McpServerConfig, McpTransport,
+        ResolvedPermissionMode, RuntimeHookConfig, RuntimePluginConfig, deep_merge_objects,
+        parse_permission_mode_label,
     };
     use crate::json::JsonValue;
     use crate::sandbox::FilesystemIsolationMode;
@@ -1114,9 +1114,11 @@ mod tests {
         let error = ConfigLoader::new(&cwd, &home)
             .load()
             .expect_err("config should fail");
-        assert!(error
-            .to_string()
-            .contains("top-level settings value must be a JSON object"));
+        assert!(
+            error
+                .to_string()
+                .contains("top-level settings value must be a JSON object")
+        );
 
         if root.exists() {
             fs::remove_dir_all(root).expect("cleanup temp dir");
@@ -1181,16 +1183,20 @@ mod tests {
                 .len(),
             4
         );
-        assert!(loaded
-            .get("hooks")
-            .and_then(JsonValue::as_object)
-            .expect("hooks object")
-            .contains_key("PreToolUse"));
-        assert!(loaded
-            .get("hooks")
-            .and_then(JsonValue::as_object)
-            .expect("hooks object")
-            .contains_key("PostToolUse"));
+        assert!(
+            loaded
+                .get("hooks")
+                .and_then(JsonValue::as_object)
+                .expect("hooks object")
+                .contains_key("PreToolUse")
+        );
+        assert!(
+            loaded
+                .get("hooks")
+                .and_then(JsonValue::as_object)
+                .expect("hooks object")
+                .contains_key("PostToolUse")
+        );
         assert_eq!(loaded.hooks().pre_tool_use(), &["base".to_string()]);
         assert_eq!(loaded.hooks().post_tool_use(), &["project".to_string()]);
         assert_eq!(
@@ -1486,9 +1492,11 @@ mod tests {
             .expect_err("config should fail");
 
         // then
-        assert!(error
-            .to_string()
-            .contains("mcpServers.broken: missing string field url"));
+        assert!(
+            error
+                .to_string()
+                .contains("mcpServers.broken: missing string field url")
+        );
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
     }

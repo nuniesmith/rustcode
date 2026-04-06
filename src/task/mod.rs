@@ -24,12 +24,12 @@ pub mod models;
 
 // Re-export commonly used types
 pub use grouping::{
-    filter_by_priority, filter_ready_groups, get_next_group, get_top_groups, group_tasks,
-    tasks_are_similar, GroupingStrategy,
+    GroupingStrategy, filter_by_priority, filter_ready_groups, get_next_group, get_top_groups,
+    group_tasks, tasks_are_similar,
 };
 
 pub use models::{
-    assign_group, check_duplicate, create_task, get_pending_tasks, get_task, get_task_stats,
-    get_tasks_by_status, mark_task_failed, update_task_analysis, update_task_status, Task,
-    TaskCategory, TaskGroup, TaskSource, TaskStats, TaskStatus,
+    Task, TaskCategory, TaskGroup, TaskSource, TaskStats, TaskStatus, assign_group,
+    check_duplicate, create_task, get_pending_tasks, get_task, get_task_stats, get_tasks_by_status,
+    mark_task_failed, update_task_analysis, update_task_status,
 };

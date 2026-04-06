@@ -20,8 +20,8 @@
 // }
 // ```
 
-use crate::db::Database;
 use crate::GrokClient;
+use crate::db::Database;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;

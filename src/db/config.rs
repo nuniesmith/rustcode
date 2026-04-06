@@ -298,6 +298,7 @@ pub fn get_data_dir(_config: &DatabaseConfig) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use runtime::{test_remove_var, test_set_var};
 
     #[test]
     fn test_default_config() {
@@ -309,24 +310,18 @@ mod tests {
 
     #[test]
     fn test_config_from_env() {
-        // SAFETY: This test is single-threaded; no other thread reads these vars.
-        unsafe {
-            std::env::set_var(
-                "DATABASE_URL",
-                "postgresql://test:pass@localhost:5432/testdb",
-            );
-            std::env::set_var("RUSTASSISTANT_AUTO_MIGRATE", "false");
-        }
+        test_set_var(
+            "DATABASE_URL",
+            "postgresql://test:pass@localhost:5432/testdb",
+        );
+        test_set_var("RUSTASSISTANT_AUTO_MIGRATE", "false");
 
         let config = DatabaseConfig::from_env();
         assert_eq!(config.url, "postgresql://test:pass@localhost:5432/testdb");
         assert!(!config.auto_migrate);
 
-        // SAFETY: This test is single-threaded; no other thread reads these vars.
-        unsafe {
-            std::env::remove_var("DATABASE_URL");
-            std::env::remove_var("RUSTASSISTANT_AUTO_MIGRATE");
-        }
+        test_remove_var("DATABASE_URL");
+        test_remove_var("RUSTASSISTANT_AUTO_MIGRATE");
     }
 
     #[test]

@@ -375,7 +375,7 @@ impl Session {
                     return Err(SessionError::Format(format!(
                         "unsupported JSONL record type at line {}: {other}",
                         line_number + 1
-                    )))
+                    )));
                 }
             }
         }
@@ -551,7 +551,7 @@ impl ConversationMessage {
             other => {
                 return Err(SessionError::Format(format!(
                     "unsupported message role: {other}"
-                )))
+                )));
             }
         };
         let blocks = object
@@ -932,8 +932,8 @@ fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_rotated_logs, rotate_session_file_if_needed, ContentBlock, ConversationMessage,
-        MessageRole, Session, SessionFork,
+        ContentBlock, ConversationMessage, MessageRole, Session, SessionFork, cleanup_rotated_logs,
+        rotate_session_file_if_needed,
     };
     use crate::json::JsonValue;
     use crate::usage::TokenUsage;

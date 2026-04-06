@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::args::{OutputFormat, PermissionMode};
 use crate::input::{LineEditor, ReadOutcome};
 use crate::render::{Spinner, TerminalRenderer};
+mod streaming;
 use api::{InputMessage, MessageRequest, OutputContentBlock, ProviderClient, StreamEvent, Usage};
 use runtime::{ContentBlock, ConversationMessage, MessageRole, RuntimeError};
 
@@ -49,6 +50,7 @@ pub enum SlashCommand {
     Permissions { mode: Option<String> },
     Config { section: Option<String> },
     Memory,
+    Cancel,
     Clear { confirm: bool },
     Unknown(String),
 }
@@ -77,6 +79,7 @@ impl SlashCommand {
                 section: parts.next().map(ToOwned::to_owned),
             },
             "memory" => Self::Memory,
+            "cancel" => Self::Cancel,
             "clear" => Self::Clear {
                 confirm: parts.next() == Some("--confirm"),
             },
@@ -120,10 +123,126 @@ const SLASH_COMMAND_HANDLERS: &[SlashCommandHandler] = &[
         summary: "Inspect loaded memory/instruction files",
     },
     SlashCommandHandler {
+        command: SlashCommand::Cancel,
+        summary: "Cancel the currently-streaming response",
+    },
+    SlashCommandHandler {
         command: SlashCommand::Clear { confirm: false },
         summary: "Start a fresh local session",
     },
 ];
+
+/// Helper: accumulate a single StreamEvent into the running list of assistant messages.
+///
+/// This mirrors the accumulation logic used by the streaming loop so it can be exercised in unit tests.
+fn accumulate_stream_event(collected: &mut Vec<ConversationMessage>, event: &api::StreamEvent) {
+    match event {
+        api::StreamEvent::MessageStart(start) => {
+            for block in &start.message.content {
+                match block {
+                    api::OutputContentBlock::Text { text } => {
+                        if let Some(last) = collected.last_mut() {
+                            if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut()
+                            {
+                                prev.push_str(text);
+                            } else {
+                                last.blocks.push(ContentBlock::Text { text: text.clone() });
+                            }
+                        } else {
+                            collected.push(ConversationMessage {
+                                role: MessageRole::Assistant,
+                                blocks: vec![ContentBlock::Text { text: text.clone() }],
+                                usage: None,
+                            });
+                        }
+                    }
+                    api::OutputContentBlock::ToolUse { id, name, input } => {
+                        collected.push(ConversationMessage {
+                            role: MessageRole::Assistant,
+                            blocks: vec![ContentBlock::ToolUse {
+                                id: id.clone(),
+                                name: name.clone(),
+                                input: input.to_string(),
+                            }],
+                            usage: None,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+        api::StreamEvent::ContentBlockStart(start) => match &start.content_block {
+            api::OutputContentBlock::Text { text } => {
+                if let Some(last) = collected.last_mut() {
+                    if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut() {
+                        prev.push_str(text);
+                    } else {
+                        last.blocks.push(ContentBlock::Text { text: text.clone() });
+                    }
+                } else {
+                    collected.push(ConversationMessage {
+                        role: MessageRole::Assistant,
+                        blocks: vec![ContentBlock::Text { text: text.clone() }],
+                        usage: None,
+                    });
+                }
+            }
+            api::OutputContentBlock::ToolUse { id, name, input } => {
+                collected.push(ConversationMessage {
+                    role: MessageRole::Assistant,
+                    blocks: vec![ContentBlock::ToolUse {
+                        id: id.clone(),
+                        name: name.clone(),
+                        input: input.to_string(),
+                    }],
+                    usage: None,
+                });
+            }
+            _ => {}
+        },
+        api::StreamEvent::ContentBlockDelta(delta) => match &delta.delta {
+            api::ContentBlockDelta::TextDelta { text } => {
+                if !text.is_empty() {
+                    if let Some(last) = collected.last_mut() {
+                        if let Some(ContentBlock::Text { text: prev }) = last.blocks.last_mut() {
+                            prev.push_str(text);
+                        } else {
+                            last.blocks.push(ContentBlock::Text { text: text.clone() });
+                        }
+                    } else {
+                        collected.push(ConversationMessage {
+                            role: MessageRole::Assistant,
+                            blocks: vec![ContentBlock::Text { text: text.clone() }],
+                            usage: None,
+                        });
+                    }
+                }
+            }
+            api::ContentBlockDelta::InputJsonDelta { partial_json } => {
+                if let Some(last) = collected.last_mut() {
+                    last.blocks.push(ContentBlock::ToolResult {
+                        tool_use_id: "unknown".to_string(),
+                        tool_name: "unknown".to_string(),
+                        output: partial_json.clone(),
+                        is_error: false,
+                    });
+                }
+            }
+            api::ContentBlockDelta::ThinkingDelta { .. }
+            | api::ContentBlockDelta::SignatureDelta { .. } => {}
+        },
+        api::StreamEvent::ContentBlockStop(_) => {
+            // no-op for accumulation
+        }
+        api::StreamEvent::MessageDelta(delta) => {
+            // we don't mutate collected here; usage is kept elsewhere
+            let _ = delta;
+        }
+        api::StreamEvent::MessageStop(_) => {
+            // end marker - nothing special
+        }
+    }
+}
 
 pub struct CliApp {
     config: SessionConfig,
@@ -132,6 +251,7 @@ pub struct CliApp {
     conversation_client: ProviderClient,
     conversation_history: Vec<ConversationMessage>,
     runtime: tokio::runtime::Runtime,
+    current_stream_cancel: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl CliApp {
@@ -140,12 +260,13 @@ impl CliApp {
         let conversation_client = ProviderClient::from_model(&config.model)
             .map_err(|e| RuntimeError::new(e.to_string()))?;
 
-        // Build a current-thread runtime and store it on the CLI app for reuse across turns.
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        // Build a multi-thread runtime and store it on the CLI app for reuse across turns.
+        // Use a small fixed worker thread count; adjust as appropriate for your environment.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
             .enable_all()
             .build()
             .map_err(|e| RuntimeError::new(e.to_string()))?;
-
         Ok(Self {
             config,
             renderer: TerminalRenderer::new(),
@@ -153,6 +274,7 @@ impl CliApp {
             conversation_client,
             conversation_history: Vec::new(),
             runtime,
+            current_stream_cancel: None,
         })
     }
 
@@ -208,6 +330,7 @@ impl CliApp {
             SlashCommand::Permissions { mode } => self.handle_permissions(mode.as_deref(), out),
             SlashCommand::Config { section } => self.handle_config(section.as_deref(), out),
             SlashCommand::Memory => self.handle_memory(out),
+            SlashCommand::Cancel => self.handle_cancel(out),
             SlashCommand::Clear { confirm } => self.handle_clear(confirm, out),
             SlashCommand::Unknown(name) => {
                 writeln!(out, "Unknown slash command: /{name}")?;
@@ -227,6 +350,7 @@ impl CliApp {
                 SlashCommand::Permissions { .. } => "/permissions [mode]",
                 SlashCommand::Config { .. } => "/config [section]",
                 SlashCommand::Memory => "/memory",
+                SlashCommand::Cancel => "/cancel",
                 SlashCommand::Clear { .. } => "/clear [--confirm]",
                 SlashCommand::Unknown(_) => continue,
             };
@@ -364,6 +488,17 @@ impl CliApp {
         Ok(CommandResult::Continue)
     }
 
+    fn handle_cancel(&mut self, out: &mut impl Write) -> io::Result<CommandResult> {
+        if let Some(cancel_tx) = self.current_stream_cancel.take() {
+            // Best-effort send cancellation. If the receiver is gone, ignore.
+            let _ = cancel_tx.send(());
+            writeln!(out, "Cancelled current streaming response.")?;
+        } else {
+            writeln!(out, "No streaming response in progress.")?;
+        }
+        Ok(CommandResult::Continue)
+    }
+
     fn handle_stream_event(
         renderer: &TerminalRenderer,
         event: StreamEvent,
@@ -373,104 +508,17 @@ impl CliApp {
         turn_usage: &mut Usage,
         out: &mut impl Write,
     ) {
-        use api::{ContentBlockDelta, OutputContentBlock};
-
-        match event {
-            StreamEvent::MessageStart(start) => {
-                // Print any immediate content blocks from the start event.
-                for block in start.message.content {
-                    match block {
-                        OutputContentBlock::Text { text } => {
-                            if !*saw_text {
-                                let _ = stream_spinner.finish(
-                                    "Streaming response",
-                                    renderer.color_theme(),
-                                    out,
-                                );
-                                *saw_text = true;
-                            }
-                            let _ = write!(out, "{}", text);
-                            let _ = out.flush();
-                        }
-                        OutputContentBlock::ToolUse { name, input, .. } => {
-                            if *saw_text {
-                                let _ = writeln!(out);
-                            }
-                            let _ = tool_spinner.tick(
-                                &format!("Running tool `{}` with {}", name, input),
-                                renderer.color_theme(),
-                                out,
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            StreamEvent::ContentBlockStart(start) => match start.content_block {
-                OutputContentBlock::Text { text } => {
-                    if !text.is_empty() {
-                        if !*saw_text {
-                            let _ = stream_spinner.finish(
-                                "Streaming response",
-                                renderer.color_theme(),
-                                out,
-                            );
-                            *saw_text = true;
-                        }
-                        let _ = write!(out, "{}", text);
-                        let _ = out.flush();
-                    }
-                }
-                OutputContentBlock::ToolUse { name, input, .. } => {
-                    if *saw_text {
-                        let _ = writeln!(out);
-                    }
-                    let _ = tool_spinner.tick(
-                        &format!("Running tool `{}` with {}", name, input),
-                        renderer.color_theme(),
-                        out,
-                    );
-                }
-                _ => {}
-            },
-            StreamEvent::ContentBlockDelta(delta_event) => match delta_event.delta {
-                ContentBlockDelta::TextDelta { text } => {
-                    if !text.is_empty() {
-                        if !*saw_text {
-                            let _ = stream_spinner.finish(
-                                "Streaming response",
-                                renderer.color_theme(),
-                                out,
-                            );
-                            *saw_text = true;
-                        }
-                        let _ = write!(out, "{}", text);
-                        let _ = out.flush();
-                    }
-                }
-                ContentBlockDelta::InputJsonDelta { partial_json } => {
-                    // Tool input fragments — show minimally in spinner text.
-                    let _ = tool_spinner.tick(
-                        &format!("Collecting tool input: {}", partial_json),
-                        renderer.color_theme(),
-                        out,
-                    );
-                }
-                ContentBlockDelta::ThinkingDelta { .. }
-                | ContentBlockDelta::SignatureDelta { .. } => {}
-            },
-            StreamEvent::ContentBlockStop(_) => {
-                // Close off any running markdown/tool output; ensure newline for clarity.
-                let _ = tool_spinner.finish("Tool completed", renderer.color_theme(), out);
-            }
-            StreamEvent::MessageDelta(delta) => {
-                // Extract usage info if present.
-                *turn_usage = delta.usage;
-            }
-            StreamEvent::MessageStop(_) => {
-                // end-of-message marker; nothing special here for now.
-            }
-        }
+        // Delegate rendering to the shared streaming renderer to avoid duplicated logic.
+        // The rendering helper updates spinners, prints text/tool notices, and updates usage.
+        streaming::render_stream_event(
+            renderer,
+            &event,
+            stream_spinner,
+            tool_spinner,
+            saw_text,
+            turn_usage,
+            out,
+        );
     }
 
     fn write_turn_output(
@@ -538,131 +586,26 @@ impl CliApp {
     }
 
     fn render_response(&mut self, input: &str, out: &mut impl Write) -> io::Result<()> {
-        let mut stream_spinner = Spinner::new();
-        stream_spinner.tick(
-            "Opening conversation stream",
-            self.renderer.color_theme(),
-            out,
-        )?;
+        // Build the request and start the streaming task.
+        // Clone the model string to avoid borrowing `self` immutably while we need a mutable borrow
+        // later (start_stream takes &mut self). Using a local owned `model` prevents overlapping borrows.
+        let model = self.config.model.clone();
+        let req = Self::make_stream_request(&model, input);
+        let rx = self.start_stream(req);
 
-        let renderer = &self.renderer;
+        // Drain events synchronously on the current thread and render them.
+        // Call the free function `collect_stream_events` directly to avoid borrowing `self`
+        // for the drain operation (previously went through an &mut self wrapper which caused
+        // borrow checker conflicts in some code paths).
+        let (assistant_messages, turn_usage, saw_text): (
+            Vec<ConversationMessage>,
+            api::Usage,
+            bool,
+        ) = streaming::collect_stream_events(rx, out, &self.renderer)?;
 
-        // Build a streaming MessageRequest and process events as they arrive.
-        let message_request = MessageRequest {
-            model: self.config.model.clone(),
-            max_tokens: 64_000,
-            messages: vec![InputMessage::user_text(input)],
-            system: None,
-            tools: None,
-            tool_choice: None,
-            stream: true,
-        };
-
-        // Prepare local mutable state used during streaming rendering and collection.
-        let mut assistant_messages: Vec<ConversationMessage> = Vec::new();
-        let mut turn_usage: Usage = Usage::default();
-        let mut tool_spinner = Spinner::new();
-        let mut saw_text = false;
-
-        // Clone client for use inside the runtime.
-        let client = self.conversation_client.clone();
-
-        // Reuse the runtime stored on the CLI instance (created in `new`) so we don't recreate
-        // a runtime on every turn.
-
-        // Run the streaming loop and process events as they arrive.
-        let stream_err = self.runtime.block_on(async {
-            let mut stream = client
-                .stream_message(&message_request)
-                .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-
-            while let Some(event) = stream
-                .next_event()
-                .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
-            {
-                // Render the event synchronously using the existing handler.
-                // We pass mutable references to local spinners/flags so the handler can update them.
-                Self::handle_stream_event(
-                    renderer,
-                    event.clone(),
-                    &mut stream_spinner,
-                    &mut tool_spinner,
-                    &mut saw_text,
-                    &mut turn_usage,
-                    out,
-                );
-
-                // Inspect the event to capture assistant text into collected messages.
-                match event {
-                    StreamEvent::MessageStart(start) => {
-                        for block in start.message.content {
-                            if let OutputContentBlock::Text { text } = block {
-                                assistant_messages.push(ConversationMessage {
-                                    role: MessageRole::Assistant,
-                                    blocks: vec![ContentBlock::Text { text }],
-                                    usage: None,
-                                });
-                            }
-                        }
-                    }
-                    StreamEvent::ContentBlockStart(start) => {
-                        if let OutputContentBlock::Text { text } = start.content_block {
-                            assistant_messages.push(ConversationMessage {
-                                role: MessageRole::Assistant,
-                                blocks: vec![ContentBlock::Text { text }],
-                                usage: None,
-                            });
-                        }
-                    }
-                    StreamEvent::ContentBlockDelta(delta) => {
-                        if let api::ContentBlockDelta::TextDelta { text } = delta.delta {
-                            if !text.is_empty() {
-                                assistant_messages.push(ConversationMessage {
-                                    role: MessageRole::Assistant,
-                                    blocks: vec![ContentBlock::Text { text }],
-                                    usage: None,
-                                });
-                            }
-                        }
-                    }
-                    StreamEvent::ContentBlockStop(_) => {
-                        // Content block finished — nothing to accumulate for the summary here.
-                    }
-                    StreamEvent::MessageDelta(delta) => {
-                        // Update turn usage when a MessageDelta with usage arrives.
-                        turn_usage = delta.usage;
-                    }
-                    StreamEvent::MessageStop(_) => {
-                        // End of message marker; nothing special to do here.
-                    }
-                }
-            }
-
-            Ok::<(), io::Error>(())
-        });
-
-        if let Err(e) = stream_err {
-            stream_spinner.fail(
-                "Streaming response failed",
-                self.renderer.color_theme(),
-                out,
-            )?;
-            return Err(e);
-        }
-
-        // Update last usage from the usage we observed during streaming.
+        // Update last usage and build TurnSummary
         self.state.last_usage = turn_usage.clone();
 
-        // Ensure spacing after streamed text.
-        if saw_text {
-            writeln!(out)?;
-        } else {
-            stream_spinner.finish("Streaming response", self.renderer.color_theme(), out)?;
-        }
-
-        // Build a TurnSummary from the collected assistant messages and the observed usage.
         let summary = runtime::TurnSummary {
             assistant_messages,
             tool_results: Vec::new(),
@@ -675,6 +618,251 @@ impl CliApp {
         self.write_turn_output(&summary, out)?;
         Ok(())
     }
+
+    // Helper: start streaming for a given MessageRequest. This sets up channels,
+    // stores the cancel sender, spawns the async task, and returns the receiver
+    // used to synchronously drain events on the current thread.
+    fn start_stream(
+        &mut self,
+        req: MessageRequest,
+    ) -> std::sync::mpsc::Receiver<Result<StreamEvent, String>> {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<StreamEvent, String>>();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        self.current_stream_cancel = Some(cancel_tx);
+
+        // Spawn background task to pull provider events and send them to the receiver
+        self.spawn_stream_task(req, tx, cancel_rx);
+
+        rx
+    }
+
+    // Testable associated helper: construct a MessageRequest from a model name and input.
+    fn make_stream_request(model: &str, input: &str) -> MessageRequest {
+        MessageRequest {
+            model: model.to_string(),
+            max_tokens: 64_000,
+            messages: vec![InputMessage::user_text(input)],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        }
+    }
+
+    // Helper: build a streaming MessageRequest for the given input using this app's model.
+    fn build_stream_request(&self, input: &str) -> MessageRequest {
+        Self::make_stream_request(&self.config.model, input)
+    }
+
+    // Helper: spawn an async task on the stored runtime to fetch stream events and forward
+    // them to the provided std mpsc sender. The cancel receiver is consumed inside the task.
+    fn spawn_stream_task(
+        &self,
+        req: MessageRequest,
+        sender: std::sync::mpsc::Sender<Result<StreamEvent, String>>,
+        mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let client = self.conversation_client.clone();
+        self.runtime.spawn(async move {
+            match client.stream_message(&req).await {
+                Ok(mut stream) => loop {
+                    tokio::select! {
+                        biased;
+                        next_res = stream.next_event() => {
+                            match next_res {
+                                Ok(Some(event)) => {
+                                    let _ = sender.send(Ok(event));
+                                }
+                                Ok(None) => break,
+                                Err(e) => {
+                                    let _ = sender.send(Err(e.to_string()));
+                                    break;
+                                }
+                            }
+                        }
+                        _ = &mut cancel_rx => {
+                            let _ = sender.send(Err("cancelled".to_string()));
+                            break;
+                        }
+                    }
+                },
+                Err(e) => {
+                    let _ = sender.send(Err(e.to_string()));
+                }
+            }
+        });
+    }
+
+    // Helper: synchronously drain events from the given receiver, render them using the
+    // existing handler, and accumulate assistant messages and usage for a TurnSummary.
+    // This method is now a thin wrapper that delegates the heavy lifting to the free
+    // function `collect_stream_events` so the core logic can be tested in isolation.
+    fn drain_stream_events(
+        &mut self,
+        rx: std::sync::mpsc::Receiver<Result<StreamEvent, String>>,
+        out: &mut impl Write,
+        renderer: &TerminalRenderer,
+    ) -> io::Result<(Vec<ConversationMessage>, Usage, bool)> {
+        streaming::collect_stream_events(rx, out, renderer)
+    }
+}
+
+// Free function extracted from the former `drain_stream_events` implementation so it can
+// be tested in isolation without constructing a full `CliApp`.
+fn collect_stream_events(
+    rx: std::sync::mpsc::Receiver<Result<StreamEvent, String>>,
+    out: &mut impl Write,
+    renderer: &TerminalRenderer,
+) -> io::Result<(Vec<ConversationMessage>, Usage, bool)> {
+    let mut assistant_messages: Vec<ConversationMessage> = Vec::new();
+    let mut turn_usage = Usage::default();
+    let mut stream_spinner = Spinner::new();
+    let mut tool_spinner = Spinner::new();
+    let mut saw_text = false;
+
+    loop {
+        match rx.recv() {
+            Ok(Ok(event)) => {
+                // Render the event
+                CliApp::handle_stream_event(
+                    renderer,
+                    event.clone(),
+                    &mut stream_spinner,
+                    &mut tool_spinner,
+                    &mut saw_text,
+                    &mut turn_usage,
+                    out,
+                );
+
+                // Accumulate assistant content for summary
+                match event {
+                    StreamEvent::MessageStart(start) => {
+                        for block in start.message.content {
+                            match block {
+                                OutputContentBlock::Text { text } => {
+                                    if let Some(last) = assistant_messages.last_mut() {
+                                        if let Some(ContentBlock::Text { text: prev }) =
+                                            last.blocks.last_mut()
+                                        {
+                                            prev.push_str(&text);
+                                        } else {
+                                            last.blocks.push(ContentBlock::Text { text });
+                                        }
+                                    } else {
+                                        assistant_messages.push(ConversationMessage {
+                                            role: MessageRole::Assistant,
+                                            blocks: vec![ContentBlock::Text { text }],
+                                            usage: None,
+                                        });
+                                    }
+                                }
+                                OutputContentBlock::ToolUse { id, name, input } => {
+                                    assistant_messages.push(ConversationMessage {
+                                        role: MessageRole::Assistant,
+                                        blocks: vec![ContentBlock::ToolUse {
+                                            id,
+                                            name,
+                                            input: input.to_string(),
+                                        }],
+                                        usage: None,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    StreamEvent::ContentBlockStart(start) => match start.content_block {
+                        OutputContentBlock::Text { text } => {
+                            if let Some(last) = assistant_messages.last_mut() {
+                                if let Some(ContentBlock::Text { text: prev }) =
+                                    last.blocks.last_mut()
+                                {
+                                    prev.push_str(&text);
+                                } else {
+                                    last.blocks.push(ContentBlock::Text { text });
+                                }
+                            } else {
+                                assistant_messages.push(ConversationMessage {
+                                    role: MessageRole::Assistant,
+                                    blocks: vec![ContentBlock::Text { text }],
+                                    usage: None,
+                                });
+                            }
+                        }
+                        OutputContentBlock::ToolUse { id, name, input } => {
+                            assistant_messages.push(ConversationMessage {
+                                role: MessageRole::Assistant,
+                                blocks: vec![ContentBlock::ToolUse {
+                                    id,
+                                    name,
+                                    input: input.to_string(),
+                                }],
+                                usage: None,
+                            });
+                        }
+                        _ => {}
+                    },
+                    StreamEvent::ContentBlockDelta(delta) => match delta.delta {
+                        api::ContentBlockDelta::TextDelta { text } => {
+                            if !text.is_empty() {
+                                if let Some(last) = assistant_messages.last_mut() {
+                                    if let Some(ContentBlock::Text { text: prev }) =
+                                        last.blocks.last_mut()
+                                    {
+                                        prev.push_str(&text);
+                                    } else {
+                                        last.blocks.push(ContentBlock::Text { text });
+                                    }
+                                } else {
+                                    assistant_messages.push(ConversationMessage {
+                                        role: MessageRole::Assistant,
+                                        blocks: vec![ContentBlock::Text { text }],
+                                        usage: None,
+                                    });
+                                }
+                            }
+                        }
+                        api::ContentBlockDelta::InputJsonDelta { partial_json } => {
+                            if let Some(last) = assistant_messages.last_mut() {
+                                last.blocks.push(ContentBlock::ToolResult {
+                                    tool_use_id: "unknown".to_string(),
+                                    tool_name: "unknown".to_string(),
+                                    output: partial_json,
+                                    is_error: false,
+                                });
+                            }
+                        }
+                        _ => {}
+                    },
+                    StreamEvent::ContentBlockStop(_) => {
+                        // no-op
+                    }
+                    StreamEvent::MessageDelta(delta) => {
+                        turn_usage = delta.usage;
+                    }
+                    StreamEvent::MessageStop(_) => {
+                        // end marker
+                    }
+                }
+            }
+            Ok(Err(err_str)) => {
+                stream_spinner.fail("Streaming response failed", renderer.color_theme(), out)?;
+                return Err(io::Error::new(io::ErrorKind::Other, err_str));
+            }
+            Err(std::sync::mpsc::RecvError) => {
+                break;
+            }
+        }
+    }
+
+    // finalize spinner behavior
+    if saw_text {
+        let _ = writeln!(out);
+    } else {
+        let _ = stream_spinner.finish("Streaming response", renderer.color_theme(), out);
+    }
+
+    Ok((assistant_messages, turn_usage, saw_text))
 }
 
 #[cfg(test)]
@@ -683,7 +871,11 @@ mod tests {
 
     use crate::args::{OutputFormat, PermissionMode};
 
-    use super::{CommandResult, SessionConfig, SlashCommand};
+    use super::{CommandResult, SessionConfig, SlashCommand, accumulate_stream_event};
+    use api::{
+        ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, OutputContentBlock,
+    };
+    use runtime::{ContentBlock, ConversationMessage, MessageRole};
 
     #[test]
     fn parses_required_slash_commands() {
@@ -746,5 +938,160 @@ mod tests {
         assert_eq!(config.model, "claude");
         assert_eq!(config.permission_mode, PermissionMode::DangerFullAccess);
         assert_eq!(config.config, Some(PathBuf::from("settings.toml")));
+    }
+
+    #[test]
+    fn accumulation_merges_text_blocks_and_tools() {
+        // Simulate a stream with a start text, a delta, and a tool use block.
+        let mut collected: Vec<ConversationMessage> = Vec::new();
+
+        // MessageStart with a text block "Hello"
+        let start = api::MessageStartEvent {
+            message: api::MessageResponse {
+                id: "m1".to_string(),
+                kind: "message".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContentBlock::Text {
+                    text: "Hello".to_string(),
+                }],
+                model: "model".to_string(),
+                stop_reason: None,
+                stop_sequence: None,
+                usage: api::Usage::default(),
+                request_id: None,
+            },
+        };
+        let ev_start = api::StreamEvent::MessageStart(start);
+        accumulate_stream_event(&mut collected, &ev_start);
+
+        // ContentBlockDelta with text delta " world"
+        let delta = api::ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::TextDelta {
+                text: " world".to_string(),
+            },
+        };
+        let ev_delta = api::StreamEvent::ContentBlockDelta(delta);
+        accumulate_stream_event(&mut collected, &ev_delta);
+
+        // ContentBlockStart with a tool use
+        let cbstart = ContentBlockStartEvent {
+            index: 1,
+            content_block: OutputContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "echo".to_string(),
+                input: serde_json::json!({"msg":"ok"}),
+            },
+        };
+        let ev_tool = api::StreamEvent::ContentBlockStart(cbstart);
+        accumulate_stream_event(&mut collected, &ev_tool);
+
+        // Expect 2 messages: first with merged text "Hello world", second with tool use block
+        assert_eq!(collected.len(), 2);
+        assert_eq!(collected[0].role, MessageRole::Assistant);
+        assert_eq!(
+            collected[0].blocks,
+            vec![ContentBlock::Text {
+                text: "Hello world".to_string()
+            }]
+        );
+        // Second should contain a ToolUse block
+        match &collected[1].blocks[0] {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "t1");
+                assert_eq!(name, "echo");
+            }
+            other => panic!("expected ToolUse block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cancel_signal_stops_task() {
+        // Verify that a spawned task listening on a oneshot is notified when the sender sends.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        rt.block_on(async {
+            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+            let handle = tokio::spawn(async move {
+                tokio::select! {
+                    _ = rx => { true }
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => { false }
+                }
+            });
+            // send cancel
+            let _ = tx.send(());
+            let res = handle.await.expect("task join");
+            assert!(res, "task should have been cancelled via oneshot");
+        });
+    }
+
+    #[test]
+    fn make_stream_request_sets_fields() {
+        // Test the associated helper constructs a request with expected defaults.
+        let req = super::CliApp::make_stream_request("claude-test", "hello");
+        assert_eq!(req.model, "claude-test");
+        assert_eq!(req.max_tokens, 64_000);
+        assert!(req.stream);
+        assert_eq!(req.messages.len(), 1);
+    }
+
+    #[test]
+    fn collect_stream_events_returns_error_on_stream_failure() {
+        // Create a channel and send an error result (simulates provider failure).
+        let (tx, rx) = std::sync::mpsc::channel::<Result<api::StreamEvent, String>>();
+
+        // Send an error through the stream and close the sender so the receiver will exit.
+        let _ = tx.send(Err("provider failed".to_string()));
+        drop(tx);
+
+        let mut out = Vec::new();
+        let renderer = super::TerminalRenderer::new();
+
+        let res = super::streaming::collect_stream_events(rx, &mut out, &renderer);
+        assert!(
+            res.is_err(),
+            "expected an error when stream reports failure"
+        );
+
+        let output = String::from_utf8_lossy(&out);
+        // Spinner.fail should have written a failure line; check for the failure message.
+        assert!(
+            output.contains("Streaming response failed"),
+            "expected spinner failure output; got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn collect_stream_events_finishes_spinner_when_no_text_seen() {
+        // If the sender is closed without sending any events, collect_stream_events should
+        // finish the spinner (not the text path) and return an empty assistant_messages.
+        let (tx, rx) = std::sync::mpsc::channel::<Result<api::StreamEvent, String>>();
+        drop(tx); // close immediately
+
+        let mut out = Vec::new();
+        let renderer = super::TerminalRenderer::new();
+
+        let (messages, usage, saw_text): (Vec<ConversationMessage>, api::Usage, bool) =
+            super::streaming::collect_stream_events(rx, &mut out, &renderer)
+                .expect("collect events");
+
+        assert!(
+            messages.is_empty(),
+            "no messages expected when no events were sent"
+        );
+        assert!(
+            !saw_text,
+            "saw_text should be false when no text events were received"
+        );
+        // Spinner.finish prints a success line; ensure output contains the summary label.
+        let output = String::from_utf8_lossy(&out);
+        assert!(
+            output.contains("Streaming response"),
+            "expected spinner finish output; got: {}",
+            output
+        );
     }
 }

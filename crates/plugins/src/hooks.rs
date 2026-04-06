@@ -487,13 +487,17 @@ mod tests {
 
         // then
         assert!(result.is_failed());
-        assert!(result
-            .messages()
-            .iter()
-            .any(|message| message.contains("broken plugin hook")));
-        assert!(!result
-            .messages()
-            .iter()
-            .any(|message| message == "later plugin hook"));
+        assert!(
+            result
+                .messages()
+                .iter()
+                .any(|message| message.contains("broken plugin hook"))
+        );
+        assert!(
+            !result
+                .messages()
+                .iter()
+                .any(|message| message == "later plugin hook")
+        );
     }
 }

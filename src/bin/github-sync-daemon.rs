@@ -4,9 +4,7 @@
 // This is designed to run as a long-lived process or service.
 
 use rustcode::db::init_db;
-use rustcode::github::{
-    start_background_sync_with_config, BackgroundSyncConfig, GitHubClient,
-};
+use rustcode::github::{BackgroundSyncConfig, GitHubClient, start_background_sync_with_config};
 use std::env;
 use tokio::signal;
 
@@ -17,9 +15,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize tracing
     tracing_subscriber::fmt()
-        .with_env_filter(
-            env::var("RUST_LOG").unwrap_or_else(|_| "info,rustcode=debug".to_string()),
-        )
+        .with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_| "info,rustcode=debug".to_string()))
         .init();
 
     tracing::info!("🚀 Starting GitHub Background Sync Daemon");

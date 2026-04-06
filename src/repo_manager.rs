@@ -4,7 +4,7 @@
 // Eliminates the need for bind-mounted host directories by cloning repos into
 // container-managed storage.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
