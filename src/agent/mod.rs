@@ -8,7 +8,9 @@
 pub mod pipeline;
 pub mod types;
 
-pub use pipeline::{AgentPipeline, AgentPipelineError, DEFAULT_MAX_ITERATIONS, PhaseError};
+pub use pipeline::{
+    AgentPipeline, AgentPipelineError, DEFAULT_MAX_ITERATIONS, PhaseError, PipelineEvent,
+};
 pub use types::{
     AgentTask, Plan, PipelineIteration, PipelineResult, PlanStep, ReviewOutcome,
     StepExecutionResult, StepStatus,

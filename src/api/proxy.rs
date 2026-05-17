@@ -406,6 +406,13 @@ pub struct OaiErrorDetail {
 
 impl OaiError {
     fn auth(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
+        Self::auth_response(msg)
+    }
+
+    /// Build a `(401 Unauthorized, JSON error body)` response. Exposed at
+    /// crate-level so other endpoints (e.g. `/v1/agent/run`) can return
+    /// the same shape without re-implementing it.
+    pub(crate) fn auth_response(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
         (
             StatusCode::UNAUTHORIZED,
             Json(Self {
@@ -418,7 +425,8 @@ impl OaiError {
         )
     }
 
-    fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
+    /// Build a `(400 Bad Request, JSON error body)` response.
+    pub(crate) fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
         (
             StatusCode::BAD_REQUEST,
             Json(Self {
@@ -467,6 +475,10 @@ pub fn proxy_router(state: ProxyState) -> Router {
     Router::new()
         .route("/chat/completions", post(handle_chat_completions))
         .route("/models", axum::routing::get(handle_list_models))
+        .route(
+            "/agent/run",
+            post(crate::api::agent::handle_agent_run),
+        )
         .with_state(state)
 }
 

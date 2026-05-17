@@ -165,6 +165,21 @@ impl ModelRouter {
         Self { config }
     }
 
+    /// Read-only access to the configured Claude planner model slug.
+    pub fn planner_model(&self) -> &str {
+        &self.config.planner_model
+    }
+
+    /// Read-only access to the configured Claude executor model slug.
+    pub fn executor_model(&self) -> &str {
+        &self.config.executor_model
+    }
+
+    /// Whether Anthropic routing was configured at startup.
+    pub fn anthropic_enabled(&self) -> bool {
+        self.config.anthropic_enabled
+    }
+
     // Classify a raw user prompt into a `TaskKind`.
     //
     // Strategy (in order):
