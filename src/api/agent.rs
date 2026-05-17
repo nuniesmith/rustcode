@@ -203,6 +203,16 @@ pub async fn handle_agent_run(
     if let Some(memory) = state.repo_state.agent_memory.as_ref() {
         pipeline_builder = pipeline_builder
             .with_memory(Arc::clone(memory), crate::agent::DEFAULT_MEMORY_TOP_K);
+        // `with_memory` enables session consolidation by default; honour
+        // the same `RC_MEMORY_CONSOLIDATION=false` opt-out the watcher
+        // path respects.
+        let consolidation_enabled = std::env::var("RC_MEMORY_CONSOLIDATION")
+            .ok()
+            .map(|s| !s.eq_ignore_ascii_case("false"))
+            .unwrap_or(true);
+        if !consolidation_enabled {
+            pipeline_builder = pipeline_builder.without_consolidation();
+        }
     }
     let pipeline = Arc::new(pipeline_builder);
     let pipeline_for_task = Arc::clone(&pipeline);
