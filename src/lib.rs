@@ -53,6 +53,7 @@ pub mod indexing;
 pub mod llm;
 pub mod llm_audit;
 pub mod llm_config;
+pub mod memory;
 pub mod metrics;
 pub mod model_router;
 pub mod multi_tenant;
