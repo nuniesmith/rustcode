@@ -5,6 +5,63 @@
 > **RC-CRATES-A resolved:** 2026-04-05
 > **Code review completed:** 2026-04-05 — see notes below each relevant item
 > **RC-CRATES-D plugin migration prep completed:** 2026-04-06 — three tools migrated to bundled plugins
+> **Architecture review completed:** 2026-04-07 — Claude provider wiring, two-tier routing, agent loop, and memory system added
+
+---
+
+## P0 — Wire Claude as Primary Provider
+
+> `AnthropicClient` in `crates/api/src/providers/anthropic.rs` is fully built (retry, streaming,
+> OAuth, prompt-cache tracking) but is **never called from the proxy hot path** — everything
+> still dispatches to Grok via `GrokClient`. These three items wire it in. Everything below
+> (planner loop, agent memory, cost reduction) depends on this being done first.
+
+- [ ] **CLAUDE-A: add `ModelTarget::Claude` and wire `AnthropicClient` into `dispatch()`**
+  > `src/api/proxy.rs` `dispatch()` only handles `ModelTarget::Local` (Ollama) and
+  > `ModelTarget::Remote` (Grok). Add a third arm:
+  >
+  > ```rust
+  > ModelTarget::Claude { model, tier } => {
+  >     let client = AnthropicClient::from_env()  // reads ANTHROPIC_API_KEY
+  >         .with_prompt_cache(PromptCache::new()); // wire caching
+  >     // call client.send_message() and map response to (String, String, bool, Option<u32>)
+  > }
+  > ```
+  >
+  > Add `ANTHROPIC_API_KEY` to `.env.example` and `config.rs`.
+  > `AnthropicClient::from_env()` already reads this env var — no new auth code needed.
+  > `route_from_model_field()` already catches `claude-*` model names; update it to return
+  > `ModelTarget::Claude` instead of routing back to the Grok remote target.
+
+- [ ] **CLAUDE-B: two-tier routing — Opus 4.7 (planner) vs Sonnet 4.6 (executor)**
+  > Add `ClaudeTier` enum to `src/model_router.rs` and extend `ModelTarget::Claude`:
+  >
+  > ```rust
+  > pub enum ClaudeTier { Planner, Executor }
+  >
+  > // Planner = claude-opus-4-7  → ArchitecturalReason, CodeReview, Unknown
+  > // Executor = claude-sonnet-4-6 → ScaffoldStub, TodoTagging, TreeSummary,
+  > //                                  SymbolExtraction, RepoQuestion
+  > ```
+  >
+  > Update `TaskKind` with a `tier()` method that returns `ClaudeTier`.
+  > Update `ModelRouterConfig::default()` — remove `remote_model: "grok-4-1-fast-reasoning"`,
+  > replace with `planner_model: "claude-opus-4-7"` and `executor_model: "claude-sonnet-4-6"`.
+  > Verify exact model slugs against Anthropic API before hardcoding.
+  > Also update model aliases in `crates/api/src/providers/mod.rs`:
+  > `"opus"` → `"claude-opus-4-7"`, `"sonnet"` → `"claude-sonnet-4-6"`.
+
+- [ ] **CLAUDE-C: enable Anthropic prompt caching in the proxy dispatch**
+  > `PromptCache` in `crates/api/src/prompt_cache.rs` is fully built but unused in the proxy.
+  > When calling `AnthropicClient` from `dispatch()`, attach a `PromptCache` instance so that
+  > repeated system prompts and long repo contexts get `cache_control: {"type": "ephemeral"}`
+  > headers automatically. The `AnthropicClient::with_prompt_cache()` method accepts it.
+  >
+  > Also surface `cache_read_input_tokens` and `cache_creation_input_tokens` from
+  > `Usage` (already tracked in `crates/api/src/types.rs`) into `x_ra_metadata` on the
+  > proxy response so cost tracking reflects actual cache savings.
+  >
+  > Expected savings: 80–90% token cost reduction on repeated repo-context calls.
 
 ---
 
@@ -30,19 +87,142 @@
 
 ---
 
+## P1 — Planner-Executor-Reviewer Agent Loop
+
+> Implements the three-phase agent cycle: Opus plans → Sonnet executes → Opus reviews → repeat.
+> Prerequisite: CLAUDE-A and CLAUDE-B must be done first.
+> The `ProjectPlan` and `ProjectPhase` structs already exist in `src/llm/grok.rs` — reuse them.
+
+- [ ] **AGENT-A: `src/agent/pipeline.rs` — `AgentPipeline` struct with three phases**
+  > ```rust
+  > pub struct AgentPipeline {
+  >     planner:  AnthropicClient,  // claude-opus-4-7
+  >     executor: AnthropicClient,  // claude-sonnet-4-6
+  >     memory:   AgentMemory,      // see MEM-A below
+  > }
+  >
+  > impl AgentPipeline {
+  >     // Phase 1: Opus generates a structured JSON plan
+  >     async fn plan(&self, task: &str, context: &str) -> Result<ProjectPlan>
+  >
+  >     // Phase 2: Sonnet executes each step; injects memory + RAG context per step
+  >     async fn execute(&self, plan: &ProjectPlan, repo: &RepoContext) -> Result<Vec<StepResult>>
+  >
+  >     // Phase 3: Opus reviews all step results; returns pass/revise + critique notes
+  >     async fn review(&self, task: &str, results: &[StepResult]) -> Result<ReviewOutcome>
+  >
+  >     // Orchestrator: runs plan→execute→review, repeats if review says revise
+  >     // Max iterations configurable (default 3) to cap cost
+  >     pub async fn run(&self, task: AgentTask, max_iterations: u32) -> Result<PipelineResult>
+  > }
+  > ```
+  >
+  > `ReviewOutcome` should be an enum: `Approved { summary }` | `Revise { critique, suggestions }`.
+  > `PipelineResult` records the full trace: plan, per-step results, review outcome, iteration count.
+
+- [ ] **AGENT-B: `POST /v1/agent/run` endpoint**
+  > Wire `AgentPipeline::run()` behind a new Axum route in `src/api/`.
+  > Request body mirrors the task file schema (TASK-B) so the same JSON works
+  > both as a dropped task file and as a direct API call.
+  > Response: streaming SSE so the client sees plan → step output → review in real time.
+  > Auth: same bearer-token gate as `/v1/chat/completions`.
+
+- [ ] **AGENT-C: wire `AgentPipeline` into the task file watcher (TASK-C)**
+  > When the `tasks/` watcher picks up a file (TASK-A), hand it to `AgentPipeline::run()`
+  > instead of the current single-shot LLM scaffold. Write `PipelineResult` to
+  > `tasks/results/{id}.json` (TASK-E). Only open a PR (TASK-D) if `ReviewOutcome::Approved`.
+
+- [ ] **AGENT-D: per-step tool execution inside the executor phase**
+  > During Phase 2, Sonnet may emit tool calls (file create/edit, bash, search).
+  > Wire `runtime::execute_bash` (RC-CRATES-C) and `plugins::PluginLifecycle` (RC-CRATES-D)
+  > as the tool backends so the executor can actually modify files, not just describe changes.
+  > Per-language test runner (TASK-C) should be called automatically after each file-modifying step.
+
+---
+
+## P1 — Agent Memory System
+
+> Persistent cross-session memory that accumulates knowledge about your projects, preferences,
+> and patterns over time. Injected into the system prompt before each LLM call to give agents
+> context without re-reading the full codebase. This is the "personalization" layer.
+> `fastembed` is already in workspace deps — use it for memory embeddings.
+
+- [ ] **MEM-A: `src/memory/store.rs` — `AgentMemory` backed by SQLite**
+  > ```rust
+  > pub struct AgentMemory { db: SqlitePool, embedder: TextEmbedding }
+  >
+  > pub enum MemoryKind {
+  >     Observation,  // "project X uses pattern Y"
+  >     Decision,     // "we chose approach A over B because..."
+  >     Preference,   // "user prefers idiomatic Rust over verbose code"
+  >     Pattern,      // recurring architectural pattern seen across projects
+  >     TaskOutcome,  // what worked / what failed for a given task type
+  > }
+  >
+  > pub struct MemoryEntry {
+  >     pub id: Uuid,
+  >     pub project: Option<String>,   // None = global, Some = project-scoped
+  >     pub kind: MemoryKind,
+  >     pub content: String,
+  >     pub embedding: Vec<f32>,
+  >     pub importance: f32,           // 0.0–1.0; drives retrieval ranking
+  >     pub created_at: DateTime<Utc>,
+  >     pub last_accessed: DateTime<Utc>,
+  >     pub access_count: u32,
+  > }
+  > ```
+  >
+  > Add SQL migration `sql/023_agent_memory.sql`.
+  > `AgentMemory::search(query, top_k)` — embed query with fastembed, cosine-rank stored entries.
+  > `AgentMemory::record(entry)` — embed content, write to DB.
+
+- [ ] **MEM-B: inject memories into every LLM call**
+  > Before calling `AnthropicClient::send_message()` in `dispatch()` and inside `AgentPipeline`,
+  > call `memory.search(user_prompt, 5)` and prepend the top-k results to the system prompt:
+  >
+  > ```
+  > [Memory]
+  > - (Decision) Prefer sqlx over diesel for async-friendly DB access in this project.
+  > - (Pattern) All Axum handlers use State<Arc<AppState>>; never clone the pool directly.
+  > - (Preference) User wants streaming responses for all long-running operations.
+  > ```
+  >
+  > Gate behind a feature flag `memory_injection: bool` in `ModelRouterConfig` so it
+  > can be disabled for benchmarking / cost comparison.
+
+- [ ] **MEM-C: session consolidation — extract and store memories after each session**
+  > After a session ends (or when `Session::record_compaction()` fires), call Sonnet
+  > with a structured extraction prompt to identify decisions, patterns, and preferences
+  > worth saving. Write each to `AgentMemory::record()`.
+  > Reuse `runtime::summary_compression` for the pre-extraction summary step.
+  > This is the "learns over time" behaviour — each completed session leaves behind
+  > durable memories that improve future sessions.
+
+- [ ] **MEM-D: importance scoring + pruning**
+  > Increment `access_count` and update `last_accessed` on every memory retrieval.
+  > Nightly cron (or manual trigger via `POST /api/v1/memory/prune`):
+  > - Mark entries with `access_count == 0` and age > 30 days as low-importance
+  > - Delete entries with `importance < 0.1` and age > 90 days
+  > - Merge near-duplicate entries (cosine similarity > 0.95) — keep higher-importance copy
+
+---
+
 ## P1 — API & Configuration
 
 ### RC-LLM: Routing & Proxy Validation
-- [ ] Verify `rc-app` starts and serves `/v1/chat/completions` with only `XAI_API_KEY` set (no Ollama) on live stack
-- [ ] Verify `ModelRouter` falls back to Grok when Ollama is unreachable (implemented, needs live validation)
-- [ ] Test `curl` end-to-end: auth header, model=auto, multi-turn context preservation
+- [ ] Verify `rc-app` starts and serves `/v1/chat/completions` with only `ANTHROPIC_API_KEY` set (no Ollama) on live stack — replaces the old `XAI_API_KEY`-only smoke test
+- [ ] Verify `ModelRouter` routes `TaskKind::ScaffoldStub` → Sonnet and `TaskKind::ArchitecturalReason` → Opus after CLAUDE-B lands
+- [ ] Verify fallback: if `ANTHROPIC_API_KEY` absent but `XAI_API_KEY` present, router falls back to Grok gracefully
+- [ ] Test `curl` end-to-end: auth header, `model=auto` classifies correctly, multi-turn context preservation
 - [ ] Test `x_repo_id` injection: register a repo, send domain-specific question, confirm `rag_chunks_used > 0`
+- [ ] Test prompt cache: send identical request twice, confirm `cache_read_input_tokens > 0` in second response `x_ra_metadata`
 - [ ] Test cache: send identical request twice, confirm `cached: true` on second response
 - [ ] Test auth: request without `Authorization` header → 401
 
 ### RC-API: Security & Config
 - [ ] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
-- [ ] Routing heuristic tuning — after deployment, measure local vs Grok classification quality and adjust `ModelRouter::llm_classify` system prompt
+- [ ] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
+- [ ] Add `ANTHROPIC_API_KEY`, `RC_PLANNER_MODEL`, `RC_EXECUTOR_MODEL` to `.env.example` and README config table
 
 ### OpenClaw Integration (CLAW-A/B)
 - [ ] Add `DISCORD_BOT_TOKEN` and `OPENCLAW_GATEWAY_TOKEN` to `.env` on deployment target
@@ -114,15 +294,15 @@
   > **Preparation step completed (2026-04-06):**
   > - Migrated three plugin manifests from project root `.toml` files to bundled plugin structure:
   >   - `crates/plugins/bundled/todo-scan/` — TodoScanner plugin for repository TODO/FIXME/HACK marker scanning
-  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization using Grok 4.20
-  >   - `crates/plugins/bundled/code-review/` — Automated code review using Grok multi-agent
+  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization (update model ref from Grok → Sonnet after CLAUDE-A)
+  >   - `crates/plugins/bundled/code-review/` — Automated code review (update model ref from Grok → Opus after CLAUDE-A)
   > - Converted all manifests from TOML to JSON format per project plugin standard
   > - Added comprehensive README.md documentation for each plugin
   > - All three plugins follow the same layout as `example-bundled` and `sample-hooks`
   >
-  > **Next:** wire `plugins::PluginLifecycle` into the task executor (TASK-C) so that
-  > bundled plugins (example-bundled, sample-hooks, todo-scan, file-summary, code-review)
-  > run pre/post hooks around each step.
+  > **Next:** wire `plugins::PluginLifecycle` into the task executor (TASK-C) / `AgentPipeline`
+  > (AGENT-D) so that bundled plugins run pre/post hooks around each step.
+  > Update `file-summary` and `code-review` plugin manifests to reference Claude models once CLAUDE-A is done.
 
 - [ ] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
   > Add `--mcp-server` flag to `src/bin/server.rs`. When set, start a second Axum
@@ -135,12 +315,13 @@
   > rustcode Dockerfile copying `target/release/claw` into the image.
   > Verify: `docker run rustcode claw --help`
 
-- [ ] **RC-CRATES-G: Grok integration test suite; validate then switch to Claude API**
+- [ ] **RC-CRATES-G: integration test suite covering both Claude and Grok paths**
   > `crates/mock-anthropic-service` is the test harness — already a dev-dep of rusty-claude-cli.
   > Add integration tests in `crates/rusty-claude-cli/tests/` that:
-  > 1. Full round-trip through `api::AnthropicClient`
-  > 2. `api::OpenAiCompatClient` with xAI base URL (Grok)
-  > 3. Migrate `grok_client.rs` to api crate, re-run tests to confirm parity
+  > 1. Full round-trip through `api::AnthropicClient` (primary path after CLAUDE-A)
+  > 2. Two-tier routing: verify Opus is selected for `ArchitecturalReason`, Sonnet for `ScaffoldStub`
+  > 3. `api::OpenAiCompatClient` with xAI base URL (Grok) — kept as fallback path
+  > 4. Prompt cache hit: send same request twice, assert `cache_read_input_tokens > 0` on second call
   >
   > Note: `src/test_grok_integration.rs` currently lives inside `src/` and compiles into the
   > library. Move it to `tests/integration/grok.rs` as part of this task — see RC-CLEANUP-F.
@@ -155,12 +336,12 @@
 - [ ] **RC-CLEANUP-A: consolidate LLM clients into `src/llm/`**
   > Six separate Grok/xAI implementations exist right now (see RC-CRATES-B for the list).
   > Once RC-CRATES-B migrates each caller off raw reqwest, merge all into `src/llm/`:
-  > - `src/llm/client.rs` — unified Grok client (merged from grok_client + grok_reasoning + llm/grok)
+  > - `src/llm/client.rs` — unified client wrapping `api::AnthropicClient` + `api::OpenAiCompatClient`
   > - `src/llm/ollama.rs` — Ollama client (from ollama_client.rs)
-  > - `src/llm/router.rs` — ModelRouter (from model_router.rs)
-  > - `src/llm/config.rs` — LlmConfig (from llm_config.rs)
+  > - `src/llm/router.rs` — ModelRouter with `ClaudeTier` support (from model_router.rs, after CLAUDE-B)
+  > - `src/llm/config.rs` — LlmConfig with `planner_model` / `executor_model` fields (from llm_config.rs)
   > - `src/llm/usage/budget.rs` — TokenBudget (from token_budget.rs)
-  > - `src/llm/usage/costs.rs` — CostTracker (from cost_tracker.rs)
+  > - `src/llm/usage/costs.rs` — CostTracker; extend to track `cache_creation_tokens` and `cache_read_tokens` separately
   >
   > Delete: `src/grok_client.rs`, `src/grok_reasoning.rs`, `src/ollama_client.rs`,
   >         `src/simple_client.rs`, `src/model_router.rs`, `src/llm_config.rs`,
@@ -226,8 +407,10 @@
 ## P1 — OpenClaw LLM Wiring
 
 - [ ] Wire futures trading app to RC proxy: add `RC_BASE_URL`, `RC_API_KEY`, `RC_TIMEOUT_SECS`, `RC_MODEL`, `RC_REPO_ID` to futures app env
+- [ ] Set `RC_MODEL=claude-sonnet-4-6` for routine calls, `RC_MODEL=claude-opus-4-7` for planning/review calls in the futures app
 - [ ] Validate `x_ra_metadata.cached` flips to `true` on second identical call
-- [ ] Confirm Grok fallback fires when Ollama container is killed
+- [ ] Validate `x_ra_metadata.cache_read_input_tokens > 0` on cache-warmed calls (Anthropic-side savings)
+- [ ] Confirm Grok fallback fires when `ANTHROPIC_API_KEY` is absent but `XAI_API_KEY` is present
 
 ---
 
@@ -286,9 +469,58 @@
 
 ---
 
+## P2 — Server Deployment + OpenWebUI
+
+> Rustcode is already OpenAI-compatible — OpenWebUI needs zero code changes.
+> This is purely infrastructure/config work.
+
+- [ ] **DEPLOY-A: Docker Compose with OpenWebUI sidecar**
+  > Add `docker-compose.yml` at repo root:
+  > ```yaml
+  > services:
+  >   rustcode:
+  >     build: .
+  >     ports: ["3500:3500"]
+  >     env_file: .env
+  >   openwebui:
+  >     image: ghcr.io/open-webui/open-webui:main
+  >     ports: ["3000:8080"]
+  >     environment:
+  >       OPENAI_API_BASE_URL: http://rustcode:3500/v1
+  >       OPENAI_API_KEY: "${RC_PROXY_API_KEY}"
+  >     depends_on: [rustcode]
+  > ```
+  > OpenWebUI will pull the model list from `GET /v1/models` and route all chat through rustcode.
+  > Users get the full chat interface + history storage with no extra backend work.
+
+- [ ] **DEPLOY-B: Zed IDE config documentation**
+  > Document the Zed `assistant` config block in README:
+  > ```json
+  > "assistant": {
+  >   "version": "2",
+  >   "default_model": { "provider": "openai", "model": "claude-sonnet-4-6" },
+  >   "openai": {
+  >     "api_url": "http://your-server:3500/v1",
+  >     "available_models": [{ "name": "claude-opus-4-7" }, { "name": "claude-sonnet-4-6" }]
+  >   }
+  > }
+  > ```
+  > Works today against the existing proxy — no code changes needed.
+
+- [ ] **DEPLOY-C: model slug verification**
+  > Before hardcoding in CLAUDE-B, confirm exact Anthropic model slugs via:
+  > `curl https://api.anthropic.com/v1/models -H "x-api-key: $ANTHROPIC_API_KEY"`
+  > Update `crates/api/src/providers/mod.rs` aliases (`"opus"`, `"sonnet"`) to match.
+  > Currently set to `claude-opus-4-6` / `claude-sonnet-4-6` — update to `claude-opus-4-7`
+  > if that slug is confirmed live.
+
+---
+
 ## P3 — Future
 
 - [ ] OSS-B: OpenViking — stand up Docker instance, ingest FKS docs/strategies, compare retrieval quality vs current HNSW
 - [ ] CI/CD re-enable: move `ci-cd.yml` back to `.github/workflows/` after OpenClaw OOM fix + Tailscale second-device verification
 - [ ] Split `crates/commands/src/lib.rs` (140K, skipped in pack as too large) — it's currently a single-file crate with no internal module structure; break into submodules by command group
 - [ ] Split `crates/rusty-claude-cli/src/main.rs` (272K, skipped in pack) — same issue
+- [ ] **MEM-E: memory dashboard** — `GET /api/v1/memory` endpoint listing stored entries with importance scores; `DELETE /api/v1/memory/:id` for manual pruning; expose in OpenWebUI via a custom tool
+- [ ] **AGENT-E: agent persona memory** — after OSS-D (persona integration) is done, store persona-specific memories separately so the quantitative-analyst agent and rust-systems-engineer agent build independent knowledge bases
