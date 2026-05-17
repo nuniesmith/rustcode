@@ -1306,7 +1306,12 @@ fn build_agent_task(task: &TaskFile) -> crate::agent::AgentTask {
         context.push_str(&format!("{}. {}\n", i + 1, step));
     }
     context.push_str(&format!("\nTarget repo: {}\nTarget branch: {}\n", task.repo, task.branch));
-    crate::agent::AgentTask::new(task.description.clone()).with_context(context)
+    // Scope memory lookups to the task's repo so memories recorded against
+    // this project (and globals) surface, but unrelated projects' memories
+    // don't pollute the prompt.
+    crate::agent::AgentTask::new(task.description.clone())
+        .with_context(context)
+        .with_memory_scope(task.repo.clone())
 }
 
 // Convert agent step outputs (from the final iteration) into the

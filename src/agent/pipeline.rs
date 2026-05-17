@@ -48,12 +48,25 @@ const REVIEWER_MAX_TOKENS: u32 = 2048;
 /// this stops a malformed plan from looping indefinitely on read_file.
 const MAX_TOOL_ITERATIONS_PER_STEP: u32 = 12;
 
+/// Default number of memory entries to retrieve per LLM call when memory
+/// injection is enabled. Five is enough to bring real prior context into a
+/// task without saturating the prompt with marginal hits.
+pub const DEFAULT_MEMORY_TOP_K: usize = 5;
+
 #[derive(Debug, Clone)]
 pub struct AgentPipeline {
     planner: Arc<AnthropicClient>,
     executor: Arc<AnthropicClient>,
     planner_model: String,
     executor_model: String,
+    /// Optional memory store. When attached, the planner and executor
+    /// prompts get a `[Memory]` block prepended with the top-k matches
+    /// for the task description / current step. The project scope for
+    /// each call is read from `AgentTask::memory_scope` so a single
+    /// pipeline can serve tasks across multiple repos.
+    memory: Option<Arc<crate::memory::AgentMemory>>,
+    /// Top-k memories retrieved per LLM call.
+    memory_top_k: usize,
 }
 
 impl AgentPipeline {
@@ -76,6 +89,44 @@ impl AgentPipeline {
             executor,
             planner_model: planner_model.into(),
             executor_model: executor_model.into(),
+            memory: None,
+            memory_top_k: DEFAULT_MEMORY_TOP_K,
+        }
+    }
+
+    /// Attach a persistent agent memory store. When set, planner and
+    /// executor prompts get a `[Memory]` block prepended with up to
+    /// `top_k` matches. Per-call project scope comes from
+    /// `AgentTask::memory_scope`, so a single pipeline can serve tasks
+    /// across multiple repos.
+    ///
+    /// Memory injection is best-effort: a `search` failure logs a warning
+    /// and the pipeline proceeds with the unmodified prompt.
+    #[must_use]
+    pub fn with_memory(
+        mut self,
+        memory: Arc<crate::memory::AgentMemory>,
+        top_k: usize,
+    ) -> Self {
+        self.memory = Some(memory);
+        self.memory_top_k = top_k.max(1);
+        self
+    }
+
+    // Best-effort memory lookup. Returns the formatted `[Memory]` block
+    // (possibly empty) ready to prepend to a prompt. `scope` is typically
+    // `task.memory_scope.as_deref()`.
+    async fn fetch_memory_block(&self, query: &str, scope: Option<&str>) -> String {
+        let Some(memory) = self.memory.as_ref() else {
+            return String::new();
+        };
+        match memory.search(query, scope, self.memory_top_k).await {
+            Ok(hits) if !hits.is_empty() => crate::memory::format_memories_for_prompt(&hits),
+            Ok(_) => String::new(),
+            Err(e) => {
+                warn!(error = %e, "Agent pipeline: memory.search failed — continuing without it");
+                String::new()
+            }
         }
     }
 
@@ -175,7 +226,14 @@ impl AgentPipeline {
             }
 
             let step_results = self
-                .execute_internal(&plan, task.context.as_deref(), iter, events.as_ref(), tools)
+                .execute_internal(
+                    &plan,
+                    task.context.as_deref(),
+                    task.memory_scope.as_deref(),
+                    iter,
+                    events.as_ref(),
+                    tools,
+                )
                 .await
                 .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
             debug!(
@@ -272,10 +330,15 @@ impl AgentPipeline {
     ) -> Result<Plan, PhaseError> {
         let system = PLANNER_SYSTEM_PROMPT.to_string();
 
-        let mut user = format!(
-            "## Task\n{}\n\n",
-            task.description
-        );
+        let memory_block = self
+            .fetch_memory_block(&task.description, task.memory_scope.as_deref())
+            .await;
+        let mut user = String::new();
+        if !memory_block.is_empty() {
+            user.push_str(&memory_block);
+            user.push('\n');
+        }
+        user.push_str(&format!("## Task\n{}\n\n", task.description));
         if let Some(ctx) = task.context.as_deref() {
             user.push_str(&format!("## Repo context\n{}\n\n", ctx));
         }
@@ -320,18 +383,22 @@ impl AgentPipeline {
         plan: &Plan,
         repo_context: Option<&str>,
     ) -> Result<Vec<StepExecutionResult>, PhaseError> {
-        self.execute_internal(plan, repo_context, 0, None, None).await
+        self.execute_internal(plan, repo_context, None, 0, None, None)
+            .await
     }
 
     // Internal step loop. `events` is `Some` when called from `run_streaming`
     // so per-step start/complete events can be emitted between LLM calls.
     // `iteration` is the iteration index attached to those events (0 when
     // the caller doesn't track iterations). `tools` is `Some` to switch
-    // the per-step LLM call into Anthropic tool-use mode.
+    // the per-step LLM call into Anthropic tool-use mode. `memory_scope`
+    // is `Some(project)` to filter memory lookups to that scope (plus
+    // globals); `None` lets every project's memory match.
     async fn execute_internal(
         &self,
         plan: &Plan,
         repo_context: Option<&str>,
+        memory_scope: Option<&str>,
         iteration: u32,
         events: Option<&tokio::sync::mpsc::Sender<PipelineEvent>>,
         tools: Option<&dyn ToolBackend>,
@@ -349,8 +416,21 @@ impl AgentPipeline {
                     .await;
             }
             let outcome = match tools {
-                Some(t) => self.execute_step_with_tools(plan, step, &results, repo_context, t).await,
-                None => self.execute_step(plan, step, &results, repo_context).await,
+                Some(t) => {
+                    self.execute_step_with_tools(
+                        plan,
+                        step,
+                        &results,
+                        repo_context,
+                        memory_scope,
+                        t,
+                    )
+                    .await
+                }
+                None => {
+                    self.execute_step(plan, step, &results, repo_context, memory_scope)
+                        .await
+                }
             };
             let result = outcome.unwrap_or_else(|e| StepExecutionResult {
                 step_id: step.id,
@@ -381,8 +461,11 @@ impl AgentPipeline {
         step: &PlanStep,
         prior_results: &[StepExecutionResult],
         repo_context: Option<&str>,
+        memory_scope: Option<&str>,
     ) -> Result<StepExecutionResult, PhaseError> {
-        let user = build_executor_user_message(plan, step, prior_results, repo_context);
+        let memory_block = self.fetch_memory_block(&step.description, memory_scope).await;
+        let body = build_executor_user_message(plan, step, prior_results, repo_context);
+        let user = prepend_memory_block(&memory_block, &body);
         let request = MessageRequest {
             model: self.executor_model.clone(),
             max_tokens: EXECUTOR_MAX_TOKENS,
@@ -419,9 +502,12 @@ impl AgentPipeline {
         step: &PlanStep,
         prior_results: &[StepExecutionResult],
         repo_context: Option<&str>,
+        memory_scope: Option<&str>,
         tools: &dyn ToolBackend,
     ) -> Result<StepExecutionResult, PhaseError> {
-        let initial_user = build_executor_user_message(plan, step, prior_results, repo_context);
+        let memory_block = self.fetch_memory_block(&step.description, memory_scope).await;
+        let body = build_executor_user_message(plan, step, prior_results, repo_context);
+        let initial_user = prepend_memory_block(&memory_block, &body);
         let tool_defs = tools.tool_definitions();
 
         let mut messages: Vec<InputMessage> = vec![InputMessage::user_text(initial_user)];
@@ -715,6 +801,16 @@ Be strict: approve only if every step's output is concrete, the success criteria
 // ---------------------------------------------------------------------------
 // Response helpers
 // ---------------------------------------------------------------------------
+
+/// Glue together a memory block (possibly empty) and a prompt body, with
+/// a blank line between them when both are non-empty. When the memory
+/// block is empty this is a no-op clone of `body`.
+fn prepend_memory_block(memory_block: &str, body: &str) -> String {
+    if memory_block.is_empty() {
+        return body.to_string();
+    }
+    format!("{}\n{}", memory_block, body)
+}
 
 /// Build the user-message body for the executor phase. Used by both the
 /// text-only and tool-use step executors so the prompt shape stays in sync.

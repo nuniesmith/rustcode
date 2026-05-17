@@ -249,19 +249,35 @@
   > that up. Today `AgentMemory::new(pool, Arc<EmbeddingGenerator>)` is
   > the constructor; callers thread their own embedder through.
 
-- [ ] **MEM-B: inject memories into every LLM call**
-  > Before calling `AnthropicClient::send_message()` in `dispatch()` and inside `AgentPipeline`,
-  > call `memory.search(user_prompt, 5)` and prepend the top-k results to the system prompt:
+- [x] **MEM-B: inject memories into every LLM call**
+  > **Done 2026-05-17.**
+  > - `AgentMemory` is constructed at server startup when
+  >   `RC_MEMORY_INJECTION` is not `false` (default: on) and shared via
+  >   `RepoAppState.agent_memory`. The embedder loads lazily on first use,
+  >   so memory wiring has no startup cost when nothing queries it.
+  > - **Proxy hot path:** `dispatch_claude` runs `memory.search(user_prompt,
+  >   None, 5)` and prepends `format_memories_for_prompt(&hits)` to the
+  >   user message of the `MessageRequest`. Memory failures degrade to
+  >   "no memory" silently — a `search` error doesn't fail the request.
+  > - **AgentPipeline:** `with_memory(memory, top_k)` builder attaches the
+  >   store to the pipeline. Per-call project scope reads from
+  >   `AgentTask::memory_scope` (a new `#[serde(default)] Option<String>`
+  >   field on `AgentTask`), so one pipeline can serve tasks across
+  >   multiple repos. The planner searches against `task.description`;
+  >   each executor step searches against `step.description`. Both
+  >   prepend a `[Memory]` block to the user message; the system prompts
+  >   stay constant for prompt-cache friendliness.
+  > - **Watcher integration:** `build_agent_task` sets
+  >   `memory_scope = Some(task.repo)` so memory lookups are
+  >   project-scoped (plus globals). The `task_executor` watcher path
+  >   and the SSE endpoint both attach memory when building their
+  >   `AgentPipeline`.
   >
-  > ```
-  > [Memory]
-  > - (Decision) Prefer sqlx over diesel for async-friendly DB access in this project.
-  > - (Pattern) All Axum handlers use State<Arc<AppState>>; never clone the pool directly.
-  > - (Preference) User wants streaming responses for all long-running operations.
-  > ```
-  >
-  > Gate behind a feature flag `memory_injection: bool` in `ModelRouterConfig` so it
-  > can be disabled for benchmarking / cost comparison.
+  > `RC_MEMORY_INJECTION=false` is the kill switch for benchmarking the
+  > no-memory baseline. New unit tests cover the formatter (empty, all
+  > five kinds, content trimming) and the `with_memory_scope` builder.
+  > `serde(default)` on the new `memory_scope` field keeps old task-file
+  > payloads + result files round-tripping cleanly.
 
 - [ ] **MEM-C: session consolidation — extract and store memories after each session**
   > After a session ends (or when `Session::record_compaction()` fires), call Sonnet
