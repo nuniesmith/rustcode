@@ -146,6 +146,21 @@ pub async fn run_server(config: Config) -> Result<()> {
 
     let sync_service = Arc::new(tokio::sync::RwLock::new(sync_repo_service));
 
+    let anthropic_enabled = config
+        .model
+        .anthropic_api_key
+        .as_deref()
+        .is_some_and(|k| !k.is_empty());
+    if anthropic_enabled {
+        info!(
+            planner_model = %config.model.planner_model,
+            executor_model = %config.model.executor_model,
+            "Anthropic routing enabled (Claude is primary path)"
+        );
+    } else {
+        info!("ANTHROPIC_API_KEY not set — falling back to Grok / Ollama routing");
+    }
+
     let model_router = Arc::new(ModelRouter::new(ModelRouterConfig {
         remote_api_key: config.model.xai_api_key.clone().unwrap_or_default(),
         remote_model: config.model.remote_model.clone(),
@@ -153,7 +168,31 @@ pub async fn run_server(config: Config) -> Result<()> {
         local_base_url: config.model.ollama_base_url.clone(),
         force_remote: config.model.force_remote,
         fallback_to_remote: true,
+        planner_model: config.model.planner_model.clone(),
+        executor_model: config.model.executor_model.clone(),
+        anthropic_enabled,
     }));
+
+    // Build AnthropicClient once at startup so its PromptCache persists across
+    // requests. `from_env()` reads ANTHROPIC_API_KEY (and optional OAuth token).
+    let anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>> =
+        if anthropic_enabled {
+            match ::api::providers::anthropic::AnthropicClient::from_env() {
+                Ok(client) => {
+                    let client = client.with_prompt_cache(::api::prompt_cache::PromptCache::new(
+                        "rustcode-proxy",
+                    ));
+                    info!("AnthropicClient ready with prompt cache attached");
+                    Some(Arc::new(client))
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to build AnthropicClient — Claude routing disabled");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
     // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
     // Re-use the already-initialised PgPool from AppState so we don't open a second
@@ -179,6 +218,7 @@ pub async fn run_server(config: Config) -> Result<()> {
         Arc::clone(&sync_service),
         Arc::clone(&model_router),
         grok_for_repo,
+        anthropic_client,
     )
     .await;
 

@@ -129,9 +129,15 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::api::repos::RepoAppState;
-use crate::model_router::{CompletionRequest, ModelTarget, TaskKind};
+use crate::model_router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::ollama_client::StreamChunk;
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
+
+use ::api::providers::anthropic::AnthropicClient;
+use ::api::prompt_cache::PromptCache;
+use ::api::types::{
+    InputMessage, MessageRequest, MessageResponse, OutputContentBlock as AnthropicContentBlock,
+};
 
 // ---------------------------------------------------------------------------
 // Shared proxy state — thin wrapper around RepoAppState + allowed API keys
@@ -376,6 +382,14 @@ pub struct RaMetadata {
     pub cached: bool,
     // Cache key used for this request (useful for debugging).
     pub cache_key: String,
+    // Anthropic prompt-cache tokens created on this request (only present for
+    // Claude responses; omitted otherwise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u32>,
+    // Anthropic prompt-cache tokens read on this request (only present for
+    // Claude responses; omitted otherwise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u32>,
 }
 
 // OpenAI-compatible error body.
@@ -433,6 +447,10 @@ struct CachedProxyResponse {
     repo_context_injected: bool,
     prompt_tokens: u32,
     completion_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_creation_input_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_read_input_tokens: Option<u32>,
 }
 
 // TTL for proxy response cache entries: 30 minutes.
@@ -561,6 +579,8 @@ async fn handle_chat_completions(
                     hit.completion_tokens,
                     true,
                     cache_key,
+                    hit.cache_creation_input_tokens,
+                    hit.cache_read_input_tokens,
                 )
                 .into_response();
             }
@@ -578,8 +598,15 @@ async fn handle_chat_completions(
         repo_context: None, // already baked into full_prompt above
     };
 
-    let (reply, model_used, used_fallback, tokens_used) =
-        dispatch(&state.repo_state, &comp_req, &target).await;
+    let outcome = dispatch(&state.repo_state, &comp_req, &target).await;
+    let DispatchOutcome {
+        reply,
+        model_used,
+        used_fallback,
+        tokens_used,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
+    } = outcome;
 
     let (prompt_tok, completion_tok) = split_tokens(tokens_used, &full_prompt, &reply);
 
@@ -593,6 +620,8 @@ async fn handle_chat_completions(
         repo_context_injected,
         prompt_tokens: prompt_tok,
         completion_tokens: completion_tok,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
     };
     {
         let cache = Arc::clone(&state.repo_state.cache);
@@ -619,6 +648,8 @@ async fn handle_chat_completions(
         completion_tok,
         false,
         cache_key,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
     )
     .into_response()
 }
@@ -696,6 +727,65 @@ async fn handle_streaming(
                                 used_fallback: false,
                                 prompt_tokens: Some(resp.prompt_tokens as u32),
                                 completion_tokens: Some(resp.completion_tokens as u32),
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                    }
+                }
+            });
+
+            rx
+        }
+        ModelTarget::Claude { model, tier } => {
+            // Synthesise a single-delta stream from a blocking Claude call.
+            // Native SSE streaming via AnthropicClient::stream_message lives behind
+            // a follow-up task (currently this matches the Grok path's behaviour).
+            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(4);
+            let model = model.clone();
+            let tier = *tier;
+            let anthropic_client = state.repo_state.anthropic_client.clone();
+            let system = system_prompt.clone();
+            let prompt = full_prompt.clone();
+
+            tokio::spawn(async move {
+                let client = match anthropic_client {
+                    Some(c) => (*c).clone(),
+                    None => match AnthropicClient::from_env() {
+                        Ok(c) => c.with_prompt_cache(PromptCache::new("rustcode-proxy")),
+                        Err(e) => {
+                            let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                            return;
+                        }
+                    },
+                };
+
+                let message_req = MessageRequest {
+                    model: model.clone(),
+                    max_tokens,
+                    messages: vec![InputMessage::user_text(prompt)],
+                    system,
+                    tools: None,
+                    tool_choice: None,
+                    stream: false,
+                };
+
+                match client.send_message(&message_req).await {
+                    Ok(resp) => {
+                        let text = extract_text(&resp);
+                        info!(
+                            model = %resp.model,
+                            tier = %tier,
+                            "Proxy stream: Claude dispatch succeeded"
+                        );
+                        let _ = tx.send(StreamChunk::Delta(text)).await;
+                        let _ = tx
+                            .send(StreamChunk::Done {
+                                model_used: resp.model,
+                                used_fallback: false,
+                                prompt_tokens: Some(resp.usage.input_tokens),
+                                completion_tokens: Some(resp.usage.output_tokens),
                             })
                             .await;
                     }
@@ -821,6 +911,11 @@ async fn handle_streaming(
                     repo_context_injected,
                     prompt_tokens: pt,
                     completion_tokens: ct,
+                    // Streaming path doesn't yet surface Anthropic cache token
+                    // counts — the streaming MessageStream usage observation would
+                    // need to be plumbed through StreamChunk to fill these in.
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
                 };
                 let key = cache_key_clone;
                 tokio::spawn(async move {
@@ -960,15 +1055,20 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
 
     // ── Static entries ───────────────────────────────────────────────────────
     // "rustcode" — canonical single model to configure in Zed / curl.
-    //   RustCode routes to Ollama or Grok automatically.
+    //   RustCode routes to Claude / Ollama / Grok automatically.
     // "auto"   — same as "rustcode" (ModelRouter decides)
     // "local"  — force Ollama regardless of task kind
     // "remote" — force Grok regardless of task kind
+    // claude-* — explicit Claude tier selection
     let mut entries: Vec<ModelEntry> = vec![
         ModelEntry::rc("rustcode", 131_072, 32_768, now),
         ModelEntry::rc("auto", 131_072, 32_768, now),
         ModelEntry::rc("local", 16_384, 8_192, now),
         ModelEntry::rc("remote", 131_072, 32_768, now),
+        // Claude tiers — clients can target Opus (planner) or Sonnet (executor)
+        // directly. Pulled from the configured `RC_PLANNER_MODEL` / `RC_EXECUTOR_MODEL`.
+        ModelEntry::rc("claude-opus-4-7", 200_000, 32_000, now),
+        ModelEntry::rc("claude-sonnet-4-6", 200_000, 64_000, now),
         // OpenAI-provider-prefixed aliases — OpenClaw (and other clients that
         // use the OpenAI SDK with a custom base URL) prepend "openai/" to the
         // model id.  Advertise these so the client's model validation passes.
@@ -976,6 +1076,8 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
         ModelEntry::rc("openai/auto", 131_072, 32_768, now),
         ModelEntry::rc("openai/local", 16_384, 8_192, now),
         ModelEntry::rc("openai/remote", 131_072, 32_768, now),
+        ModelEntry::rc("openai/claude-opus-4-7", 200_000, 32_000, now),
+        ModelEntry::rc("openai/claude-sonnet-4-6", 200_000, 64_000, now),
     ];
 
     // ── Live Ollama models ───────────────────────────────────────────────────
@@ -1062,12 +1164,30 @@ async fn route_from_model_field(
             (TaskKind::ArchitecturalReason, target)
         }
         // OpenAI-compatible clients (e.g. OpenClaw) configured with a custom base URL
-        // often send the Anthropic model name verbatim.  Route these straight to the
-        // remote backend so we skip the classifier round-trip and give the caller a
-        // sensible echoed model name in the response.
+        // often send the Anthropic model name verbatim.  Pick the right Claude tier
+        // by inspecting the slug:
+        //   - `claude-opus*` → Planner (Opus 4.7)
+        //   - `claude-sonnet*` (and everything else under the prefix) → Executor (Sonnet 4.6)
+        // When Anthropic isn't configured, fall through to the ArchitecturalReason
+        // routing path which will land on Grok via `ModelRouter::route`.
         _ if model_lc.starts_with("anthropic/") || model_lc.starts_with("claude-") => {
-            let target = state.model_router.route(&TaskKind::ArchitecturalReason);
-            (TaskKind::ArchitecturalReason, target)
+            let stripped = model_lc.strip_prefix("anthropic/").unwrap_or(&model_lc);
+            let tier = if stripped.contains("opus") {
+                ClaudeTier::Planner
+            } else {
+                ClaudeTier::Executor
+            };
+            let task = match tier {
+                ClaudeTier::Planner => TaskKind::ArchitecturalReason,
+                ClaudeTier::Executor => TaskKind::RepoQuestion,
+            };
+            // Prefer a Claude target when the API key is configured; otherwise
+            // fall through to the router's default route(task) behaviour.
+            let target = state
+                .model_router
+                .claude_target(tier)
+                .unwrap_or_else(|| state.model_router.route(&task));
+            (task, target)
         }
         _ => {
             // "auto" or unknown — let the router classify the message.
@@ -1163,14 +1283,51 @@ fn build_full_prompt(
     parts.join("\n\n")
 }
 
-// Dispatch to Ollama or Grok via the existing `dispatch_completion` logic.
+// Result of a single backend dispatch call.
+#[derive(Debug, Clone)]
+struct DispatchOutcome {
+    reply: String,
+    model_used: String,
+    used_fallback: bool,
+    tokens_used: Option<u32>,
+    // Anthropic prompt-cache write tokens (only set for Claude responses).
+    cache_creation_input_tokens: Option<u32>,
+    // Anthropic prompt-cache read tokens (only set for Claude responses).
+    cache_read_input_tokens: Option<u32>,
+}
+
+impl DispatchOutcome {
+    fn ok(reply: String, model_used: String, tokens: Option<u32>) -> Self {
+        Self {
+            reply,
+            model_used,
+            used_fallback: false,
+            tokens_used: tokens,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+        }
+    }
+
+    fn error(msg: String, model: String) -> Self {
+        Self {
+            reply: msg,
+            model_used: model,
+            used_fallback: false,
+            tokens_used: None,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+        }
+    }
+}
+
+// Dispatch to Claude, Ollama, or Grok depending on the resolved target.
 // Duplicated here (rather than sharing with `repos.rs`) to keep the proxy
 // self-contained and avoid coupling to private internals.
 async fn dispatch(
     state: &RepoAppState,
     req: &CompletionRequest,
     target: &ModelTarget,
-) -> (String, String, bool, Option<u32>) {
+) -> DispatchOutcome {
     match target {
         ModelTarget::Local { model, .. } => {
             debug!(model = %model, "Proxy: dispatching to local Ollama");
@@ -1188,12 +1345,18 @@ async fn dispatch(
                     let tokens = resp
                         .prompt_tokens
                         .and_then(|p| resp.completion_tokens.map(|c| p + c));
-                    (resp.content, resp.model_used, resp.used_fallback, tokens)
+                    DispatchOutcome {
+                        reply: resp.content,
+                        model_used: resp.model_used,
+                        used_fallback: resp.used_fallback,
+                        tokens_used: tokens,
+                        cache_creation_input_tokens: None,
+                        cache_read_input_tokens: None,
+                    }
                 }
                 Err(e) => {
                     warn!(error = %e, "Proxy: Ollama dispatch failed");
-                    let msg = format!("Local model error: {}", e);
-                    (msg, model.clone(), false, None)
+                    DispatchOutcome::error(format!("Local model error: {}", e), model.clone())
                 }
             }
         }
@@ -1223,16 +1386,100 @@ async fn dispatch(
             match result {
                 Ok(resp) => {
                     let tokens = (resp.prompt_tokens + resp.completion_tokens) as u32;
-                    (resp.content, model.clone(), false, Some(tokens))
+                    DispatchOutcome::ok(resp.content, model.clone(), Some(tokens))
                 }
                 Err(e) => {
                     warn!(error = %e, "Proxy: Grok dispatch failed");
-                    let msg = format!("Remote model error: {}", e);
-                    (msg, model.clone(), false, None)
+                    DispatchOutcome::error(format!("Remote model error: {}", e), model.clone())
                 }
             }
         }
+
+        ModelTarget::Claude { model, tier } => {
+            debug!(model = %model, tier = %tier, "Proxy: dispatching to Claude");
+            dispatch_claude(state, req, model, *tier).await
+        }
     }
+}
+
+// Build an AnthropicClient, send a single message, and translate the response
+// into a DispatchOutcome. Uses the cached client from `RepoAppState` when set;
+// otherwise builds a one-shot client from `ANTHROPIC_API_KEY`.
+async fn dispatch_claude(
+    state: &RepoAppState,
+    req: &CompletionRequest,
+    model: &str,
+    tier: ClaudeTier,
+) -> DispatchOutcome {
+    let client = match state.anthropic_client.as_ref() {
+        Some(c) => (**c).clone(),
+        None => match AnthropicClient::from_env() {
+            Ok(c) => c.with_prompt_cache(PromptCache::new("rustcode-proxy")),
+            Err(e) => {
+                warn!(error = %e, "Proxy: ANTHROPIC_API_KEY not configured");
+                return DispatchOutcome::error(
+                    format!("Claude unavailable: {}", e),
+                    model.to_string(),
+                );
+            }
+        },
+    };
+
+    let message_req = MessageRequest {
+        model: model.to_string(),
+        max_tokens: req.max_tokens,
+        messages: vec![InputMessage::user_text(req.user_prompt.clone())],
+        system: req.system_prompt.clone(),
+        tools: None,
+        tool_choice: None,
+        stream: false,
+    };
+
+    match client.send_message(&message_req).await {
+        Ok(resp) => {
+            let reply = extract_text(&resp);
+            let tokens = Some(resp.usage.total_tokens());
+            let cache_creation = (resp.usage.cache_creation_input_tokens > 0)
+                .then_some(resp.usage.cache_creation_input_tokens);
+            let cache_read = (resp.usage.cache_read_input_tokens > 0)
+                .then_some(resp.usage.cache_read_input_tokens);
+            info!(
+                model = %model,
+                tier = %tier,
+                input_tokens = resp.usage.input_tokens,
+                output_tokens = resp.usage.output_tokens,
+                cache_creation_input_tokens = resp.usage.cache_creation_input_tokens,
+                cache_read_input_tokens = resp.usage.cache_read_input_tokens,
+                "Proxy: Claude dispatch succeeded"
+            );
+            DispatchOutcome {
+                reply,
+                model_used: resp.model,
+                used_fallback: false,
+                tokens_used: tokens,
+                cache_creation_input_tokens: cache_creation,
+                cache_read_input_tokens: cache_read,
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "Proxy: Claude dispatch failed");
+            DispatchOutcome::error(format!("Claude error: {}", e), model.to_string())
+        }
+    }
+}
+
+// Concatenate all Text content blocks from a Claude response into a single string.
+fn extract_text(resp: &MessageResponse) -> String {
+    let mut buf = String::new();
+    for block in &resp.content {
+        if let AnthropicContentBlock::Text { text } = block {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            buf.push_str(text);
+        }
+    }
+    buf
 }
 
 // Split a combined token count into an approximate prompt/completion split.
@@ -1268,6 +1515,8 @@ fn build_oai_response(
     completion_tokens: u32,
     cached: bool,
     cache_key: String,
+    cache_creation_input_tokens: Option<u32>,
+    cache_read_input_tokens: Option<u32>,
 ) -> Json<OaiChatResponse> {
     Json(OaiChatResponse {
         id: format!("chatcmpl-rc-{}", Uuid::new_v4()),
@@ -1294,6 +1543,8 @@ fn build_oai_response(
             rag_chunks_used,
             cached,
             cache_key,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
         },
     })
 }
@@ -1304,6 +1555,7 @@ fn build_proxy_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&st
     let label = match target {
         ModelTarget::Local { model, .. } => format!("local:{}", model),
         ModelTarget::Remote { model, .. } => format!("remote:{}", model),
+        ModelTarget::Claude { model, tier } => format!("claude:{}:{}", tier, model),
     };
 
     let mut h = Sha256::new();

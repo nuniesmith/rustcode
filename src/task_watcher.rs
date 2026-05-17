@@ -29,7 +29,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
 
 /// Configuration for the task watcher
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TaskWatcherConfig {
     /// Whether the task watcher is enabled
     pub enabled: bool,

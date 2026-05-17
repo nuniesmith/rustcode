@@ -6,6 +6,7 @@
 > **Code review completed:** 2026-04-05 — see notes below each relevant item
 > **RC-CRATES-D plugin migration prep completed:** 2026-04-06 — three tools migrated to bundled plugins
 > **Architecture review completed:** 2026-04-07 — Claude provider wiring, two-tier routing, agent loop, and memory system added
+> **CLAUDE-A/B/C resolved:** 2026-05-17 — Claude wired into `dispatch()`, two-tier routing live, prompt cache attached
 
 ---
 
@@ -16,52 +17,38 @@
 > still dispatches to Grok via `GrokClient`. These three items wire it in. Everything below
 > (planner loop, agent memory, cost reduction) depends on this being done first.
 
-- [ ] **CLAUDE-A: add `ModelTarget::Claude` and wire `AnthropicClient` into `dispatch()`**
-  > `src/api/proxy.rs` `dispatch()` only handles `ModelTarget::Local` (Ollama) and
-  > `ModelTarget::Remote` (Grok). Add a third arm:
-  >
-  > ```rust
-  > ModelTarget::Claude { model, tier } => {
-  >     let client = AnthropicClient::from_env()  // reads ANTHROPIC_API_KEY
-  >         .with_prompt_cache(PromptCache::new()); // wire caching
-  >     // call client.send_message() and map response to (String, String, bool, Option<u32>)
-  > }
-  > ```
-  >
-  > Add `ANTHROPIC_API_KEY` to `.env.example` and `config.rs`.
-  > `AnthropicClient::from_env()` already reads this env var — no new auth code needed.
-  > `route_from_model_field()` already catches `claude-*` model names; update it to return
-  > `ModelTarget::Claude` instead of routing back to the Grok remote target.
+- [x] **CLAUDE-A: add `ModelTarget::Claude` and wire `AnthropicClient` into `dispatch()`**
+  > **Done 2026-05-17.** `ModelTarget::Claude { model, tier }` added to
+  > `src/model_router.rs`; `dispatch()` in `src/api/proxy.rs` now has a third arm
+  > (`dispatch_claude`) that calls `AnthropicClient::send_message()` and translates
+  > the `MessageResponse` back into the proxy's `DispatchOutcome`. `RepoAppState`
+  > carries an `Option<Arc<AnthropicClient>>` built once at startup, preserving the
+  > attached `PromptCache` across requests. `route_from_model_field` now picks the
+  > right Claude tier from `claude-*` slugs. `ANTHROPIC_API_KEY` was added to
+  > `.env.example` and `ModelConfig` in `src/config.rs`. Streaming dispatch
+  > synthesises a single-delta stream from `send_message` (native SSE via
+  > `AnthropicClient::stream_message` left as follow-up).
 
-- [ ] **CLAUDE-B: two-tier routing — Opus 4.7 (planner) vs Sonnet 4.6 (executor)**
-  > Add `ClaudeTier` enum to `src/model_router.rs` and extend `ModelTarget::Claude`:
-  >
-  > ```rust
-  > pub enum ClaudeTier { Planner, Executor }
-  >
-  > // Planner = claude-opus-4-7  → ArchitecturalReason, CodeReview, Unknown
-  > // Executor = claude-sonnet-4-6 → ScaffoldStub, TodoTagging, TreeSummary,
-  > //                                  SymbolExtraction, RepoQuestion
-  > ```
-  >
-  > Update `TaskKind` with a `tier()` method that returns `ClaudeTier`.
-  > Update `ModelRouterConfig::default()` — remove `remote_model: "grok-4-1-fast-reasoning"`,
-  > replace with `planner_model: "claude-opus-4-7"` and `executor_model: "claude-sonnet-4-6"`.
-  > Verify exact model slugs against Anthropic API before hardcoding.
-  > Also update model aliases in `crates/api/src/providers/mod.rs`:
-  > `"opus"` → `"claude-opus-4-7"`, `"sonnet"` → `"claude-sonnet-4-6"`.
+- [x] **CLAUDE-B: two-tier routing — Opus 4.7 (planner) vs Sonnet 4.6 (executor)**
+  > **Done 2026-05-17.** `ClaudeTier { Planner, Executor }` and `TaskKind::tier()`
+  > land in `src/model_router.rs`. `ModelRouterConfig` gained `planner_model`,
+  > `executor_model`, and `anthropic_enabled` fields; defaults are `claude-opus-4-7`
+  > / `claude-sonnet-4-6`. `route()` now picks the Claude target when
+  > `anthropic_enabled` is true. Aliases in `crates/api/src/providers/mod.rs`
+  > were updated so `"opus"` → `"claude-opus-4-7"`. New tests cover both tier
+  > selection paths (`claude_planner_for_review_and_architecture`,
+  > `claude_executor_for_scaffold`, `task_kind_tier_mapping`).
+  > Outstanding: verify the exact Opus slug live (see DEPLOY-C) before shipping.
 
-- [ ] **CLAUDE-C: enable Anthropic prompt caching in the proxy dispatch**
-  > `PromptCache` in `crates/api/src/prompt_cache.rs` is fully built but unused in the proxy.
-  > When calling `AnthropicClient` from `dispatch()`, attach a `PromptCache` instance so that
-  > repeated system prompts and long repo contexts get `cache_control: {"type": "ephemeral"}`
-  > headers automatically. The `AnthropicClient::with_prompt_cache()` method accepts it.
-  >
-  > Also surface `cache_read_input_tokens` and `cache_creation_input_tokens` from
-  > `Usage` (already tracked in `crates/api/src/types.rs`) into `x_ra_metadata` on the
-  > proxy response so cost tracking reflects actual cache savings.
-  >
-  > Expected savings: 80–90% token cost reduction on repeated repo-context calls.
+- [x] **CLAUDE-C: enable Anthropic prompt caching in the proxy dispatch**
+  > **Done 2026-05-17.** `AnthropicClient` is constructed once at startup via
+  > `.with_prompt_cache(PromptCache::new("rustcode-proxy"))` and shared through
+  > `RepoAppState`. `RaMetadata` now carries `cache_creation_input_tokens` and
+  > `cache_read_input_tokens` (skip-serialized when `None`), populated from
+  > `MessageResponse::usage`. `CachedProxyResponse` round-trips both fields so
+  > cache hits also reflect actual savings.
+  > Outstanding: streaming path does not yet surface cache token counts (would
+  > require plumbing usage observation through `StreamChunk`).
 
 ---
 
