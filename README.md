@@ -4,8 +4,6 @@
 
 Rustcode is a general-purpose Rust backend service that provides an OpenAI-compatible LLM proxy, repository indexing with vector search, semantic code search, automated code auditing, and an async task pipeline. It works with any codebase — not FKS-specific.
 
-Infrastructure for running rustcode alongside FKS lives in [fks](https://github.com/nuniesmith/fks). For standalone deployment, see the Docker instructions below.
-
 ---
 
 ## What it does
