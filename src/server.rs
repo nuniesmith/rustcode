@@ -20,7 +20,7 @@ use crate::scanner::github::sync_repos_to_db;
 use crate::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
 use crate::tags::TagScanner;
 use crate::task_executor::{TaskExecutor, TaskExecutorOptions};
-use crate::task_watcher::{WatchedTaskFile, TaskWatcherConfig,watch_tasks_directory};
+use crate::task_watcher::watch_tasks_directory;
 
 use crate::types::{AuditRequest, AuditTag};
 use axum::{
@@ -363,204 +363,61 @@ pub async fn run_server(config: Config) -> Result<()> {
 
     // Start task watcher in background if enabled
     if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
+        let dry_run = config.task_executor.dry_run;
+        info!(
+            tasks_dir = "tasks",
+            dry_run, "Starting task watcher pipeline"
+        );
+        let (task_tx, mut task_rx) = tokio::sync::mpsc::channel(100);
         let tasks_dir = PathBuf::from("tasks");
         tokio::spawn(async move {
             if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
                 tracing::error!("Task watcher error: {}", e);
             }
         });
-        let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
-            state.git_manager.clone(),
-        ));
-        tokio::spawn(async move {
-            while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
-                    ),
-                    Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
-                    }
-                }
-            }
-        });
-    } else {
-        info!("Task watcher is disabled");
-    }
 
-    info!("RustCode API-only server on http://{}/", socket_addr);
-    // Start task watcher in background if enabled
-    if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
-        let tasks_dir = PathBuf::from("tasks");
-        tokio::spawn(async move {
-            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
-                tracing::error!("Task watcher error: {}", e);
-            }
-        });
+        let executor_workspace = config
+            .task_executor
+            .workspace_dir
+            .clone()
+            .or_else(|| Some(config.git.repos_dir.clone()));
         let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
             state.git_manager.clone(),
+            TaskExecutorOptions {
+                workspace_dir: executor_workspace,
+                dry_run,
+            },
         ));
-        tokio::spawn(async move {
-            while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
-                    ),
-                    Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
-                    }
-                }
-            }
-        });
-    } else {
-        info!("Task watcher is disabled");
-    }
+        let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty());
 
-    // Start task watcher in background if enabled
-    if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
-        let tasks_dir = PathBuf::from("tasks");
-        tokio::spawn(async move {
-            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
-                tracing::error!("Task watcher error: {}", e);
-            }
-        });
-        let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
-            state.git_manager.clone(),
-        ));
         tokio::spawn(async move {
             while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
-                    ),
-                    Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
-                    }
-                }
-            }
-        });
-    } else {
-        info!("Task watcher is disabled");
-    }
+                let task_id = watched_task.task.id.clone();
+                let outcome = if dry_run || github_token.is_none() {
+                    let exec = Arc::clone(&task_executor);
+                    let task = watched_task.task.clone();
+                    // execute_dry_run is sync — run on blocking pool so we don't
+                    // stall the runtime on disk + libgit2 work.
+                    tokio::task::spawn_blocking(move || exec.execute_dry_run(&task))
+                        .await
+                        .map_err(|e| anyhow::anyhow!("dry-run join error: {}", e))
+                        .and_then(|r| r)
+                } else {
+                    let token = github_token.clone().unwrap();
+                    task_executor
+                        .execute_real(&watched_task.task, &token, "")
+                        .await
+                };
 
-    info!("RustCode API-only server on http://{}/", socket_addr);
-    // Start task watcher in background if enabled
-    if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
-        let tasks_dir = PathBuf::from("tasks");
-        tokio::spawn(async move {
-            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
-                tracing::error!("Task watcher error: {}", e);
-            }
-        });
-        let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
-            state.git_manager.clone(),
-        ));
-        tokio::spawn(async move {
-            while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
+                match outcome {
+                    Ok(result) => info!(
+                        task = %task_id,
+                        status = %result.status,
+                        pr_url = ?result.pr_url,
+                        "Task executed"
                     ),
                     Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
-                    }
-                }
-            }
-        });
-    } else {
-        info!("Task watcher is disabled");
-    }
-
-    info!("RustCode API-only server on http://{}/", socket_addr);
-    // Start task watcher in background if enabled
-    if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
-        let tasks_dir = PathBuf::from("tasks");
-        tokio::spawn(async move {
-            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
-                tracing::error!("Task watcher error: {}", e);
-            }
-        });
-        let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
-            state.git_manager.clone(),
-        ));
-        tokio::spawn(async move {
-            while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
-                    ),
-                    Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
-                    }
-                }
-            }
-        });
-    } else {
-        info!("Task watcher is disabled");
-    }
-
-    info!("RustCode API-only server on http://{}/", socket_addr);
-    // Start task watcher in background if enabled
-    if config.task_watcher.enabled {
-        info!("Starting task watcher");
-        let (task_tx, task_rx) = tokio::sync::mpsc::channel(100);
-        let tasks_dir = PathBuf::from("tasks");
-        tokio::spawn(async move {
-            if let Err(e) = watch_tasks_directory(tasks_dir, task_tx).await {
-                tracing::error!("Task watcher error: {}", e);
-            }
-        });
-        let task_executor = Arc::new(TaskExecutor::new(
-            TaskExecutorOptions {
-                workspace_dir: config.git.repos_dir.clone(),
-                dry_run: true,
-            },
-            state.git_manager.clone(),
-        ));
-        tokio::spawn(async move {
-            while let Some(watched_task) = task_rx.recv().await {
-                match task_executor.execute_dry_run(&watched_task.task).await {
-                    Ok(()) => info!(
-                        "Task {} executed successfully in dry-run",
-                        watched_task.task.id
-                    ),
-                    Err(e) => {
-                        tracing::error!("Task {} execution failed: {}", watched_task.task.id, e)
+                        tracing::error!("Task {} execution failed: {}", task_id, e);
                     }
                 }
             }
