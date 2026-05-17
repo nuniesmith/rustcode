@@ -218,34 +218,36 @@
 > context without re-reading the full codebase. This is the "personalization" layer.
 > `fastembed` is already in workspace deps — use it for memory embeddings.
 
-- [ ] **MEM-A: `src/memory/store.rs` — `AgentMemory` backed by SQLite**
-  > ```rust
-  > pub struct AgentMemory { db: SqlitePool, embedder: TextEmbedding }
+- [x] **MEM-A: `src/memory/store.rs` — `AgentMemory` backed by Postgres**
+  > **Done 2026-05-17.** Ended up on Postgres rather than SQLite as the
+  > original spec called for — the rest of the project shares a `PgPool`
+  > via `AppState` and embeddings already live alongside
+  > `document_embeddings` in the same schema, so keeping memory in
+  > Postgres avoided introducing a second store.
+  > - `sql/023_agent_memory.sql` defines the `agent_memory` table with
+  >   indexes on `project`, `kind`, `importance DESC`, `created_at DESC`.
+  >   Embeddings are stored as JSON TEXT (matching the
+  >   `document_embeddings` convention) so no pgvector dependency is
+  >   needed for the row volumes we expect (a few thousand per project).
+  > - `src/memory/types.rs` defines `MemoryKind`,
+  >   `MemoryEntry { id, project, kind, content, embedding, importance,
+  >   created_at, last_accessed, access_count }`, `NewMemory` (builder
+  >   payload), `MemorySearchHit`, and a free `cosine_similarity` helper
+  >   used during ranking.
+  > - `src/memory/store.rs` provides `AgentMemory::record`,
+  >   `AgentMemory::search`, `AgentMemory::list`, `AgentMemory::count`,
+  >   `AgentMemory::delete`, and `AgentMemory::touch`. Search scopes to
+  >   `project IS NULL OR project = $1`, fetches up to
+  >   `MAX_CANDIDATES = 4096` rows ordered by `importance DESC`,
+  >   re-ranks in Rust by `cosine * importance`, returns top-k, and
+  >   bumps `access_count`/`last_accessed` for each returned hit.
+  > - Unit tests in `types.rs` cover cosine identity / orthogonality /
+  >   opposite / mismatched-length / zero-vector / empty edge cases plus
+  >   `MemoryKind` round-trip via `as_db_str` / `from_db_str` / serde.
   >
-  > pub enum MemoryKind {
-  >     Observation,  // "project X uses pattern Y"
-  >     Decision,     // "we chose approach A over B because..."
-  >     Preference,   // "user prefers idiomatic Rust over verbose code"
-  >     Pattern,      // recurring architectural pattern seen across projects
-  >     TaskOutcome,  // what worked / what failed for a given task type
-  > }
-  >
-  > pub struct MemoryEntry {
-  >     pub id: Uuid,
-  >     pub project: Option<String>,   // None = global, Some = project-scoped
-  >     pub kind: MemoryKind,
-  >     pub content: String,
-  >     pub embedding: Vec<f32>,
-  >     pub importance: f32,           // 0.0–1.0; drives retrieval ranking
-  >     pub created_at: DateTime<Utc>,
-  >     pub last_accessed: DateTime<Utc>,
-  >     pub access_count: u32,
-  > }
-  > ```
-  >
-  > Add SQL migration `sql/023_agent_memory.sql`.
-  > `AgentMemory::search(query, top_k)` — embed query with fastembed, cosine-rank stored entries.
-  > `AgentMemory::record(entry)` — embed content, write to DB.
+  > Not yet wired into `AppState` / `RepoAppState` — MEM-B will pick
+  > that up. Today `AgentMemory::new(pool, Arc<EmbeddingGenerator>)` is
+  > the constructor; callers thread their own embedder through.
 
 - [ ] **MEM-B: inject memories into every LLM call**
   > Before calling `AnthropicClient::send_message()` in `dispatch()` and inside `AgentPipeline`,
