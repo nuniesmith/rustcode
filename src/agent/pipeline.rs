@@ -53,6 +53,15 @@ const MAX_TOOL_ITERATIONS_PER_STEP: u32 = 12;
 /// task without saturating the prompt with marginal hits.
 pub const DEFAULT_MEMORY_TOP_K: usize = 5;
 
+/// Max tokens budgeted for the consolidation response (Sonnet returning a
+/// JSON array of memory entries). 2 KiB easily fits dozens of entries.
+const CONSOLIDATION_MAX_TOKENS: u32 = 2048;
+
+/// Cap on the serialized trace we hand to the consolidation prompt. Beyond
+/// this we truncate — the consolidator only needs the gist, not the full
+/// step output.
+const CONSOLIDATION_TRACE_BUDGET: usize = 16_000;
+
 #[derive(Debug, Clone)]
 pub struct AgentPipeline {
     planner: Arc<AnthropicClient>,
@@ -67,6 +76,14 @@ pub struct AgentPipeline {
     memory: Option<Arc<crate::memory::AgentMemory>>,
     /// Top-k memories retrieved per LLM call.
     memory_top_k: usize,
+    /// When true and `memory` is `Some`, every successful pipeline run
+    /// spawns a background task that asks Sonnet to extract durable
+    /// memories from the trace and writes them via `AgentMemory::record`.
+    /// Disabled by default at construction; flipped on by `with_memory`
+    /// so callers that opt in to memory injection also get consolidation
+    /// for free. Call `without_consolidation` to turn it back off (useful
+    /// for benchmarking the no-learning baseline).
+    consolidation_enabled: bool,
 }
 
 impl AgentPipeline {
@@ -91,6 +108,7 @@ impl AgentPipeline {
             executor_model: executor_model.into(),
             memory: None,
             memory_top_k: DEFAULT_MEMORY_TOP_K,
+            consolidation_enabled: false,
         }
     }
 
@@ -110,6 +128,20 @@ impl AgentPipeline {
     ) -> Self {
         self.memory = Some(memory);
         self.memory_top_k = top_k.max(1);
+        // Default on: opting in to memory injection also opts in to the
+        // session consolidation that keeps the store fed. Call
+        // `without_consolidation` immediately after if you want injection
+        // without the post-run extraction LLM call.
+        self.consolidation_enabled = true;
+        self
+    }
+
+    /// Disable session consolidation. Memory injection (`search` at call
+    /// time) still works; only the post-run extraction-and-record loop
+    /// is skipped. Useful for benchmarking the no-learning baseline.
+    #[must_use]
+    pub fn without_consolidation(mut self) -> Self {
+        self.consolidation_enabled = false;
         self
     }
 
@@ -278,6 +310,31 @@ impl AgentPipeline {
                             iterations_count: final_result.iterations.len() as u32,
                         })
                         .await;
+                }
+                // Kick off session consolidation as a background task so it
+                // never blocks the caller (SSE streams need to close
+                // promptly; the watcher needs to return the TaskResult).
+                // A failure inside consolidation is logged but never
+                // propagated — the pipeline already succeeded.
+                if self.consolidation_enabled() {
+                    let pipeline = self.clone();
+                    let trace = final_result.clone();
+                    tokio::spawn(async move {
+                        match pipeline.consolidate_session(&trace).await {
+                            Ok(memories) if !memories.is_empty() => {
+                                info!(
+                                    count = memories.len(),
+                                    "background: session consolidation recorded memories"
+                                );
+                            }
+                            Ok(_) => {
+                                debug!("background: session consolidation produced no memories");
+                            }
+                            Err(e) => {
+                                warn!(error = %e, "background: session consolidation failed");
+                            }
+                        }
+                    });
                 }
                 return Ok(final_result);
             }
@@ -675,6 +732,102 @@ impl AgentPipeline {
         let text = extract_text(&response);
         parse_review(&text)
     }
+
+    /// Consolidate a completed pipeline run into durable agent memory.
+    ///
+    /// Sends the trace (task description + per-iteration plans + step
+    /// outputs + final verdict) to Sonnet with an extraction prompt, parses
+    /// the JSON array of `{kind, content, importance}` entries, and writes
+    /// each via `AgentMemory::record`. The project scope for the new
+    /// entries comes from `result.task.memory_scope`.
+    ///
+    /// Returns the entries that were successfully recorded. Returns an
+    /// empty `Vec` (without making any LLM call) when memory isn't
+    /// configured. Failures recording individual entries are logged and
+    /// skipped — they don't fail the whole call.
+    pub async fn consolidate_session(
+        &self,
+        result: &PipelineResult,
+    ) -> Result<Vec<crate::memory::MemoryEntry>, AgentPipelineError> {
+        let Some(memory) = self.memory.as_ref() else {
+            return Ok(Vec::new());
+        };
+
+        let trace_json = serde_json::to_string_pretty(&serde_json::json!({
+            "task": result.task.description,
+            "converged": result.converged,
+            "iterations": result.iterations.iter().map(|iter| {
+                serde_json::json!({
+                    "iteration": iter.iteration,
+                    "plan_summary": iter.plan.summary,
+                    "step_results": iter.step_results.iter().map(|sr| {
+                        serde_json::json!({
+                            "id": sr.step_id,
+                            "description": sr.step_description,
+                            "output": truncate(&sr.output, 1500),
+                            "status": match &sr.status {
+                                StepStatus::Completed => serde_json::json!("completed"),
+                                StepStatus::Failed { error } => serde_json::json!({"failed": error}),
+                            },
+                            "tool_calls": sr.tool_calls.len(),
+                        })
+                    }).collect::<Vec<_>>(),
+                    "review": iter.review,
+                })
+            }).collect::<Vec<_>>(),
+        }))
+        .map_err(|e| AgentPipelineError::Executor(format!("serialize trace: {}", e)))?;
+
+        let user = format!(
+            "## Task\n{}\n\n## Trace\n```json\n{}\n```\n\nExtract memories. Return strict JSON.",
+            result.task.description,
+            truncate(&trace_json, CONSOLIDATION_TRACE_BUDGET),
+        );
+
+        let request = MessageRequest {
+            model: self.executor_model.clone(),
+            max_tokens: CONSOLIDATION_MAX_TOKENS,
+            messages: vec![InputMessage::user_text(user)],
+            system: Some(CONSOLIDATION_SYSTEM_PROMPT.to_string()),
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        };
+
+        let response = self
+            .executor
+            .send_message(&request)
+            .await
+            .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
+        let text = extract_text(&response);
+        let extracted = parse_consolidation(&text)
+            .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
+
+        let mut recorded = Vec::with_capacity(extracted.len());
+        for entry in extracted {
+            let new = crate::memory::NewMemory {
+                project: result.task.memory_scope.clone(),
+                kind: entry.kind,
+                content: entry.content,
+                importance: entry.importance,
+            };
+            match memory.record(new).await {
+                Ok(m) => recorded.push(m),
+                Err(e) => warn!(error = %e, "session consolidation: record failed"),
+            }
+        }
+
+        info!(
+            recorded = recorded.len(),
+            project = ?result.task.memory_scope,
+            "session consolidation complete"
+        );
+        Ok(recorded)
+    }
+
+    fn consolidation_enabled(&self) -> bool {
+        self.consolidation_enabled && self.memory.is_some()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -798,6 +951,29 @@ Request revision:
 
 Be strict: approve only if every step's output is concrete, the success criteria are visibly met, and the task as a whole is addressed. When in doubt, revise — the loop has a max-iterations cap, so revisions are cheap."#;
 
+const CONSOLIDATION_SYSTEM_PROMPT: &str = r#"You are the memory consolidator for an agent that completes coding tasks. You see a completed task and its trace; your job is to extract durable knowledge worth remembering for future runs.
+
+Categorize each memory by kind:
+- `observation`: neutral facts about the codebase (e.g. "project X uses pattern Y").
+- `decision`: architectural choices made and why (e.g. "we chose A over B because…").
+- `preference`: user / project preferences inferred from the trace (e.g. "this project prefers idiomatic Rust over verbose code").
+- `pattern`: recurring patterns observed (e.g. "all Axum handlers use State<Arc<…>>").
+- `task_outcome`: what worked or failed for this task type, in a way that informs future similar tasks.
+
+Respond with ONLY a strict JSON array (no prose, no fences). Each element:
+
+{
+  "kind": "observation" | "decision" | "preference" | "pattern" | "task_outcome",
+  "content": "<one concise sentence (max 200 chars)>",
+  "importance": 0.0  // float in [0.0, 1.0]; higher = more relevant for future tasks
+}
+
+Rules:
+- Return an empty array `[]` when the trace doesn't teach anything notable. Don't pad.
+- Keep `content` self-contained. Future readers see it without any context.
+- Skip restating the task description verbatim — it's already memorialized in the result file.
+- Skip transient details (specific file paths, line numbers) unless they reveal a recurring convention."#;
+
 // ---------------------------------------------------------------------------
 // Response helpers
 // ---------------------------------------------------------------------------
@@ -905,6 +1081,51 @@ fn parse_review(raw: &str) -> Result<ReviewOutcome, PhaseError> {
     })
 }
 
+/// One memory entry as Sonnet returns it from the consolidation prompt.
+/// We deliberately keep this separate from `crate::memory::NewMemory` so
+/// the wire format is decoupled from the storage struct.
+#[derive(Debug, serde::Deserialize)]
+struct ExtractedMemory {
+    kind: crate::memory::MemoryKind,
+    content: String,
+    #[serde(default)]
+    importance: Option<f32>,
+}
+
+// Strip ```json fences / leading prose and return the substring that
+// looks like a JSON array. Mirrors `strip_to_json` but for `[...]`.
+fn strip_to_json_array(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let candidate = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
+        .unwrap_or(trimmed);
+    let start = candidate.find('[');
+    let end = candidate.rfind(']');
+    match (start, end) {
+        (Some(s), Some(e)) if e > s => &candidate[s..=e],
+        _ => candidate,
+    }
+}
+
+/// Parse Sonnet's consolidation response into a vector of extracted
+/// memories. Entries with empty `content` (after trim) are dropped silently.
+fn parse_consolidation(raw: &str) -> Result<Vec<ExtractedMemory>, PhaseError> {
+    let json = strip_to_json_array(raw);
+    let raw_entries: Vec<ExtractedMemory> = serde_json::from_str(json).map_err(|e| {
+        PhaseError::Parse(format!(
+            "consolidation output was not valid JSON ({}); first 200 chars: {}",
+            e,
+            truncate(raw, 200)
+        ))
+    })?;
+    Ok(raw_entries
+        .into_iter()
+        .filter(|e| !e.content.trim().is_empty())
+        .collect())
+}
+
 fn truncate(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         return s.to_string();
@@ -996,5 +1217,78 @@ mod tests {
         let out = truncate("abcdefghij", 5);
         assert!(out.starts_with("abcde"));
         assert!(out.contains("truncated"));
+    }
+
+    #[test]
+    fn strip_to_json_array_handles_bare_array() {
+        let raw = r#"[{"a":1},{"b":2}]"#;
+        assert_eq!(strip_to_json_array(raw), raw);
+    }
+
+    #[test]
+    fn strip_to_json_array_handles_markdown_fence() {
+        let raw = "```json\n[{\"kind\":\"decision\"}]\n```";
+        assert_eq!(strip_to_json_array(raw), r#"[{"kind":"decision"}]"#);
+    }
+
+    #[test]
+    fn strip_to_json_array_handles_leading_prose() {
+        let raw = "Sure thing! Here you go:\n[{\"a\":1}]\nLet me know if you need anything.";
+        assert_eq!(strip_to_json_array(raw), "[{\"a\":1}]");
+    }
+
+    #[test]
+    fn parse_consolidation_accepts_empty_array() {
+        let entries = parse_consolidation("[]").expect("parse");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_consolidation_accepts_full_entries() {
+        let raw = r#"[
+            {"kind": "decision", "content": "use sqlx not diesel", "importance": 0.8},
+            {"kind": "pattern", "content": "axum handlers share state via Arc"},
+            {"kind": "task_outcome", "content": "DB-heavy tasks benefit from connection pool tuning", "importance": 0.6}
+        ]"#;
+        let entries = parse_consolidation(raw).expect("parse");
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].kind, crate::memory::MemoryKind::Decision);
+        assert_eq!(entries[0].content, "use sqlx not diesel");
+        assert_eq!(entries[0].importance, Some(0.8));
+        assert_eq!(entries[1].kind, crate::memory::MemoryKind::Pattern);
+        assert!(entries[1].importance.is_none());
+        assert_eq!(entries[2].kind, crate::memory::MemoryKind::TaskOutcome);
+    }
+
+    #[test]
+    fn parse_consolidation_strips_empty_content_entries() {
+        // A model emitting `{"content": "   "}` should be silently dropped
+        // rather than passed through to AgentMemory::record (which rejects
+        // empty content with an error).
+        let raw = r#"[
+            {"kind": "decision", "content": "  "},
+            {"kind": "preference", "content": "user wants concise commits"}
+        ]"#;
+        let entries = parse_consolidation(raw).expect("parse");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, crate::memory::MemoryKind::Preference);
+    }
+
+    #[test]
+    fn parse_consolidation_surfaces_parse_error() {
+        let err = parse_consolidation("not a json array").expect_err("should error");
+        let msg = err.to_string();
+        assert!(msg.contains("consolidation output was not valid JSON"));
+    }
+
+    #[test]
+    fn parse_consolidation_rejects_unknown_kind() {
+        // Unknown `kind` causes serde to fail the whole array. We surface
+        // it as a parse error rather than silently dropping individual
+        // entries — a model that fabricates kinds is buggy in a way the
+        // caller should see.
+        let raw = r#"[{"kind": "nonsense", "content": "x"}]"#;
+        let err = parse_consolidation(raw).expect_err("should error");
+        assert!(err.to_string().contains("consolidation output"));
     }
 }

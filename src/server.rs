@@ -437,6 +437,17 @@ pub async fn run_server(config: Config) -> Result<()> {
                         Arc::clone(memory),
                         crate::agent::DEFAULT_MEMORY_TOP_K,
                     );
+                    // `with_memory` enables session consolidation by default.
+                    // Opt out via `RC_MEMORY_CONSOLIDATION=false` for the
+                    // no-learning baseline.
+                    let consolidation_enabled = std::env::var("RC_MEMORY_CONSOLIDATION")
+                        .ok()
+                        .map(|s| !s.eq_ignore_ascii_case("false"))
+                        .unwrap_or(true);
+                    if !consolidation_enabled {
+                        p = p.without_consolidation();
+                        info!("RC_MEMORY_CONSOLIDATION=false — session consolidation disabled");
+                    }
                 }
                 Arc::new(p)
             });

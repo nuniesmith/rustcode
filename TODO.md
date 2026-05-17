@@ -279,13 +279,44 @@
   > `serde(default)` on the new `memory_scope` field keeps old task-file
   > payloads + result files round-tripping cleanly.
 
-- [ ] **MEM-C: session consolidation — extract and store memories after each session**
-  > After a session ends (or when `Session::record_compaction()` fires), call Sonnet
-  > with a structured extraction prompt to identify decisions, patterns, and preferences
-  > worth saving. Write each to `AgentMemory::record()`.
-  > Reuse `runtime::summary_compression` for the pre-extraction summary step.
-  > This is the "learns over time" behaviour — each completed session leaves behind
-  > durable memories that improve future sessions.
+- [x] **MEM-C: session consolidation — extract and store memories after each session**
+  > **Done 2026-05-17.**
+  > - `AgentPipeline::consolidate_session(&result)` is the new public
+  >   method. It serializes the trace (task + per-iteration plan +
+  >   step outputs + review verdicts) as JSON, sends it to Sonnet with
+  >   a strict-JSON extraction prompt, parses the response into
+  >   `ExtractedMemory { kind, content, importance }` records, and
+  >   writes each via `AgentMemory::record(NewMemory)`. Project scope
+  >   for the new entries comes from `result.task.memory_scope`.
+  > - `with_memory` now flips on `consolidation_enabled` by default —
+  >   opting in to memory injection opts in to keeping the store fed.
+  >   `without_consolidation()` opts out (benchmarking the no-learning
+  >   baseline).
+  > - **Auto-invocation:** after a successful pipeline run inside
+  >   `run_internal`, when consolidation is enabled, we spawn a
+  >   `tokio::spawn` background task that calls
+  >   `consolidate_session(&final_result)`. SSE streams close
+  >   promptly; the watcher returns the `TaskResult` immediately;
+  >   consolidation happens out-of-band. Failures inside consolidation
+  >   are logged but never propagated — the pipeline already
+  >   succeeded.
+  > - **Kill switch:** `RC_MEMORY_CONSOLIDATION=false` flips both the
+  >   watcher- and SSE-built pipelines to `without_consolidation()`.
+  > - **Parser:** `parse_consolidation` strips ```json fences and
+  >   leading prose, filters out entries with empty `content` (since
+  >   `AgentMemory::record` rejects those), and surfaces malformed
+  >   JSON / unknown `kind` values as `PhaseError::Parse`.
+  > - **Tests:** 8 new unit tests cover the parser end-to-end —
+  >   empty arrays, all five kinds, optional `importance`, fence
+  >   stripping, prose stripping, empty-content filtering, parse-error
+  >   surface, and unknown-kind rejection.
+  >
+  > **Deferred:** the TODO mentioned reusing
+  > `runtime::summary_compression` for a pre-extraction summary step.
+  > That's gated on RC-CRATES-C (runtime crate integration). Today
+  > the full trace JSON is truncated to 16 KiB before being handed to
+  > Sonnet — enough for normal runs; the summary-compression step
+  > would let us handle very long traces.
 
 - [ ] **MEM-D: importance scoring + pruning**
   > Increment `access_count` and update `last_accessed` on every memory retrieval.
