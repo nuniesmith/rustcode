@@ -387,10 +387,34 @@ pub async fn run_server(config: Config) -> Result<()> {
         ));
         let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty());
 
+        // Build an AgentPipeline from the shared AnthropicClient when Claude
+        // is configured. When the pipeline is present, accepted task files
+        // go through plan→execute→review before any commit / push.
+        let agent_pipeline: Option<Arc<crate::agent::AgentPipeline>> = repo_app_state
+            .anthropic_client
+            .as_ref()
+            .map(|client| {
+                Arc::new(crate::agent::AgentPipeline::new(
+                    Arc::clone(client),
+                    Arc::clone(client),
+                    config.model.planner_model.clone(),
+                    config.model.executor_model.clone(),
+                ))
+            });
+        if agent_pipeline.is_some() {
+            info!(
+                planner_model = %config.model.planner_model,
+                executor_model = %config.model.executor_model,
+                "Task watcher will use AgentPipeline for accepted tasks"
+            );
+        } else {
+            info!("Task watcher running without AgentPipeline (ANTHROPIC_API_KEY not set)");
+        }
+
         tokio::spawn(async move {
             while let Some(watched_task) = task_rx.recv().await {
                 let task_id = watched_task.task.id.clone();
-                let outcome = if dry_run || github_token.is_none() {
+                let outcome = if dry_run {
                     let exec = Arc::clone(&task_executor);
                     let task = watched_task.task.clone();
                     // execute_dry_run is sync — run on blocking pool so we don't
@@ -399,11 +423,33 @@ pub async fn run_server(config: Config) -> Result<()> {
                         .await
                         .map_err(|e| anyhow::anyhow!("dry-run join error: {}", e))
                         .and_then(|r| r)
-                } else {
-                    let token = github_token.clone().unwrap();
+                } else if let Some(pipeline) = agent_pipeline.as_ref() {
+                    // Agent path: plan → execute → review, only open a PR on
+                    // approval. Works with or without a GITHUB_TOKEN — without
+                    // one we run the pipeline + persist the trace but skip
+                    // the push / PR.
                     task_executor
-                        .execute_real(&watched_task.task, &token, "")
+                        .execute_with_agent(
+                            &watched_task.task,
+                            pipeline.as_ref(),
+                            github_token.as_deref(),
+                            crate::agent::DEFAULT_MAX_ITERATIONS,
+                        )
                         .await
+                } else if let Some(token) = github_token.as_deref() {
+                    // No agent configured — fall back to the placeholder
+                    // execute_real path.
+                    task_executor
+                        .execute_real(&watched_task.task, token, "")
+                        .await
+                } else {
+                    // Neither agent nor token — degrade to dry-run.
+                    let exec = Arc::clone(&task_executor);
+                    let task = watched_task.task.clone();
+                    tokio::task::spawn_blocking(move || exec.execute_dry_run(&task))
+                        .await
+                        .map_err(|e| anyhow::anyhow!("dry-run join error: {}", e))
+                        .and_then(|r| r)
                 };
 
                 match outcome {
@@ -411,6 +457,7 @@ pub async fn run_server(config: Config) -> Result<()> {
                         task = %task_id,
                         status = %result.status,
                         pr_url = ?result.pr_url,
+                        iterations = result.agent_trace.as_ref().map(|t| t.iterations.len()),
                         "Task executed"
                     ),
                     Err(e) => {

@@ -140,10 +140,27 @@
   > Response: streaming SSE so the client sees plan → step output → review in real time.
   > Auth: same bearer-token gate as `/v1/chat/completions`.
 
-- [ ] **AGENT-C: wire `AgentPipeline` into the task file watcher (TASK-C)**
-  > When the `tasks/` watcher picks up a file (TASK-A), hand it to `AgentPipeline::run()`
-  > instead of the current single-shot LLM scaffold. Write `PipelineResult` to
-  > `tasks/results/{id}.json` (TASK-E). Only open a PR (TASK-D) if `ReviewOutcome::Approved`.
+- [x] **AGENT-C: wire `AgentPipeline` into the task file watcher (TASK-C)**
+  > **Done 2026-05-17.** `TaskExecutor::execute_with_agent` runs the pipeline
+  > first, then only proceeds with clone/materialize/push/PR when the reviewer
+  > approves and `converged == true`. When the pipeline doesn't converge (max
+  > iterations exhausted while still revising), a `status = "failed"` result is
+  > written with the critique in `error` and the full trace in `agent_trace`.
+  > The PR description embeds the agent's approval summary, iteration count,
+  > and test summary.
+  >
+  > Wiring lives in `src/server.rs`'s task-watcher block:
+  >   - if `dry_run` → `execute_dry_run`
+  >   - else if `agent_pipeline` is built → `execute_with_agent` (works with
+  >     or without a `GITHUB_TOKEN`; without one we persist the trace but
+  >     skip the push + PR)
+  >   - else if `GITHUB_TOKEN` set → fall back to `execute_real`
+  >   - else → degrade to `execute_dry_run`
+  >
+  > `TaskResult.agent_trace: Option<PipelineResult>` is the new field carrying
+  > the full plan + step outputs + review across every iteration; it's
+  > `#[serde(default, skip_serializing_if = "Option::is_none")]` so existing
+  > result files keep working.
 
 - [ ] **AGENT-D: per-step tool execution inside the executor phase**
   > During Phase 2, Sonnet may emit tool calls (file create/edit, bash, search).

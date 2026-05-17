@@ -183,6 +183,7 @@ impl TaskExecutor {
             started_at,
             completed_at,
             duration_secs: 0,
+            agent_trace: None,
         };
 
         write_result_file(&result)?;
@@ -256,6 +257,7 @@ impl TaskExecutor {
                 started_at,
                 completed_at,
                 duration_secs,
+                agent_trace: None,
             },
             Err(failure) => TaskResult {
                 task_id: task.id.clone(),
@@ -267,6 +269,7 @@ impl TaskExecutor {
                 started_at,
                 completed_at,
                 duration_secs,
+                agent_trace: None,
             },
         };
 
@@ -469,6 +472,345 @@ impl TaskExecutor {
         })
     }
 
+    /// Execute a `TaskFile` through the planner/executor/reviewer agent loop,
+    /// then materialize the agent's step outputs into the working tree and
+    /// open a PR — but only if the reviewer approved the trace.
+    ///
+    /// If the pipeline returns `converged = false` (max iterations hit while
+    /// still revising), the task is recorded as failed and no PR is opened.
+    /// The full `PipelineResult` is embedded in `TaskResult.agent_trace` so
+    /// the human reviewer can see plan + step outputs + critique.
+    ///
+    /// When `github_token` is `None`, this runs the pipeline + writes the
+    /// outputs locally but skips the push + PR creation (useful for dry-run
+    /// or when the watcher is offline-only).
+    pub async fn execute_with_agent(
+        &self,
+        task: &TaskFile,
+        pipeline: &crate::agent::AgentPipeline,
+        github_token: Option<&str>,
+        max_iterations: u32,
+    ) -> anyhow::Result<TaskResult> {
+        let started_at = Utc::now().timestamp();
+
+        // Phase 1: build an AgentTask from the TaskFile and run the pipeline.
+        let agent_task = build_agent_task(task);
+        let pipeline_outcome = pipeline.run(agent_task, max_iterations).await;
+
+        let pipeline_result = match pipeline_outcome {
+            Ok(r) => r,
+            Err(e) => {
+                let result = TaskResult {
+                    task_id: task.id.clone(),
+                    status: "failed".to_string(),
+                    pr_url: None,
+                    branch: task.branch.clone(),
+                    step_results: placeholder_steps(&task.steps, "pending"),
+                    error: Some(format!("agent pipeline error: {}", e)),
+                    started_at,
+                    completed_at: Utc::now().timestamp(),
+                    duration_secs: (Utc::now().timestamp() - started_at).max(0) as u64,
+                    agent_trace: None,
+                };
+                write_result_file(&result)?;
+                return Ok(result);
+            }
+        };
+
+        let step_results = step_results_from_pipeline(&pipeline_result);
+
+        // If the reviewer didn't approve, write a failed result and bail.
+        // We persist the full trace so the human reviewer can see why.
+        if !pipeline_result.converged {
+            let critique = match &pipeline_result.final_review {
+                crate::agent::ReviewOutcome::Approved { summary } => summary.clone(),
+                crate::agent::ReviewOutcome::Revise { critique, .. } => critique.clone(),
+            };
+            let completed_at = Utc::now().timestamp();
+            let result = TaskResult {
+                task_id: task.id.clone(),
+                status: "failed".to_string(),
+                pr_url: None,
+                branch: task.branch.clone(),
+                step_results,
+                error: Some(format!("agent did not converge: {}", critique)),
+                started_at,
+                completed_at,
+                duration_secs: (completed_at - started_at).max(0) as u64,
+                agent_trace: Some(pipeline_result),
+            };
+            write_result_file(&result)?;
+            return Ok(result);
+        }
+
+        // Phase 2: the agent approved — materialize and open a PR.
+        let token = match github_token {
+            Some(t) if !t.is_empty() => t,
+            _ => {
+                // No token configured: persist what we have but don't push.
+                let completed_at = Utc::now().timestamp();
+                let result = TaskResult {
+                    task_id: task.id.clone(),
+                    status: "success".to_string(),
+                    pr_url: None,
+                    branch: task.branch.clone(),
+                    step_results,
+                    error: None,
+                    started_at,
+                    completed_at,
+                    duration_secs: (completed_at - started_at).max(0) as u64,
+                    agent_trace: Some(pipeline_result),
+                };
+                write_result_file(&result)?;
+                info!(task = %task.id, "Agent approved but no GITHUB_TOKEN — skipping PR");
+                return Ok(result);
+            }
+        };
+
+        let phase = self
+            .materialize_and_push(task, &pipeline_result, token)
+            .await;
+        let completed_at = Utc::now().timestamp();
+        let duration_secs = (completed_at - started_at).max(0) as u64;
+
+        let result = match phase {
+            Ok(success) => TaskResult {
+                task_id: task.id.clone(),
+                status: "success".to_string(),
+                pr_url: success.pr_url,
+                branch: task.branch.clone(),
+                step_results: success.step_results,
+                error: None,
+                started_at,
+                completed_at,
+                duration_secs,
+                agent_trace: Some(pipeline_result),
+            },
+            Err(failure) => TaskResult {
+                task_id: task.id.clone(),
+                status: "failed".to_string(),
+                pr_url: failure.pr_url,
+                branch: task.branch.clone(),
+                step_results: failure.step_results,
+                error: Some(failure.error.to_string()),
+                started_at,
+                completed_at,
+                duration_secs,
+                agent_trace: Some(pipeline_result),
+            },
+        };
+
+        write_result_file(&result)?;
+        Ok(result)
+    }
+
+    // Clone, branch, write each agent step's output to a file, commit, run
+    // tests, push, open PR, apply labels. Mirrors `run_real_phases` but the
+    // step files come from the agent's executor output instead of literal
+    // "Step: <text>" placeholders.
+    async fn materialize_and_push(
+        &self,
+        task: &TaskFile,
+        pipeline_result: &crate::agent::PipelineResult,
+        github_token: &str,
+    ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
+        let (owner, repo_name) = parse_owner_repo(&task.repo)
+            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+        let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
+
+        // Clone
+        let gm = Arc::clone(&self.git_manager);
+        let remote_url_clone = remote_url.clone();
+        let token_clone = github_token.to_string();
+        let repo_path = tokio::task::spawn_blocking(move || {
+            gm.clone_repo_with_token(&remote_url_clone, None, &token_clone)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("clone task join error: {}", e))
+        .and_then(|r| r.map_err(|e| anyhow::anyhow!(e)))
+        .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+
+        // Branch
+        let branch = task.branch.clone();
+        let repo_path_branch = repo_path.clone();
+        let branch_clone = branch.clone();
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_branch)
+                .arg("checkout")
+                .arg("-b")
+                .arg(&branch_clone)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .status()
+                .map_err(|e| anyhow::anyhow!("failed to spawn git checkout: {}", e))?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("git checkout -b failed"));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
+        .and_then(|r| r)
+        .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+
+        // Materialize step outputs as markdown files in a per-task subdir.
+        // Each iteration's executor output gets one file; the human reviewer
+        // can scan them to confirm the agent did what it described.
+        let mut step_results = step_results_from_pipeline(pipeline_result);
+        let repo_path_commit = repo_path.clone();
+        let task_id = task.id.clone();
+        let pipeline_for_files = pipeline_result.clone();
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let dir = repo_path_commit.join(format!("rustcode_task_{}", task_id));
+            std::fs::create_dir_all(&dir)?;
+            for iter in &pipeline_for_files.iterations {
+                std::fs::write(
+                    dir.join(format!("iteration-{}-plan.md", iter.iteration)),
+                    format!(
+                        "# Plan (iteration {})\n\n{}\n\n## Steps\n{}",
+                        iter.iteration,
+                        iter.plan.summary,
+                        iter.plan
+                            .steps
+                            .iter()
+                            .map(|s| format!("{}. {} — {}", s.id, s.description, s.success_criteria))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ),
+                )?;
+                for sr in &iter.step_results {
+                    std::fs::write(
+                        dir.join(format!("iteration-{}-step-{}.md", iter.iteration, sr.step_id)),
+                        format!(
+                            "# Step {}\n\n## Description\n{}\n\n## Output\n{}",
+                            sr.step_id, sr.step_description, sr.output
+                        ),
+                    )?;
+                }
+            }
+            run_git(&repo_path_commit, &["add", "."])?;
+            let _ = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_commit)
+                .arg("commit")
+                .arg("-m")
+                .arg(format!("Task {}: agent run", task_id))
+                .status();
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("commit join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(FailureOutcome::with_steps(step_results, e));
+        }
+
+        // Run tests against the materialized tree.
+        let test_summary = run_tests_for_workspace(&repo_path);
+        if let Some(last) = step_results.last_mut() {
+            last.test_output = Some(test_summary.summary.clone());
+            if !test_summary.passed {
+                last.status = "failed".to_string();
+                last.error = Some("test runner reported failures".to_string());
+            }
+        }
+        if !test_summary.passed {
+            return Err(FailureOutcome::with_steps(
+                step_results,
+                anyhow::anyhow!("tests failed: {}", test_summary.summary),
+            ));
+        }
+
+        // Push
+        let repo_path_push = repo_path.clone();
+        let branch_for_push = branch.clone();
+        let auth_push_url = remote_url.replacen(
+            "https://",
+            &format!("https://{}@", github_token),
+            1,
+        );
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_push)
+                .arg("push")
+                .arg("-u")
+                .arg(&auth_push_url)
+                .arg(&branch_for_push)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("git push failed"));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("push join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(FailureOutcome::with_steps(step_results, e));
+        }
+
+        // PR
+        let gh_client = match GitHubClient::new(github_token.to_string()) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(FailureOutcome::with_steps(
+                    step_results,
+                    anyhow::anyhow!("failed to create GitHub client: {}", e),
+                ));
+            }
+        };
+
+        let approval_summary = match &pipeline_result.final_review {
+            crate::agent::ReviewOutcome::Approved { summary } => summary.clone(),
+            crate::agent::ReviewOutcome::Revise { critique, .. } => critique.clone(),
+        };
+        let pr_body = format!(
+            "{}\n\n---\n_Agent verdict_: {}\n\n_Iterations_: {}\n\n_Test summary_:\n```\n{}\n```",
+            task.description,
+            approval_summary,
+            pipeline_result.iterations.len(),
+            test_summary.summary
+        );
+        let pr = match gh_client
+            .create_pull_request(
+                owner,
+                repo_name,
+                &format!("Task: {} — {}", task.id, task.description),
+                branch.as_str(),
+                "main",
+                Some(&pr_body),
+                false,
+            )
+            .await
+        {
+            Ok(pr) => pr,
+            Err(e) => {
+                return Err(FailureOutcome::with_steps(
+                    step_results,
+                    anyhow::anyhow!("failed to create PR: {}", e),
+                ));
+            }
+        };
+
+        if !task.labels.is_empty() {
+            match gh_client
+                .add_labels(owner, repo_name, pr.number, &task.labels)
+                .await
+            {
+                Ok(_) => info!(pr = pr.number, labels = ?task.labels, "Applied PR labels"),
+                Err(e) => warn!(pr = pr.number, error = %e, "Failed to apply PR labels"),
+            }
+        }
+
+        Ok(SuccessOutcome {
+            pr_url: Some(pr.html_url),
+            step_results,
+        })
+    }
+
     /// Run the language-appropriate test suite against `repo_path` and return a
     /// human-readable summary plus a pass flag.
     #[allow(dead_code)]
@@ -623,6 +965,62 @@ fn run_tests_for_workspace(repo_path: &Path) -> TestSummary {
         summary: lines.join("\n"),
         passed: all_passed,
     }
+}
+
+// Build an `AgentTask` from a `TaskFile`. The TaskFile.description is the
+// headline; the numbered steps are passed as context so the planner can use
+// them as a starting suggestion (but is free to break things up differently).
+fn build_agent_task(task: &TaskFile) -> crate::agent::AgentTask {
+    let mut context = String::new();
+    context.push_str("Suggested steps (the planner may re-order or refine these):\n");
+    for (i, step) in task.steps.iter().enumerate() {
+        context.push_str(&format!("{}. {}\n", i + 1, step));
+    }
+    context.push_str(&format!("\nTarget repo: {}\nTarget branch: {}\n", task.repo, task.branch));
+    crate::agent::AgentTask::new(task.description.clone()).with_context(context)
+}
+
+// Convert agent step outputs (from the final iteration) into the
+// task-file-shaped `StepResult` records that get persisted.
+fn step_results_from_pipeline(pipeline: &crate::agent::PipelineResult) -> Vec<StepResult> {
+    let Some(last) = pipeline.iterations.last() else {
+        return Vec::new();
+    };
+    last.step_results
+        .iter()
+        .map(|sr| {
+            let (status, error) = match &sr.status {
+                crate::agent::StepStatus::Completed => ("success".to_string(), None),
+                crate::agent::StepStatus::Failed { error } => {
+                    ("failed".to_string(), Some(error.clone()))
+                }
+            };
+            StepResult {
+                step: sr.step_description.clone(),
+                status,
+                actions: vec![sr.output.chars().take(2000).collect()],
+                test_output: None,
+                error,
+                completed_at: Some(Utc::now().timestamp()),
+            }
+        })
+        .collect()
+}
+
+// Placeholder step results used when the pipeline blew up before producing
+// any iteration data.
+fn placeholder_steps(steps: &[String], status: &str) -> Vec<StepResult> {
+    steps
+        .iter()
+        .map(|s| StepResult {
+            step: s.clone(),
+            status: status.to_string(),
+            actions: Vec::new(),
+            test_output: None,
+            error: None,
+            completed_at: None,
+        })
+        .collect()
 }
 
 fn write_result_file(result: &TaskResult) -> anyhow::Result<()> {
