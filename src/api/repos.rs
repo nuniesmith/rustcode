@@ -44,7 +44,7 @@ pub struct RepoAppState {
     // Optional Anthropic client — `None` when ANTHROPIC_API_KEY is unset.
     // When present, the proxy uses it instead of constructing a one-shot client
     // per request, preserving the attached PromptCache across requests.
-    pub anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>>,
+    pub anthropic_client: Option<Arc<::api::AnthropicClient>>,
     // Multi-tier cache (in-memory LRU + optional Redis).
     pub cache: Arc<CacheLayer>,
 }
@@ -598,7 +598,7 @@ impl RepoAppState {
         sync_service: Arc<RwLock<RepoSyncService>>,
         model_router: Arc<ModelRouter>,
         grok_client: Option<Arc<crate::grok_client::GrokClient>>,
-        anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>>,
+        anthropic_client: Option<Arc<::api::AnthropicClient>>,
     ) -> Self {
         // Build Ollama client, attaching Grok as its fallback if available.
         let ollama_client = {

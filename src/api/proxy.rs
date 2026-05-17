@@ -133,10 +133,9 @@ use crate::model_router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::ollama_client::StreamChunk;
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
-use ::api::providers::anthropic::AnthropicClient;
-use ::api::prompt_cache::PromptCache;
-use ::api::types::{
-    InputMessage, MessageRequest, MessageResponse, OutputContentBlock as AnthropicContentBlock,
+use ::api::{
+    AnthropicClient, InputMessage, MessageRequest, MessageResponse,
+    OutputContentBlock as AnthropicContentBlock, PromptCache,
 };
 
 // ---------------------------------------------------------------------------
