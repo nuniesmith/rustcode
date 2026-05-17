@@ -8,6 +8,7 @@
 // - System statistics and health checks
 
 pub mod admin;
+pub mod agent;
 pub mod auth;
 pub mod handlers;
 pub mod jobs;

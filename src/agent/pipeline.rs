@@ -79,6 +79,32 @@ impl AgentPipeline {
         task: AgentTask,
         max_iterations: u32,
     ) -> Result<PipelineResult, AgentPipelineError> {
+        self.run_internal(task, max_iterations, None).await
+    }
+
+    /// Same as `run`, but emits structured `PipelineEvent`s through the
+    /// provided channel as the pipeline progresses. Used by the
+    /// `POST /v1/agent/run` SSE endpoint so the client can see plan / step /
+    /// review events in real time.
+    ///
+    /// The returned future resolves with the final `PipelineResult` once all
+    /// iterations complete (or one fails). The channel is closed implicitly
+    /// when the sender is dropped on return.
+    pub async fn run_streaming(
+        &self,
+        task: AgentTask,
+        max_iterations: u32,
+        events: tokio::sync::mpsc::Sender<PipelineEvent>,
+    ) -> Result<PipelineResult, AgentPipelineError> {
+        self.run_internal(task, max_iterations, Some(events)).await
+    }
+
+    async fn run_internal(
+        &self,
+        task: AgentTask,
+        max_iterations: u32,
+        events: Option<tokio::sync::mpsc::Sender<PipelineEvent>>,
+    ) -> Result<PipelineResult, AgentPipelineError> {
         let max = max_iterations.max(1);
         let mut iterations: Vec<PipelineIteration> = Vec::with_capacity(max as usize);
         let mut critique_carry: Option<(String, Vec<String>)> = None;
@@ -88,15 +114,28 @@ impl AgentPipeline {
                 iteration = iter,
                 max, task = %task.description, "Agent pipeline: starting iteration"
             );
+            if let Some(tx) = events.as_ref() {
+                let _ = tx
+                    .send(PipelineEvent::IterationStarted { iteration: iter, max })
+                    .await;
+            }
 
             let plan = self
                 .plan(&task, critique_carry.as_ref())
                 .await
                 .map_err(|e| AgentPipelineError::Planner(e.to_string()))?;
             debug!(steps = plan.steps.len(), "Planner emitted plan");
+            if let Some(tx) = events.as_ref() {
+                let _ = tx
+                    .send(PipelineEvent::PlanCompleted {
+                        iteration: iter,
+                        plan: plan.clone(),
+                    })
+                    .await;
+            }
 
             let step_results = self
-                .execute(&plan, task.context.as_deref())
+                .execute_internal(&plan, task.context.as_deref(), iter, events.as_ref())
                 .await
                 .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
             debug!(
@@ -109,6 +148,14 @@ impl AgentPipeline {
                 .review(&task, &plan, &step_results)
                 .await
                 .map_err(|e| AgentPipelineError::Reviewer(e.to_string()))?;
+            if let Some(tx) = events.as_ref() {
+                let _ = tx
+                    .send(PipelineEvent::ReviewCompleted {
+                        iteration: iter,
+                        review: review.clone(),
+                    })
+                    .await;
+            }
 
             let approved = review.is_approved();
             iterations.push(PipelineIteration {
@@ -120,12 +167,21 @@ impl AgentPipeline {
 
             if approved {
                 info!(iteration = iter, "Agent pipeline approved");
-                return Ok(PipelineResult {
+                let final_result = PipelineResult {
                     task,
                     final_review: review,
                     iterations,
                     converged: true,
-                });
+                };
+                if let Some(tx) = events.as_ref() {
+                    let _ = tx
+                        .send(PipelineEvent::PipelineCompleted {
+                            converged: true,
+                            iterations_count: final_result.iterations.len() as u32,
+                        })
+                        .await;
+                }
+                return Ok(final_result);
             }
 
             // Reviewer asked for revisions — carry the critique into the next plan.
@@ -148,12 +204,21 @@ impl AgentPipeline {
                 suggestions: Vec::new(),
             });
         warn!(max, "Agent pipeline hit max_iterations without approval");
-        Ok(PipelineResult {
+        let final_result = PipelineResult {
             task,
             final_review,
             iterations,
             converged: false,
-        })
+        };
+        if let Some(tx) = events.as_ref() {
+            let _ = tx
+                .send(PipelineEvent::PipelineCompleted {
+                    converged: false,
+                    iterations_count: final_result.iterations.len() as u32,
+                })
+                .await;
+        }
+        Ok(final_result)
     }
 
     /// Phase 1 — Opus plans. Returns a structured `Plan` parsed from JSON.
@@ -215,9 +280,32 @@ impl AgentPipeline {
         plan: &Plan,
         repo_context: Option<&str>,
     ) -> Result<Vec<StepExecutionResult>, PhaseError> {
+        self.execute_internal(plan, repo_context, 0, None).await
+    }
+
+    // Internal step loop. `events` is `Some` when called from `run_streaming`
+    // so per-step start/complete events can be emitted between LLM calls.
+    // `iteration` is the iteration index attached to those events (0 when
+    // the caller doesn't track iterations).
+    async fn execute_internal(
+        &self,
+        plan: &Plan,
+        repo_context: Option<&str>,
+        iteration: u32,
+        events: Option<&tokio::sync::mpsc::Sender<PipelineEvent>>,
+    ) -> Result<Vec<StepExecutionResult>, PhaseError> {
         let mut results: Vec<StepExecutionResult> = Vec::with_capacity(plan.steps.len());
 
         for step in &plan.steps {
+            if let Some(tx) = events {
+                let _ = tx
+                    .send(PipelineEvent::StepStarted {
+                        iteration,
+                        step_id: step.id,
+                        description: step.description.clone(),
+                    })
+                    .await;
+            }
             let result = self
                 .execute_step(plan, step, &results, repo_context)
                 .await
@@ -229,6 +317,14 @@ impl AgentPipeline {
                         error: e.to_string(),
                     },
                 });
+            if let Some(tx) = events {
+                let _ = tx
+                    .send(PipelineEvent::StepCompleted {
+                        iteration,
+                        result: result.clone(),
+                    })
+                    .await;
+            }
             results.push(result);
         }
 
@@ -363,6 +459,48 @@ pub enum PhaseError {
     Transport(String),
     #[error("parse error: {0}")]
     Parse(String),
+}
+
+/// Events emitted by `AgentPipeline::run_streaming` as the pipeline
+/// progresses. Each variant maps directly onto an SSE event the
+/// `POST /v1/agent/run` endpoint forwards to the client.
+///
+/// The `kind` tag in the serialized JSON matches the variant name in
+/// `snake_case`, so a client sees `{"kind": "plan_completed", ...}` for
+/// `PipelineEvent::PlanCompleted`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PipelineEvent {
+    /// New iteration starting. `iteration` is 1-indexed.
+    IterationStarted { iteration: u32, max: u32 },
+    /// Planner phase finished. The full `Plan` is included so the client
+    /// can render it before step execution begins.
+    PlanCompleted { iteration: u32, plan: Plan },
+    /// Executor is starting on a specific step.
+    StepStarted {
+        iteration: u32,
+        step_id: u32,
+        description: String,
+    },
+    /// Step finished — `result.status` distinguishes success from failure.
+    StepCompleted {
+        iteration: u32,
+        result: StepExecutionResult,
+    },
+    /// Reviewer phase finished. The next event is either `IterationStarted`
+    /// (if revising), `PipelineCompleted` (if approved or max hit), or
+    /// nothing further (if the pipeline errored out — see endpoint code
+    /// which sends a separate error frame in that case).
+    ReviewCompleted {
+        iteration: u32,
+        review: ReviewOutcome,
+    },
+    /// Terminal event for a successful pipeline run. `converged = true`
+    /// means the reviewer approved; `false` means we hit `max_iterations`.
+    PipelineCompleted {
+        converged: bool,
+        iterations_count: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------

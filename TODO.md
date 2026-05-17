@@ -133,12 +133,27 @@
   > are the supported path; the sandbox's `ort-sys` CDN block hid the latent
   > compile error from local cargo runs. All three files now use the public path.
 
-- [ ] **AGENT-B: `POST /v1/agent/run` endpoint**
-  > Wire `AgentPipeline::run()` behind a new Axum route in `src/api/`.
-  > Request body mirrors the task file schema (TASK-B) so the same JSON works
-  > both as a dropped task file and as a direct API call.
-  > Response: streaming SSE so the client sees plan → step output → review in real time.
-  > Auth: same bearer-token gate as `/v1/chat/completions`.
+- [x] **AGENT-B: `POST /v1/agent/run` endpoint**
+  > **Done 2026-05-17.** Wired into the `/v1` proxy router alongside `/chat/completions`.
+  > - `src/api/agent.rs::handle_agent_run` accepts either an `AgentRunRequest`
+  >   (`{description, context?, max_iterations?}`) or a verbatim task file
+  >   (extra fields `repo`/`branch`/`labels`/`auto_merge` are silently ignored).
+  > - Auth: same bearer-token check as `/chat/completions` (calls
+  >   `ProxyState::is_authorised` and emits the same `OaiError` shape on 401/400).
+  > - Streaming: every `PipelineEvent` from `AgentPipeline::run_streaming` is
+  >   mapped to an SSE `data:` frame. Frames carry a `kind` discriminator
+  >   (`iteration_started`, `plan_completed`, `step_started`, `step_completed`,
+  >   `review_completed`, `pipeline_completed`, `error`). A 15-second keepalive
+  >   ping is attached so proxies don't drop long-lived runs.
+  > - `max_iterations` is clamped to `MAX_ALLOWED_ITERATIONS = 6` to cap cost.
+  > - When the pipeline returns `Err`, a final `kind: "error"` frame is emitted
+  >   with the failing phase (`planner` / `executor` / `reviewer`) before the
+  >   stream closes.
+  >
+  > Added `AgentPipeline::run_streaming(task, max, sender)` and `PipelineEvent`
+  > to the agent crate. `run()` now delegates to a private `run_internal` that
+  > optionally emits events, so the existing non-streaming callers (the task
+  > watcher) keep working unchanged.
 
 - [x] **AGENT-C: wire `AgentPipeline` into the task file watcher (TASK-C)**
   > **Done 2026-05-17.** `TaskExecutor::execute_with_agent` runs the pipeline
