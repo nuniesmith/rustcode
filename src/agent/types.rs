@@ -69,10 +69,15 @@ pub struct StepExecutionResult {
     pub step_id: u32,
     pub step_description: String,
     /// What Sonnet produced for the step — text body, file content, command
-    /// transcript, etc. In the tool-use follow-up (AGENT-D) this will become
-    /// a structured trace; for now it's the raw assistant response.
+    /// transcript, etc. In the tool-use path this is the final text turn
+    /// from the model after all tool calls have settled; without tools
+    /// it's the single-shot response.
     pub output: String,
     pub status: StepStatus,
+    /// Trace of each tool invocation made during this step (empty when the
+    /// pipeline is running without tools).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<crate::agent::tools::ToolCallRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -423,11 +423,24 @@ pub async fn run_server(config: Config) -> Result<()> {
                         .await
                         .map_err(|e| anyhow::anyhow!("dry-run join error: {}", e))
                         .and_then(|r| r)
+                } else if let (Some(pipeline), Some(token)) =
+                    (agent_pipeline.as_ref(), github_token.as_deref())
+                {
+                    // Agent + token: clone the target repo first so the
+                    // agent's tool calls (write_file, edit_file, run_command)
+                    // operate on a real working tree. Push + open a PR only
+                    // when the reviewer approves and tests pass.
+                    task_executor
+                        .execute_with_agent_tools(
+                            &watched_task.task,
+                            pipeline.as_ref(),
+                            token,
+                            crate::agent::DEFAULT_MAX_ITERATIONS,
+                        )
+                        .await
                 } else if let Some(pipeline) = agent_pipeline.as_ref() {
-                    // Agent path: plan → execute → review, only open a PR on
-                    // approval. Works with or without a GITHUB_TOKEN — without
-                    // one we run the pipeline + persist the trace but skip
-                    // the push / PR.
+                    // Agent without a token: text-only path. Plan → execute
+                    // → review with no tool access; persist the trace; no PR.
                     task_executor
                         .execute_with_agent(
                             &watched_task.task,
