@@ -105,32 +105,33 @@
 > Prerequisite: CLAUDE-A and CLAUDE-B must be done first.
 > The `ProjectPlan` and `ProjectPhase` structs already exist in `src/llm/grok.rs` — reuse them.
 
-- [ ] **AGENT-A: `src/agent/pipeline.rs` — `AgentPipeline` struct with three phases**
-  > ```rust
-  > pub struct AgentPipeline {
-  >     planner:  AnthropicClient,  // claude-opus-4-7
-  >     executor: AnthropicClient,  // claude-sonnet-4-6
-  >     memory:   AgentMemory,      // see MEM-A below
-  > }
+- [x] **AGENT-A: `src/agent/pipeline.rs` — `AgentPipeline` struct with three phases**
+  > **Done 2026-05-17.** `src/agent/` now contains `pipeline.rs` + `types.rs`:
+  > - `AgentPipeline` holds two `Arc<AnthropicClient>` (planner + executor) plus the
+  >   model slugs to target. Either client can be the same `Arc` — the per-request
+  >   `model` slug is what drives Opus vs Sonnet routing.
+  > - `plan()`, `execute()`, `review()`, and `run()` are implemented. `run()` carries
+  >   reviewer critique into the next plan so revisions are informed.
+  > - Phase prompts ask for strict JSON; `strip_to_json` repairs ```json fences and
+  >   leading prose; parse failures surface as `PhaseError::Parse` with a 200-char
+  >   excerpt of the raw response.
+  > - `ReviewOutcome` is `Approved { summary } | Revise { critique, suggestions }`
+  >   (serde-tagged so it round-trips through JSON for the result file).
+  > - `PipelineResult` records every iteration (plan + step results + review) plus
+  >   a `converged: bool` flag distinguishing approval from "hit max_iterations".
   >
-  > impl AgentPipeline {
-  >     // Phase 1: Opus generates a structured JSON plan
-  >     async fn plan(&self, task: &str, context: &str) -> Result<ProjectPlan>
-  >
-  >     // Phase 2: Sonnet executes each step; injects memory + RAG context per step
-  >     async fn execute(&self, plan: &ProjectPlan, repo: &RepoContext) -> Result<Vec<StepResult>>
-  >
-  >     // Phase 3: Opus reviews all step results; returns pass/revise + critique notes
-  >     async fn review(&self, task: &str, results: &[StepResult]) -> Result<ReviewOutcome>
-  >
-  >     // Orchestrator: runs plan→execute→review, repeats if review says revise
-  >     // Max iterations configurable (default 3) to cap cost
-  >     pub async fn run(&self, task: AgentTask, max_iterations: u32) -> Result<PipelineResult>
-  > }
-  > ```
-  >
-  > `ReviewOutcome` should be an enum: `Approved { summary }` | `Revise { critique, suggestions }`.
-  > `PipelineResult` records the full trace: plan, per-step results, review outcome, iteration count.
+  > **Memory injection (MEM-B) is the documented next wiring point** — the planner
+  > and executor methods already accept all the context they'd need, so once
+  > `AgentMemory::search(...)` lands it's a one-line prepend in the user prompt.
+  > **Tool use (AGENT-D) is the other deferred piece** — the executor's `output` is
+  > raw assistant text today; switching it to structured tool calls is additive.
+
+  > **Ride-along compile fix:** PR #1's `proxy.rs` / `repos.rs` / `server.rs` were
+  > importing through `::api::providers::...` / `::api::prompt_cache::...` /
+  > `::api::types::...`, but those are private modules in the `api` crate. The
+  > top-level re-exports (`::api::AnthropicClient`, `::api::PromptCache`, etc.)
+  > are the supported path; the sandbox's `ort-sys` CDN block hid the latent
+  > compile error from local cargo runs. All three files now use the public path.
 
 - [ ] **AGENT-B: `POST /v1/agent/run` endpoint**
   > Wire `AgentPipeline::run()` behind a new Axum route in `src/api/`.

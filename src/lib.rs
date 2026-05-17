@@ -22,6 +22,7 @@
 // - Vector storage for RAG system
 // - RESTful API and CLI interface
 
+pub mod agent;
 pub mod api;
 pub mod audit;
 pub mod auto_scanner;

@@ -175,24 +175,21 @@ pub async fn run_server(config: Config) -> Result<()> {
 
     // Build AnthropicClient once at startup so its PromptCache persists across
     // requests. `from_env()` reads ANTHROPIC_API_KEY (and optional OAuth token).
-    let anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>> =
-        if anthropic_enabled {
-            match ::api::providers::anthropic::AnthropicClient::from_env() {
-                Ok(client) => {
-                    let client = client.with_prompt_cache(::api::prompt_cache::PromptCache::new(
-                        "rustcode-proxy",
-                    ));
-                    info!("AnthropicClient ready with prompt cache attached");
-                    Some(Arc::new(client))
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to build AnthropicClient — Claude routing disabled");
-                    None
-                }
+    let anthropic_client: Option<Arc<::api::AnthropicClient>> = if anthropic_enabled {
+        match ::api::AnthropicClient::from_env() {
+            Ok(client) => {
+                let client = client.with_prompt_cache(::api::PromptCache::new("rustcode-proxy"));
+                info!("AnthropicClient ready with prompt cache attached");
+                Some(Arc::new(client))
             }
-        } else {
-            None
-        };
+            Err(e) => {
+                warn!(error = %e, "Failed to build AnthropicClient — Claude routing disabled");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
     // Re-use the already-initialised PgPool from AppState so we don't open a second
