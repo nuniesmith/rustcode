@@ -45,6 +45,12 @@ pub struct RepoAppState {
     // When present, the proxy uses it instead of constructing a one-shot client
     // per request, preserving the attached PromptCache across requests.
     pub anthropic_client: Option<Arc<::api::AnthropicClient>>,
+    // Optional persistent agent memory store. `None` when ANTHROPIC_API_KEY
+    // is absent (we can't build the embedder without it) or when the user
+    // opts out via `RC_MEMORY_INJECTION=false`. When present, the proxy
+    // hot path and `AgentPipeline` prepend the top-k matching memories to
+    // their user prompts.
+    pub agent_memory: Option<Arc<crate::memory::AgentMemory>>,
     // Multi-tier cache (in-memory LRU + optional Redis).
     pub cache: Arc<CacheLayer>,
 }
@@ -594,11 +600,13 @@ impl RepoAppState {
     // * `model_router`     — caller-owned `Arc<ModelRouter>`
     // * `grok_client`      — `None` when `XAI_API_KEY` is unset (local-only mode)
     // * `anthropic_client` — `None` when `ANTHROPIC_API_KEY` is unset
+    // * `agent_memory`     — `None` when memory injection is disabled
     pub async fn from_env(
         sync_service: Arc<RwLock<RepoSyncService>>,
         model_router: Arc<ModelRouter>,
         grok_client: Option<Arc<crate::grok_client::GrokClient>>,
         anthropic_client: Option<Arc<::api::AnthropicClient>>,
+        agent_memory: Option<Arc<crate::memory::AgentMemory>>,
     ) -> Self {
         // Build Ollama client, attaching Grok as its fallback if available.
         let ollama_client = {
@@ -636,6 +644,7 @@ impl RepoAppState {
             ollama_client,
             grok_client,
             anthropic_client,
+            agent_memory,
             cache,
         }
     }

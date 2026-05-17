@@ -211,11 +211,43 @@ pub async fn run_server(config: Config) -> Result<()> {
     // Clone before moving into RepoAppState so AuditState can share the same client
     let _grok_for_audit = grok_for_repo.clone();
 
+    // Build persistent agent memory if both the DB pool and embedder
+    // dependencies are satisfiable. The embedder uses fastembed; it loads
+    // its model lazily on first call so creation is cheap. Set
+    // `RC_MEMORY_INJECTION=false` to disable memory injection entirely
+    // (useful for benchmarking the no-memory baseline).
+    let memory_injection_enabled = std::env::var("RC_MEMORY_INJECTION")
+        .ok()
+        .map(|s| !s.eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+    let agent_memory: Option<Arc<crate::memory::AgentMemory>> = if memory_injection_enabled {
+        match crate::embeddings::EmbeddingGenerator::new(
+            crate::embeddings::EmbeddingConfig::default(),
+        ) {
+            Ok(embedder) => {
+                let memory = crate::memory::AgentMemory::new(
+                    state.db_pool.clone(),
+                    Arc::new(embedder),
+                );
+                info!("AgentMemory enabled (RC_MEMORY_INJECTION not set to false)");
+                Some(Arc::new(memory))
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to build embedder — memory injection disabled");
+                None
+            }
+        }
+    } else {
+        info!("RC_MEMORY_INJECTION=false — memory injection disabled");
+        None
+    };
+
     let repo_app_state = RepoAppState::from_env(
         Arc::clone(&sync_service),
         Arc::clone(&model_router),
         grok_for_repo,
         anthropic_client,
+        agent_memory,
     )
     .await;
 
@@ -394,12 +426,19 @@ pub async fn run_server(config: Config) -> Result<()> {
             .anthropic_client
             .as_ref()
             .map(|client| {
-                Arc::new(crate::agent::AgentPipeline::new(
+                let mut p = crate::agent::AgentPipeline::new(
                     Arc::clone(client),
                     Arc::clone(client),
                     config.model.planner_model.clone(),
                     config.model.executor_model.clone(),
-                ))
+                );
+                if let Some(memory) = repo_app_state.agent_memory.as_ref() {
+                    p = p.with_memory(
+                        Arc::clone(memory),
+                        crate::agent::DEFAULT_MEMORY_TOP_K,
+                    );
+                }
+                Arc::new(p)
             });
         if agent_pipeline.is_some() {
             info!(

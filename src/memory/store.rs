@@ -31,6 +31,38 @@ use super::types::{
 /// Default ranking weight when a caller omits `importance` on a new entry.
 pub const DEFAULT_IMPORTANCE: f32 = 0.5;
 
+/// Format a slice of `MemorySearchHit`s as a `[Memory]` block suitable
+/// for prepending to a user / system prompt. Returns the empty string
+/// when `hits` is empty so callers can unconditionally prepend the
+/// output without checking.
+///
+/// Example output:
+///
+/// ```text
+/// [Memory]
+/// - (Decision) Prefer sqlx over diesel for async-friendly DB access.
+/// - (Pattern) All Axum handlers use State<Arc<AppState>>; never clone the pool directly.
+/// - (Preference) User wants streaming responses for all long-running operations.
+/// ```
+#[must_use]
+pub fn format_memories_for_prompt(hits: &[crate::memory::types::MemorySearchHit]) -> String {
+    if hits.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("[Memory]\n");
+    for hit in hits {
+        let kind = match hit.entry.kind {
+            crate::memory::types::MemoryKind::Observation => "Observation",
+            crate::memory::types::MemoryKind::Decision => "Decision",
+            crate::memory::types::MemoryKind::Preference => "Preference",
+            crate::memory::types::MemoryKind::Pattern => "Pattern",
+            crate::memory::types::MemoryKind::TaskOutcome => "TaskOutcome",
+        };
+        out.push_str(&format!("- ({}) {}\n", kind, hit.entry.content.trim()));
+    }
+    out
+}
+
 /// Maximum number of candidate rows we'll pull into Rust for cosine
 /// ranking on a single search call. The query asks for `top_k` results;
 /// we scan up to `MAX_CANDIDATES` rows and pick the best `top_k`.
@@ -319,6 +351,67 @@ impl AgentMemory {
         .context("fetch agent_memory candidates")?;
 
         Ok(rows.into_iter().filter_map(AgentMemoryRow::into_entry).collect())
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+    use crate::memory::types::{MemoryEntry, MemoryKind, MemorySearchHit};
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn hit(kind: MemoryKind, content: &str) -> MemorySearchHit {
+        let now = Utc::now();
+        MemorySearchHit {
+            entry: MemoryEntry {
+                id: Uuid::new_v4(),
+                project: None,
+                kind,
+                content: content.to_string(),
+                embedding: vec![0.0; 4],
+                importance: 0.5,
+                created_at: now,
+                last_accessed: now,
+                access_count: 0,
+            },
+            similarity: 0.9,
+            score: 0.45,
+        }
+    }
+
+    #[test]
+    fn empty_hits_yields_empty_string() {
+        assert!(format_memories_for_prompt(&[]).is_empty());
+    }
+
+    #[test]
+    fn formats_kinds_with_capitalized_labels() {
+        let hits = vec![
+            hit(MemoryKind::Decision, "prefer sqlx"),
+            hit(MemoryKind::Pattern, "axum handlers share state via Arc"),
+            hit(MemoryKind::Preference, "no emojis in source"),
+        ];
+        let out = format_memories_for_prompt(&hits);
+        assert!(out.starts_with("[Memory]\n"));
+        assert!(out.contains("- (Decision) prefer sqlx"));
+        assert!(out.contains("- (Pattern) axum handlers share state via Arc"));
+        assert!(out.contains("- (Preference) no emojis in source"));
+    }
+
+    #[test]
+    fn trims_whitespace_from_content() {
+        let hits = vec![hit(MemoryKind::Observation, "  needs trimming  \n")];
+        let out = format_memories_for_prompt(&hits);
+        assert!(out.contains("- (Observation) needs trimming\n"));
+        assert!(!out.contains("  needs trimming"));
+    }
+
+    #[test]
+    fn includes_task_outcome_label() {
+        let hits = vec![hit(MemoryKind::TaskOutcome, "tests pass with strategy X")];
+        let out = format_memories_for_prompt(&hits);
+        assert!(out.contains("- (TaskOutcome) tests pass with strategy X"));
     }
 }
 

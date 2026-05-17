@@ -13,12 +13,16 @@ use serde::{Deserialize, Serialize};
 /// `description` is the user-facing task description (e.g. "Add a /v1/agent
 /// endpoint to the proxy"). `context` is optional repo-shaped grounding —
 /// dependency tree, symbol map, RAG chunks, prior session memories — that the
-/// planner should incorporate but isn't itself the task.
+/// planner should incorporate but isn't itself the task. `memory_scope`
+/// narrows memory lookups to entries scoped to a specific project (plus
+/// globals); `None` searches across the entire store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTask {
     pub description: String,
     #[serde(default)]
     pub context: Option<String>,
+    #[serde(default)]
+    pub memory_scope: Option<String>,
 }
 
 impl AgentTask {
@@ -27,12 +31,22 @@ impl AgentTask {
         Self {
             description: description.into(),
             context: None,
+            memory_scope: None,
         }
     }
 
     #[must_use]
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
         self.context = Some(context.into());
+        self
+    }
+
+    /// Set the project scope for memory lookups. Typically the task's
+    /// `owner/repo` slug, so memories recorded against that project plus
+    /// any global entries (`project IS NULL`) surface.
+    #[must_use]
+    pub fn with_memory_scope(mut self, scope: impl Into<String>) -> Self {
+        self.memory_scope = Some(scope.into());
         self
     }
 }
@@ -183,5 +197,24 @@ mod tests {
         let task = AgentTask::new("do the thing").with_context("repo tree: src/lib.rs");
         assert_eq!(task.description, "do the thing");
         assert_eq!(task.context.as_deref(), Some("repo tree: src/lib.rs"));
+        assert!(task.memory_scope.is_none());
+    }
+
+    #[test]
+    fn agent_task_builder_sets_memory_scope() {
+        let task = AgentTask::new("fix it")
+            .with_context("ctx")
+            .with_memory_scope("owner/repo");
+        assert_eq!(task.memory_scope.as_deref(), Some("owner/repo"));
+    }
+
+    #[test]
+    fn agent_task_default_memory_scope_is_none() {
+        // Round-trip a body without `memory_scope` to confirm
+        // `#[serde(default)]` keeps old payloads compatible.
+        let body = r#"{"description":"task","context":"ctx"}"#;
+        let task: AgentTask = serde_json::from_str(body).expect("parse");
+        assert!(task.memory_scope.is_none());
+        assert_eq!(task.description, "task");
     }
 }

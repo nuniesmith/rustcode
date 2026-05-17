@@ -1436,10 +1436,32 @@ async fn dispatch_claude(
         },
     };
 
+    // Prepend retrieved memories to the user prompt when memory injection is
+    // configured. Memory lookup is best-effort: on failure we log and proceed
+    // with the unmodified prompt rather than failing the request.
+    let user_prompt = match state.agent_memory.as_ref() {
+        Some(memory) => match memory.search(&req.user_prompt, None, 5).await {
+            Ok(hits) if !hits.is_empty() => {
+                let block = crate::memory::format_memories_for_prompt(&hits);
+                debug!(
+                    matches = hits.len(),
+                    "Proxy: prepending memory block to user prompt"
+                );
+                format!("{}\n{}", block, req.user_prompt)
+            }
+            Ok(_) => req.user_prompt.clone(),
+            Err(e) => {
+                warn!(error = %e, "Proxy: memory.search failed — proceeding without memory");
+                req.user_prompt.clone()
+            }
+        },
+        None => req.user_prompt.clone(),
+    };
+
     let message_req = MessageRequest {
         model: model.to_string(),
         max_tokens: req.max_tokens,
-        messages: vec![InputMessage::user_text(req.user_prompt.clone())],
+        messages: vec![InputMessage::user_text(user_prompt)],
         system: req.system_prompt.clone(),
         tools: None,
         tool_choice: None,

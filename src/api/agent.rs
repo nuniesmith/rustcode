@@ -190,12 +190,21 @@ pub async fn handle_agent_run(
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<PipelineEvent>(EVENT_CHANNEL_BUFFER);
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Option<(String, String)>>();
 
-    let pipeline = Arc::new(AgentPipeline::new(
+    let mut pipeline_builder = AgentPipeline::new(
         Arc::clone(&anthropic_client),
         Arc::clone(&anthropic_client),
         planner_model,
         executor_model,
-    ));
+    );
+    // Attach agent memory if configured. SSE callers don't carry a project
+    // scope by default — the request body has no `repo` field — so the
+    // scope on the AgentTask stays `None` and memory lookups search across
+    // every project plus globals.
+    if let Some(memory) = state.repo_state.agent_memory.as_ref() {
+        pipeline_builder = pipeline_builder
+            .with_memory(Arc::clone(memory), crate::agent::DEFAULT_MEMORY_TOP_K);
+    }
+    let pipeline = Arc::new(pipeline_builder);
     let pipeline_for_task = Arc::clone(&pipeline);
     tokio::spawn(async move {
         let outcome = pipeline_for_task

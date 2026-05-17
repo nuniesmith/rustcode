@@ -13,5 +13,7 @@
 pub mod store;
 pub mod types;
 
-pub use store::{AgentMemory, DEFAULT_IMPORTANCE, MAX_CANDIDATES};
+pub use store::{
+    AgentMemory, DEFAULT_IMPORTANCE, MAX_CANDIDATES, format_memories_for_prompt,
+};
 pub use types::{MemoryEntry, MemoryKind, MemorySearchHit, NewMemory, cosine_similarity};
