@@ -20,6 +20,7 @@
 // }
 // ```
 
+use crate::agent::PipelineResult;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -165,6 +166,13 @@ pub struct TaskResult {
 
     /// Total time in seconds
     pub duration_secs: u64,
+
+    /// Trace from the planner/executor/reviewer agent pipeline, when the task
+    /// was executed via `TaskExecutor::execute_with_agent`. `None` for runs
+    /// that went through the placeholder `execute_real` / `execute_dry_run`
+    /// paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_trace: Option<PipelineResult>,
 }
 
 /// Result of a single step execution
