@@ -56,21 +56,46 @@
 
 > The core new capability: drop a JSON file → rustcode picks it up, does the work, opens a PR.
 
-- [ ] **TASK-A:** Implement `tasks/` directory watcher — `notify` crate, debounced, ignore `.tmp` files
-  > `notify = "6"` dep is already in `src/rc/Cargo.toml`. Entry point: add `src/task_watcher.rs`,
-  > spawn it from `server.rs` via `tokio::spawn`. Debounce with a 500ms window using `tokio::time::sleep`.
-- [ ] **TASK-B:** Define task file schema (JSON): `id`, `repo`, `description`, `steps[]`, `branch`, `labels[]`, `auto_merge` bool
-  > Add `src/task/schema.rs` with serde structs. Wire `Deserialize` only — task files are read-only input.
-  > Note: `src/task/` already has `models.rs` with a DB-backed `Task` type and `src/tasks.rs` has
-  > an audit-oriented `TaskGenerator`. Pick one home and consolidate naming before adding more task types —
-  > see RC-CLEANUP-D below.
-- [ ] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
-- [ ] **TASK-C:** Per-language test runner: `cargo check` / `cargo test` for Rust; `pytest -x` for Python; `npm run build` for TS
-  > Can re-use `src/tests_runner.rs` (`TestRunner`) which already handles cargo/pytest dispatch.
-- [ ] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
+- [x] **TASK-A:** Implement `tasks/` directory watcher — `notify` crate, debounced, ignore `.tmp` files
+  > **Done.** `src/task_watcher.rs` polls the `tasks/` directory every 500 ms, skips `.tmp`
+  > files, validates each `.json` against `TaskFile::from_file`, and pushes accepted
+  > tasks through an mpsc channel. Spawned from `server.rs` when
+  > `config.task_watcher.enabled` is true.
+- [x] **TASK-B:** Define task file schema (JSON): `id`, `repo`, `description`, `steps[]`, `branch`, `labels[]`, `auto_merge` bool
+  > **Done.** `src/task/schema.rs` defines `TaskFile`, `TaskResult`, and `StepResult`
+  > with serde + a `validate()` method that enforces alphanumeric ids, `owner/repo`
+  > format, non-empty steps, etc.
+  > Naming-collision cleanup (`src/tasks.rs` vs `src/task/`) is tracked separately under
+  > RC-CLEANUP-D.
+- [~] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
+  > **Partial 2026-05-17.** `TaskExecutor::execute_real` clones, branches, writes one
+  > placeholder file per step, commits, runs the per-language test runner against the
+  > working tree, pushes, and opens the PR. The placeholder files are still literal
+  > "Step: ..." text; **LLM-driven step execution is the remaining gap** and will
+  > likely be done by wiring `AnthropicClient` tool-use with `write_file` / `edit_file`
+  > / `run_command` tools once `AGENT-A` lands.
+- [x] **TASK-C:** Per-language test runner: `cargo check` / `cargo test` for Rust; `pytest -x` for Python; `npm run build` for TS
+  > **Done.** `task_executor::run_tests_for_workspace` calls `TestRunner::detect_project_types`
+  > then `run_tests_for_type` for each detected type. Aggregated pass/fail flag drives
+  > the abort decision before push; the human-readable summary is attached to the last
+  > `StepResult::test_output` and the PR body.
+- [~] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
+  > **Partial 2026-05-17.** PR creation + label application now live in `execute_real`.
+  > `GitHubClient::add_labels` was added and is invoked after PR open.
 - [ ] **TASK-D:** Auto-merge logic: if all CI checks pass and `auto_merge: true`, merge the PR
-- [ ] **TASK-E:** Task result file — write `tasks/results/{id}.json` with outcome, PR URL, test results, any errors
-- [ ] **TASK-F:** Failed task handling — if any step fails or tests fail, tag PR `needs-review` and write error details to result file; never auto-merge
+  > `GitHubClient::merge_pull_request` was added in this iteration but no caller yet —
+  > need a CI status poller (with timeout + backoff) that calls `get_commit_combined_status`
+  > and only merges when `state == "success"`. Deferred to follow-up.
+- [x] **TASK-E:** Task result file — write `tasks/results/{id}.json` with outcome, PR URL, test results, any errors
+  > **Done.** `write_result_file` is now the single sink; both `execute_dry_run` and
+  > `execute_real` go through it on every code path (success and failure).
+- [~] **TASK-F:** Failed task handling — if any step fails or tests fail, tag PR `needs-review` and write error details to result file; never auto-merge
+  > **Partial 2026-05-17.** Failure now always produces a result file with `status = "failed"`
+  > and the error message. Auto-merge isn't wired yet (see TASK-D) so there's no risk of
+  > merging on failure. **Remaining:** if a PR was already opened before tests failed (e.g.
+  > we push first, then a separate CI run reports failure), apply a `needs-review` label —
+  > today we abort before push when tests fail, so the only way to get here is via the
+  > auto-merge poller, which lands with the rest of TASK-D.
 
 ---
 

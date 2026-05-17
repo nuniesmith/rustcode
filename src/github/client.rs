@@ -630,6 +630,62 @@ impl GitHubClient {
             .await
     }
 
+    // Apply labels to an issue or PR. GitHub treats PRs as issues for labeling.
+    //
+    // Returns the resulting label set as raw JSON.
+    pub async fn add_labels(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: i32,
+        labels: &[String],
+    ) -> Result<serde_json::Value> {
+        #[derive(Serialize)]
+        struct AddLabels<'a> {
+            labels: &'a [String],
+        }
+        self.post(
+            &format!("/repos/{}/{}/issues/{}/labels", owner, repo, issue_number),
+            &AddLabels { labels },
+        )
+        .await
+    }
+
+    // Merge a pull request via the GitHub API.
+    //
+    // `merge_method` accepts `"merge"`, `"squash"`, or `"rebase"`. The call fails
+    // with HTTP 405 when the PR is not mergeable (e.g. failing required checks).
+    pub async fn merge_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: i32,
+        merge_method: &str,
+    ) -> Result<serde_json::Value> {
+        #[derive(Serialize)]
+        struct Merge<'a> {
+            merge_method: &'a str,
+        }
+        let path = format!("/repos/{}/{}/pulls/{}/merge", owner, repo, number);
+        let url = format!("{}{}", self.config.base_url, path);
+        debug!("PUT {}", url);
+
+        let response = self
+            .client
+            .put(&url)
+            .json(&Merge { merge_method })
+            .send()
+            .await?;
+        self.update_rate_limit(response.headers()).await;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(self.handle_error_response(status, response).await);
+        }
+        let data: serde_json::Value = response.json().await?;
+        Ok(data)
+    }
+
     // ========================================================================
     // Commit Operations
     // ========================================================================

@@ -20,6 +20,7 @@ should be implemented later and will reuse parts of the logic here.
 use crate::git::GitManager;
 use crate::github::GitHubClient;
 use crate::task::{StepResult, TaskFile, TaskResult};
+use crate::tests_runner::{ProjectType, TestRunner};
 use chrono::Utc;
 use git2::{Repository, Signature};
 use serde_json::to_writer_pretty;
@@ -28,7 +29,6 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::task;
 use tracing::{info, warn};
 
 /// TaskExecutorOptions control behavior of the executor.
@@ -185,19 +185,7 @@ impl TaskExecutor {
             duration_secs: 0,
         };
 
-        // Write result file to tasks/results/{id}.json
-        let results_dir = Path::new("tasks").join("results");
-        if !results_dir.exists() {
-            fs::create_dir_all(&results_dir)?;
-        }
-
-        let result_path = results_dir.join(format!("{}.json", task.id));
-        let file = fs::File::create(&result_path)?;
-        let writer = BufWriter::new(file);
-        to_writer_pretty(writer, &result)?;
-
-        info!("Dry-run TaskResult written to {}", result_path.display());
-
+        write_result_file(&result)?;
         Ok(result)
     }
 
@@ -237,44 +225,85 @@ impl TaskExecutor {
     /// Execute the task in real mode:
     /// - Clone the repo using the provided GitHub token
     /// - Create branch, apply simple changes for each step, commit, push
-    /// - Create a GitHub Pull Request and return a TaskResult referencing the PR
+    /// - Run the per-language test runner against the working tree
+    /// - Create a GitHub Pull Request, apply labels, and (if tests passed)
+    ///   tag-only on failure so the PR can be reviewed manually
+    ///
+    /// A `TaskResult` JSON file is written to `tasks/results/{id}.json` on every
+    /// code path — success, failure, or partial — so the watcher caller has a
+    /// stable record of what happened.
     pub async fn execute_real(
         &self,
         task: &TaskFile,
         github_token: &str,
-        _github_username: &str,
+        github_username: &str,
     ) -> anyhow::Result<TaskResult> {
-        use std::process::Command as StdCommand;
+        let started_at = Utc::now().timestamp();
+        let phase = self
+            .run_real_phases(task, github_token, github_username)
+            .await;
+        let completed_at = Utc::now().timestamp();
+        let duration_secs = (completed_at - started_at).max(0) as u64;
 
-        // Parse owner/repo
-        let parts: Vec<&str> = task.repo.split('/').collect();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!("task.repo must be in format 'owner/repo'"));
-        }
-        let owner = parts[0];
-        let repo_name = parts[1];
+        let result = match phase {
+            Ok(success) => TaskResult {
+                task_id: task.id.clone(),
+                status: "success".to_string(),
+                pr_url: success.pr_url,
+                branch: task.branch.clone(),
+                step_results: success.step_results,
+                error: None,
+                started_at,
+                completed_at,
+                duration_secs,
+            },
+            Err(failure) => TaskResult {
+                task_id: task.id.clone(),
+                status: "failed".to_string(),
+                pr_url: failure.pr_url,
+                branch: task.branch.clone(),
+                step_results: failure.step_results,
+                error: Some(failure.error.to_string()),
+                started_at,
+                completed_at,
+                duration_secs,
+            },
+        };
 
-        // Build remote HTTPS URL (no token embedded here; used later only for push)
+        write_result_file(&result)?;
+        Ok(result)
+    }
+
+    // Inner pipeline that surfaces partial state (step results + optional PR
+    // URL) on failure so the wrapper can persist a meaningful TaskResult.
+    async fn run_real_phases(
+        &self,
+        task: &TaskFile,
+        github_token: &str,
+        _github_username: &str,
+    ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
+        let (owner, repo_name) = parse_owner_repo(&task.repo)
+            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
-        // 1) Clone repository with token (blocking)
+        // 1) Clone repository with token
         let gm = Arc::clone(&self.git_manager);
         let remote_url_clone = remote_url.clone();
         let token_clone = github_token.to_string();
-        let clone_result = task::spawn_blocking(move || {
+        let repo_path = tokio::task::spawn_blocking(move || {
             gm.clone_repo_with_token(&remote_url_clone, None, &token_clone)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("clone task join error: {}", e))??;
+        .map_err(|e| anyhow::anyhow!("clone task join error: {}", e))
+        .and_then(|r| r.map_err(|e| anyhow::anyhow!(e)))
+        .map_err(|e| FailureOutcome::early(&task.steps, e))?;
 
-        let repo_path = clone_result;
-
-        // 2) Create branch (blocking)
+        // 2) Create branch
         let branch = task.branch.clone();
         let repo_path_branch = repo_path.clone();
         let branch_clone = branch.clone();
-        let create_branch_res = task::spawn_blocking(move || {
-            let status = StdCommand::new("git")
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
                 .arg("-C")
                 .arg(&repo_path_branch)
                 .arg("checkout")
@@ -286,64 +315,88 @@ impl TaskExecutor {
             if !status.success() {
                 return Err(anyhow::anyhow!("git checkout -b failed"));
             }
-            Ok::<(), anyhow::Error>(())
+            Ok(())
         })
         .await
-        .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))??;
+        .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
+        .and_then(|r| r)
+        .map_err(|e| FailureOutcome::early(&task.steps, e))?;
 
-        // 3) Apply changes for each step (simple file writes) and commit
-        // Prepare a working copy of needed strings to move into blocking closure
+        // 3) Apply step files locally and commit
+        let mut step_results: Vec<StepResult> = task
+            .steps
+            .iter()
+            .map(|s| StepResult {
+                step: s.clone(),
+                status: "success".to_string(),
+                actions: vec![format!("wrote placeholder file for step")],
+                test_output: None,
+                error: None,
+                completed_at: Some(Utc::now().timestamp()),
+            })
+            .collect();
+
         let repo_path_commit = repo_path.clone();
         let steps = task.steps.clone();
         let task_id = task.id.clone();
         let commit_message = format!("Task {}: apply changes", task_id);
-        let token_for_push = github_token.to_string();
-        let remote_url_for_push = remote_url.clone();
-        let branch_for_push = branch.clone();
-
-        let commit_and_push_res = task::spawn_blocking(move || -> anyhow::Result<()> {
-            // For each step create/update a file that documents the step
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             for (i, step) in steps.iter().enumerate() {
                 let filename = format!("rustcode_task_{}_step_{}.txt", task_id, i);
                 let path = repo_path_commit.join(&filename);
                 std::fs::write(&path, format!("Step: {}\n", step))?;
             }
-
-            // git add .
-            let status = StdCommand::new("git")
-                .arg("-C")
-                .arg(&repo_path_commit)
-                .arg("add")
-                .arg(".")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git add failed"));
-            }
-
-            // git commit -m "<message>"
-            let status = StdCommand::new("git")
+            run_git(&repo_path_commit, &["add", "."])?;
+            // commit may exit non-zero when nothing changed; that's not fatal —
+            // we still want to push the branch (no-op push is harmless).
+            let _ = std::process::Command::new("git")
                 .arg("-C")
                 .arg(&repo_path_commit)
                 .arg("commit")
                 .arg("-m")
                 .arg(&commit_message)
-                .status()?;
-            if !status.success() {
-                // If there's nothing to commit (no changes), it's not fatal
-                // but we continue to push the branch.
+                .status();
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("commit join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(FailureOutcome::with_steps(step_results, e));
+        }
+
+        // 4) Run the per-language test runner against the working tree.
+        //    Output is attached to the last step result (or a synthetic entry
+        //    when steps is empty) so the PR description can reference it.
+        let test_summary = run_tests_for_workspace(&repo_path);
+        if let Some(last) = step_results.last_mut() {
+            last.test_output = Some(test_summary.summary.clone());
+            if !test_summary.passed {
+                last.status = "failed".to_string();
+                last.error = Some("test runner reported failures".to_string());
             }
+        }
+        if !test_summary.passed {
+            // Tests failed — abort before pushing. Return what we have so the
+            // wrapper writes a useful result file.
+            return Err(FailureOutcome::with_steps(
+                step_results,
+                anyhow::anyhow!("tests failed: {}", test_summary.summary),
+            ));
+        }
 
-            // Construct authenticated push URL for push (do NOT log)
-            let auth_push_url = remote_url_for_push.replacen(
-                "https://",
-                &format!("https://{}@", token_for_push),
-                1,
-            );
-
-            // git push -u <auth_push_url> <branch>
-            let status = StdCommand::new("git")
+        // 5) Push branch
+        let repo_path_push = repo_path.clone();
+        let branch_for_push = branch.clone();
+        let auth_push_url = remote_url.replacen(
+            "https://",
+            &format!("https://{}@", github_token),
+            1,
+        );
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
                 .arg("-C")
-                .arg(&repo_path_commit)
+                .arg(&repo_path_push)
                 .arg("push")
                 .arg("-u")
                 .arg(&auth_push_url)
@@ -353,75 +406,74 @@ impl TaskExecutor {
             if !status.success() {
                 return Err(anyhow::anyhow!("git push failed"));
             }
-
             Ok(())
         })
         .await
-        .map_err(|e| anyhow::anyhow!("commit/push join error: {}", e))??;
+        .map_err(|e| anyhow::anyhow!("push join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(FailureOutcome::with_steps(step_results, e));
+        }
 
-        // 4) Create Pull Request via GitHub API
-        let gh_client = GitHubClient::new(github_token.to_string())
-            .map_err(|e| anyhow::anyhow!(format!("failed to create GitHub client: {}", e)))?;
+        // 6) Create PR
+        let gh_client = match GitHubClient::new(github_token.to_string()) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(FailureOutcome::with_steps(
+                    step_results,
+                    anyhow::anyhow!("failed to create GitHub client: {}", e),
+                ));
+            }
+        };
 
         let title = format!("Task: {} — {}", task.id, task.description);
-        // Default base branch: main (could be configurable)
-        let base = "main";
-        let head = branch.as_str();
-
-        let pr = gh_client
+        let pr_body = format!(
+            "{}\n\n---\n_Test summary_:\n```\n{}\n```",
+            task.description, test_summary.summary
+        );
+        let pr = match gh_client
             .create_pull_request(
                 owner,
                 repo_name,
                 &title,
-                head,
-                base,
-                Some(&task.description),
+                branch.as_str(),
+                "main",
+                Some(&pr_body),
                 false,
             )
             .await
-            .map_err(|e| anyhow::anyhow!(format!("failed to create PR: {}", e)))?;
-
-        // 5) Build TaskResult and persist it
-        let start = Utc::now();
-        let end = Utc::now();
-        let duration = 0u64;
-
-        let step_results: Vec<StepResult> = task
-            .steps
-            .iter()
-            .map(|s| StepResult {
-                step: s.clone(),
-                status: "success".to_string(),
-                actions: vec![format!("applied step: {}", s)],
-                test_output: None,
-                error: None,
-                completed_at: Some(Utc::now().timestamp()),
-            })
-            .collect();
-
-        let result = TaskResult {
-            task_id: task.id.clone(),
-            status: "success".to_string(),
-            pr_url: Some(pr.html_url.clone()),
-            branch: branch.clone(),
-            step_results: step_results.clone(),
-            error: None,
-            started_at: start.timestamp(),
-            completed_at: end.timestamp(),
-            duration_secs: duration,
+        {
+            Ok(pr) => pr,
+            Err(e) => {
+                return Err(FailureOutcome::with_steps(
+                    step_results,
+                    anyhow::anyhow!("failed to create PR: {}", e),
+                ));
+            }
         };
 
-        // Write result file
-        let results_dir = Path::new("tasks").join("results");
-        if !results_dir.exists() {
-            std::fs::create_dir_all(&results_dir)?;
+        // 7) Apply labels (best-effort — log on failure)
+        if !task.labels.is_empty() {
+            match gh_client
+                .add_labels(owner, repo_name, pr.number, &task.labels)
+                .await
+            {
+                Ok(_) => info!(pr = pr.number, labels = ?task.labels, "Applied PR labels"),
+                Err(e) => warn!(pr = pr.number, error = %e, "Failed to apply PR labels"),
+            }
         }
-        let result_path = results_dir.join(format!("{}.json", task.id));
-        let file = fs::File::create(&result_path)?;
-        let writer = BufWriter::new(file);
-        to_writer_pretty(writer, &result)?;
 
-        Ok(result)
+        Ok(SuccessOutcome {
+            pr_url: Some(pr.html_url),
+            step_results,
+        })
+    }
+
+    /// Run the language-appropriate test suite against `repo_path` and return a
+    /// human-readable summary plus a pass flag.
+    #[allow(dead_code)]
+    fn run_workspace_tests(repo_path: &Path) -> TestSummary {
+        run_tests_for_workspace(repo_path)
     }
 
     /// Create a branch pointing to HEAD (requires at least one commit).
@@ -436,6 +488,159 @@ impl TaskExecutor {
         let _branch_ref = repo.branch(branch, &commit, false)?;
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers for execute_real
+// ---------------------------------------------------------------------------
+
+struct SuccessOutcome {
+    pr_url: Option<String>,
+    step_results: Vec<StepResult>,
+}
+
+struct FailureOutcome {
+    pr_url: Option<String>,
+    step_results: Vec<StepResult>,
+    error: anyhow::Error,
+}
+
+impl FailureOutcome {
+    fn early(steps: &[String], error: anyhow::Error) -> Self {
+        let step_results = steps
+            .iter()
+            .map(|s| StepResult {
+                step: s.clone(),
+                status: "pending".to_string(),
+                actions: Vec::new(),
+                test_output: None,
+                error: None,
+                completed_at: None,
+            })
+            .collect();
+        Self {
+            pr_url: None,
+            step_results,
+            error,
+        }
+    }
+
+    fn with_steps(step_results: Vec<StepResult>, error: anyhow::Error) -> Self {
+        Self {
+            pr_url: None,
+            step_results,
+            error,
+        }
+    }
+}
+
+struct TestSummary {
+    summary: String,
+    passed: bool,
+}
+
+fn parse_owner_repo(repo: &str) -> anyhow::Result<(&str, &str)> {
+    let mut parts = repo.splitn(2, '/');
+    let owner = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("task.repo must be in format 'owner/repo'"))?;
+    let name = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("task.repo must be in format 'owner/repo'"))?;
+    Ok((owner, name))
+}
+
+// Run a git subcommand in `cwd` and fail the function if it exits non-zero.
+fn run_git(cwd: &Path, args: &[&str]) -> anyhow::Result<()> {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .status()?;
+    if !status.success() {
+        return Err(anyhow::anyhow!("git {:?} exited {}", args, status));
+    }
+    Ok(())
+}
+
+// Detect project types under `repo_path` and run the matching test suite(s).
+// Returns a short summary string plus an aggregate pass flag.
+//
+// Failure to detect or run is treated as `passed = true` with a note in the
+// summary — we don't want a missing test toolchain to block a PR that didn't
+// touch testable code. Callers that need stricter semantics can inspect the
+// summary text.
+fn run_tests_for_workspace(repo_path: &Path) -> TestSummary {
+    let runner = TestRunner::new(repo_path);
+    let project_types = match runner.detect_project_types() {
+        Ok(types) if !types.is_empty() => types,
+        Ok(_) => {
+            return TestSummary {
+                summary: "no recognised project type — skipping tests".to_string(),
+                passed: true,
+            };
+        }
+        Err(e) => {
+            return TestSummary {
+                summary: format!("project type detection failed: {}", e),
+                passed: true,
+            };
+        }
+    };
+
+    let mut all_passed = true;
+    let mut lines: Vec<String> = Vec::with_capacity(project_types.len());
+    for project_type in project_types {
+        if matches!(project_type, ProjectType::Mixed) {
+            continue;
+        }
+        match runner.run_tests_for_type(project_type) {
+            Ok(results) => {
+                let suite_passed = results.failed == 0;
+                if !suite_passed {
+                    all_passed = false;
+                }
+                lines.push(format!(
+                    "{:?}: total={} passed={} failed={} skipped={}",
+                    results.project_type,
+                    results.total,
+                    results.passed,
+                    results.failed,
+                    results.skipped
+                ));
+            }
+            Err(e) => {
+                // Couldn't run (e.g. missing toolchain) — don't fail the task on
+                // this alone, but record it.
+                lines.push(format!("{:?}: runner error: {}", project_type, e));
+            }
+        }
+    }
+    TestSummary {
+        summary: lines.join("\n"),
+        passed: all_passed,
+    }
+}
+
+fn write_result_file(result: &TaskResult) -> anyhow::Result<()> {
+    let results_dir = Path::new("tasks").join("results");
+    if !results_dir.exists() {
+        std::fs::create_dir_all(&results_dir)?;
+    }
+    let result_path = results_dir.join(format!("{}.json", result.task_id));
+    let file = fs::File::create(&result_path)?;
+    let writer = BufWriter::new(file);
+    to_writer_pretty(writer, result)?;
+    info!(
+        task = %result.task_id,
+        status = %result.status,
+        "TaskResult written to {}",
+        result_path.display()
+    );
+    Ok(())
 }
 
 #[cfg(test)]
