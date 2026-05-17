@@ -21,11 +21,14 @@
 //     this with `stream_message` once we want incremental UI.
 
 use ::api::{
-    AnthropicClient, InputMessage, MessageRequest, MessageResponse, OutputContentBlock,
+    AnthropicClient, InputContentBlock, InputMessage, MessageRequest, MessageResponse,
+    OutputContentBlock, ToolResultContentBlock,
 };
+use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+use super::tools::{ToolBackend, ToolCallRecord, ToolCallStatus};
 use super::types::{
     AgentTask, Plan, PipelineIteration, PipelineResult, PlanStep, ReviewOutcome,
     StepExecutionResult, StepStatus,
@@ -39,6 +42,11 @@ pub const DEFAULT_MAX_ITERATIONS: u32 = 3;
 const PLANNER_MAX_TOKENS: u32 = 4096;
 const EXECUTOR_MAX_TOKENS: u32 = 4096;
 const REVIEWER_MAX_TOKENS: u32 = 2048;
+
+/// Cap on tool-use turns within a single step. The model alternates between
+/// `tool_use` and `tool_result` messages until it produces a pure text turn;
+/// this stops a malformed plan from looping indefinitely on read_file.
+const MAX_TOOL_ITERATIONS_PER_STEP: u32 = 12;
 
 #[derive(Debug, Clone)]
 pub struct AgentPipeline {
@@ -96,7 +104,38 @@ impl AgentPipeline {
         max_iterations: u32,
         events: tokio::sync::mpsc::Sender<PipelineEvent>,
     ) -> Result<PipelineResult, AgentPipelineError> {
-        self.run_internal(task, max_iterations, Some(events)).await
+        self.run_internal(task, max_iterations, Some(events), None)
+            .await
+    }
+
+    /// Run the pipeline with a tool backend attached to the executor.
+    ///
+    /// When tools are present, each executor step uses Anthropic tool use:
+    /// Sonnet may emit `tool_use` blocks which are dispatched to
+    /// `tools.execute(...)`, the results are sent back as `tool_result`
+    /// blocks, and the loop continues until the model produces a pure
+    /// text turn (or hits `MAX_TOOL_ITERATIONS_PER_STEP`).
+    pub async fn run_with_tools(
+        &self,
+        task: AgentTask,
+        max_iterations: u32,
+        tools: &dyn ToolBackend,
+    ) -> Result<PipelineResult, AgentPipelineError> {
+        self.run_internal(task, max_iterations, None, Some(tools))
+            .await
+    }
+
+    /// Same as `run_with_tools` but also emits `PipelineEvent`s through
+    /// the provided channel for SSE streaming.
+    pub async fn run_streaming_with_tools(
+        &self,
+        task: AgentTask,
+        max_iterations: u32,
+        events: tokio::sync::mpsc::Sender<PipelineEvent>,
+        tools: &dyn ToolBackend,
+    ) -> Result<PipelineResult, AgentPipelineError> {
+        self.run_internal(task, max_iterations, Some(events), Some(tools))
+            .await
     }
 
     async fn run_internal(
@@ -104,6 +143,7 @@ impl AgentPipeline {
         task: AgentTask,
         max_iterations: u32,
         events: Option<tokio::sync::mpsc::Sender<PipelineEvent>>,
+        tools: Option<&dyn ToolBackend>,
     ) -> Result<PipelineResult, AgentPipelineError> {
         let max = max_iterations.max(1);
         let mut iterations: Vec<PipelineIteration> = Vec::with_capacity(max as usize);
@@ -135,7 +175,7 @@ impl AgentPipeline {
             }
 
             let step_results = self
-                .execute_internal(&plan, task.context.as_deref(), iter, events.as_ref())
+                .execute_internal(&plan, task.context.as_deref(), iter, events.as_ref(), tools)
                 .await
                 .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
             debug!(
@@ -280,19 +320,21 @@ impl AgentPipeline {
         plan: &Plan,
         repo_context: Option<&str>,
     ) -> Result<Vec<StepExecutionResult>, PhaseError> {
-        self.execute_internal(plan, repo_context, 0, None).await
+        self.execute_internal(plan, repo_context, 0, None, None).await
     }
 
     // Internal step loop. `events` is `Some` when called from `run_streaming`
     // so per-step start/complete events can be emitted between LLM calls.
     // `iteration` is the iteration index attached to those events (0 when
-    // the caller doesn't track iterations).
+    // the caller doesn't track iterations). `tools` is `Some` to switch
+    // the per-step LLM call into Anthropic tool-use mode.
     async fn execute_internal(
         &self,
         plan: &Plan,
         repo_context: Option<&str>,
         iteration: u32,
         events: Option<&tokio::sync::mpsc::Sender<PipelineEvent>>,
+        tools: Option<&dyn ToolBackend>,
     ) -> Result<Vec<StepExecutionResult>, PhaseError> {
         let mut results: Vec<StepExecutionResult> = Vec::with_capacity(plan.steps.len());
 
@@ -306,17 +348,19 @@ impl AgentPipeline {
                     })
                     .await;
             }
-            let result = self
-                .execute_step(plan, step, &results, repo_context)
-                .await
-                .unwrap_or_else(|e| StepExecutionResult {
-                    step_id: step.id,
-                    step_description: step.description.clone(),
-                    output: String::new(),
-                    status: StepStatus::Failed {
-                        error: e.to_string(),
-                    },
-                });
+            let outcome = match tools {
+                Some(t) => self.execute_step_with_tools(plan, step, &results, repo_context, t).await,
+                None => self.execute_step(plan, step, &results, repo_context).await,
+            };
+            let result = outcome.unwrap_or_else(|e| StepExecutionResult {
+                step_id: step.id,
+                step_description: step.description.clone(),
+                output: String::new(),
+                status: StepStatus::Failed {
+                    error: e.to_string(),
+                },
+                tool_calls: Vec::new(),
+            });
             if let Some(tx) = events {
                 let _ = tx
                     .send(PipelineEvent::StepCompleted {
@@ -338,36 +382,7 @@ impl AgentPipeline {
         prior_results: &[StepExecutionResult],
         repo_context: Option<&str>,
     ) -> Result<StepExecutionResult, PhaseError> {
-        let mut user = format!(
-            "## Plan summary\n{}\n\n## Current step ({}/{})\n{}\n",
-            plan.summary,
-            step.id,
-            plan.steps.len(),
-            step.description
-        );
-        if !step.success_criteria.is_empty() {
-            user.push_str(&format!("\n### Success criteria\n{}\n", step.success_criteria));
-        }
-        if let Some(ctx) = repo_context {
-            user.push_str(&format!("\n## Repo context\n{}\n", ctx));
-        }
-        if !prior_results.is_empty() {
-            user.push_str("\n## Prior step results\n");
-            for prev in prior_results {
-                let status = match &prev.status {
-                    StepStatus::Completed => "completed".to_string(),
-                    StepStatus::Failed { error } => format!("failed: {}", error),
-                };
-                user.push_str(&format!(
-                    "- Step {} ({}): {}\n  output: {}\n",
-                    prev.step_id,
-                    status,
-                    prev.step_description,
-                    truncate(&prev.output, 600)
-                ));
-            }
-        }
-
+        let user = build_executor_user_message(plan, step, prior_results, repo_context);
         let request = MessageRequest {
             model: self.executor_model.clone(),
             max_tokens: EXECUTOR_MAX_TOKENS,
@@ -389,6 +404,139 @@ impl AgentPipeline {
             step_description: step.description.clone(),
             output,
             status: StepStatus::Completed,
+            tool_calls: Vec::new(),
+        })
+    }
+
+    // Tool-use variant of `execute_step`. The conversation is multi-turn:
+    // we keep appending assistant turns containing `tool_use` blocks and
+    // user turns containing the corresponding `tool_result` blocks until
+    // the model returns a pure-text turn. `MAX_TOOL_ITERATIONS_PER_STEP`
+    // caps runaway loops.
+    async fn execute_step_with_tools(
+        &self,
+        plan: &Plan,
+        step: &PlanStep,
+        prior_results: &[StepExecutionResult],
+        repo_context: Option<&str>,
+        tools: &dyn ToolBackend,
+    ) -> Result<StepExecutionResult, PhaseError> {
+        let initial_user = build_executor_user_message(plan, step, prior_results, repo_context);
+        let tool_defs = tools.tool_definitions();
+
+        let mut messages: Vec<InputMessage> = vec![InputMessage::user_text(initial_user)];
+        let mut tool_calls_made: Vec<ToolCallRecord> = Vec::new();
+        let mut accumulated_text = String::new();
+
+        for _ in 0..MAX_TOOL_ITERATIONS_PER_STEP {
+            let request = MessageRequest {
+                model: self.executor_model.clone(),
+                max_tokens: EXECUTOR_MAX_TOKENS,
+                messages: messages.clone(),
+                system: Some(EXECUTOR_SYSTEM_PROMPT.to_string()),
+                tools: Some(tool_defs.clone()),
+                tool_choice: None,
+                stream: false,
+            };
+
+            let response = self
+                .executor
+                .send_message(&request)
+                .await
+                .map_err(|e| PhaseError::Transport(e.to_string()))?;
+
+            // Split the response into tool_use blocks (to dispatch) and
+            // text blocks (which become the final output once tool calls
+            // stop). We also need to echo the assistant turn verbatim
+            // back to the API on the next request, so we collect that.
+            let mut assistant_blocks: Vec<InputContentBlock> = Vec::new();
+            let mut tool_uses: Vec<(String, String, Value)> = Vec::new();
+            for block in &response.content {
+                match block {
+                    OutputContentBlock::Text { text } => {
+                        accumulated_text.push_str(text);
+                        assistant_blocks.push(InputContentBlock::Text { text: text.clone() });
+                    }
+                    OutputContentBlock::ToolUse { id, name, input } => {
+                        tool_uses.push((id.clone(), name.clone(), input.clone()));
+                        assistant_blocks.push(InputContentBlock::ToolUse {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                    // Extended-thinking blocks are not supported in this
+                    // flow; skip them. The proxy doesn't enable thinking
+                    // by default, so this is rare in practice.
+                    OutputContentBlock::Thinking { .. } | OutputContentBlock::RedactedThinking { .. } => {}
+                }
+            }
+
+            if tool_uses.is_empty() {
+                // Pure text turn — we're done.
+                return Ok(StepExecutionResult {
+                    step_id: step.id,
+                    step_description: step.description.clone(),
+                    output: accumulated_text,
+                    status: StepStatus::Completed,
+                    tool_calls: tool_calls_made,
+                });
+            }
+
+            // Dispatch each tool call and collect the result blocks for the
+            // next user turn.
+            let mut result_blocks: Vec<InputContentBlock> = Vec::with_capacity(tool_uses.len());
+            for (id, name, input) in tool_uses {
+                let outcome = tools.execute(&name, input.clone()).await;
+                let (output_text, is_error, status) = match outcome {
+                    Ok(text) => (text, false, ToolCallStatus::Success),
+                    Err(err) => {
+                        warn!(tool = %name, error = %err, "Tool call failed");
+                        (err.to_string(), true, ToolCallStatus::Error)
+                    }
+                };
+                tool_calls_made.push(ToolCallRecord {
+                    tool_use_id: id.clone(),
+                    tool_name: name.clone(),
+                    input,
+                    status,
+                    output: truncate(&output_text, 4096),
+                });
+                result_blocks.push(InputContentBlock::ToolResult {
+                    tool_use_id: id,
+                    content: vec![ToolResultContentBlock::Text { text: output_text }],
+                    is_error,
+                });
+            }
+
+            // Echo the assistant turn (with tool_use blocks) back, followed
+            // by a user turn carrying the tool results.
+            messages.push(InputMessage {
+                role: "assistant".to_string(),
+                content: assistant_blocks,
+            });
+            messages.push(InputMessage {
+                role: "user".to_string(),
+                content: result_blocks,
+            });
+        }
+
+        // Exceeded the per-step tool-iteration cap. Return what we have so
+        // the reviewer can see the trace and decide to revise.
+        Ok(StepExecutionResult {
+            step_id: step.id,
+            step_description: step.description.clone(),
+            output: format!(
+                "{}\n\n[step exceeded MAX_TOOL_ITERATIONS_PER_STEP = {}]",
+                accumulated_text, MAX_TOOL_ITERATIONS_PER_STEP
+            ),
+            status: StepStatus::Failed {
+                error: format!(
+                    "tool loop did not converge within {} iterations",
+                    MAX_TOOL_ITERATIONS_PER_STEP
+                ),
+            },
+            tool_calls: tool_calls_made,
         })
     }
 
@@ -532,12 +680,18 @@ Rules:
 
 const EXECUTOR_SYSTEM_PROMPT: &str = r#"You are the executor in a three-phase agent loop. The planner has produced a list of steps. You are working on ONE step at a time.
 
-Your response is plain text describing what you did for this step. When the step is a coding step:
+If file/command tools are available, USE THEM to make real changes:
+- `read_file` to inspect existing code before editing.
+- `edit_file` for targeted in-place changes (the `old_string` must be long enough to match uniquely).
+- `write_file` to create new files or rewrite a file end-to-end.
+- `run_command` (when present) for build / test / lint commands.
+After every tool call wait for the result before deciding the next action.
+
+If no tools are available, fall back to plain text:
 - Show the exact file path and complete content you would write.
 - Use fenced code blocks for code.
-- Reference the success criterion at the end of your response and state whether it's met.
 
-Do not skip to later steps. Do not summarize the whole plan. Focus only on the current step."#;
+End your final turn with a one-sentence note saying whether the success criterion is met. Do not skip to later steps. Do not summarize the whole plan. Focus only on the current step."#;
 
 const REVIEWER_SYSTEM_PROMPT: &str = r#"You are the reviewer in a three-phase agent loop. You see the original task plus the trace of plan + step outputs and decide whether the execution satisfies the task.
 
@@ -561,6 +715,46 @@ Be strict: approve only if every step's output is concrete, the success criteria
 // ---------------------------------------------------------------------------
 // Response helpers
 // ---------------------------------------------------------------------------
+
+/// Build the user-message body for the executor phase. Used by both the
+/// text-only and tool-use step executors so the prompt shape stays in sync.
+fn build_executor_user_message(
+    plan: &Plan,
+    step: &PlanStep,
+    prior_results: &[StepExecutionResult],
+    repo_context: Option<&str>,
+) -> String {
+    let mut user = format!(
+        "## Plan summary\n{}\n\n## Current step ({}/{})\n{}\n",
+        plan.summary,
+        step.id,
+        plan.steps.len(),
+        step.description
+    );
+    if !step.success_criteria.is_empty() {
+        user.push_str(&format!("\n### Success criteria\n{}\n", step.success_criteria));
+    }
+    if let Some(ctx) = repo_context {
+        user.push_str(&format!("\n## Repo context\n{}\n", ctx));
+    }
+    if !prior_results.is_empty() {
+        user.push_str("\n## Prior step results\n");
+        for prev in prior_results {
+            let status = match &prev.status {
+                StepStatus::Completed => "completed".to_string(),
+                StepStatus::Failed { error } => format!("failed: {}", error),
+            };
+            user.push_str(&format!(
+                "- Step {} ({}): {}\n  output: {}\n",
+                prev.step_id,
+                status,
+                prev.step_description,
+                truncate(&prev.output, 600)
+            ));
+        }
+    }
+    user
+}
 
 fn extract_text(resp: &MessageResponse) -> String {
     let mut buf = String::new();

@@ -482,6 +482,298 @@ impl TaskExecutor {
     /// the human reviewer can see plan + step outputs + critique.
     ///
     /// When `github_token` is `None`, this runs the pipeline + writes the
+    /// Run the agent with file-system tools rooted at a freshly-cloned copy
+    /// of `task.repo`. The agent makes real edits via tool calls; when the
+    /// reviewer approves the trace, the modified working tree is committed
+    /// and pushed and a PR is opened.
+    ///
+    /// Requires a non-empty `github_token`. Callers without one should use
+    /// `execute_with_agent` instead (text-only, persists trace but doesn't
+    /// touch GitHub).
+    pub async fn execute_with_agent_tools(
+        &self,
+        task: &TaskFile,
+        pipeline: &crate::agent::AgentPipeline,
+        github_token: &str,
+        max_iterations: u32,
+    ) -> anyhow::Result<TaskResult> {
+        let started_at = Utc::now().timestamp();
+        let phase = self
+            .run_agent_tool_phases(task, pipeline, github_token, max_iterations)
+            .await;
+        let completed_at = Utc::now().timestamp();
+        let duration_secs = (completed_at - started_at).max(0) as u64;
+
+        let result = match phase {
+            Ok(success) => TaskResult {
+                task_id: task.id.clone(),
+                status: "success".to_string(),
+                pr_url: success.pr_url,
+                branch: task.branch.clone(),
+                step_results: success.step_results,
+                error: None,
+                started_at,
+                completed_at,
+                duration_secs,
+                agent_trace: success.agent_trace,
+            },
+            Err(failure) => TaskResult {
+                task_id: task.id.clone(),
+                status: "failed".to_string(),
+                pr_url: failure.pr_url,
+                branch: task.branch.clone(),
+                step_results: failure.step_results,
+                error: Some(failure.error.to_string()),
+                started_at,
+                completed_at,
+                duration_secs,
+                agent_trace: failure.agent_trace,
+            },
+        };
+
+        write_result_file(&result)?;
+        Ok(result)
+    }
+
+    // Cloned-first, tool-using flow. Each branch surfaces partial state so
+    // the wrapper can persist a meaningful TaskResult.
+    async fn run_agent_tool_phases(
+        &self,
+        task: &TaskFile,
+        pipeline: &crate::agent::AgentPipeline,
+        github_token: &str,
+        max_iterations: u32,
+    ) -> std::result::Result<AgentToolSuccess, AgentToolFailure> {
+        let (owner, repo_name) = parse_owner_repo(&task.repo)
+            .map_err(|e| AgentToolFailure::early(&task.steps, e))?;
+        let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
+
+        // 1) Clone — the agent needs a real working tree to edit.
+        let gm = Arc::clone(&self.git_manager);
+        let remote_url_clone = remote_url.clone();
+        let token_clone = github_token.to_string();
+        let repo_path = tokio::task::spawn_blocking(move || {
+            gm.clone_repo_with_token(&remote_url_clone, None, &token_clone)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("clone task join error: {}", e))
+        .and_then(|r| r.map_err(|e| anyhow::anyhow!(e)))
+        .map_err(|e| AgentToolFailure::early(&task.steps, e))?;
+
+        // 2) Branch.
+        let branch = task.branch.clone();
+        let repo_path_branch = repo_path.clone();
+        let branch_clone = branch.clone();
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_branch)
+                .arg("checkout")
+                .arg("-b")
+                .arg(&branch_clone)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("git checkout -b failed"));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
+        .and_then(|r| r)
+        .map_err(|e| AgentToolFailure::early(&task.steps, e))?;
+
+        // 3) Build FileSystemTools rooted at the clone and run the pipeline.
+        //    `with_command_execution(true)` lets the executor run build/test
+        //    commands; this is safe because the working tree is a throwaway
+        //    clone, not the host filesystem.
+        let tools = crate::agent::FileSystemTools::new(repo_path.clone())
+            .with_command_execution(true);
+        let agent_task = build_agent_task(task);
+        let pipeline_result = match pipeline
+            .run_with_tools(agent_task, max_iterations, &tools)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(AgentToolFailure {
+                    pr_url: None,
+                    step_results: placeholder_steps(&task.steps, "pending"),
+                    agent_trace: None,
+                    error: anyhow::anyhow!("agent pipeline error: {}", e),
+                });
+            }
+        };
+
+        let step_results = step_results_from_pipeline(&pipeline_result);
+
+        if !pipeline_result.converged {
+            let critique = match &pipeline_result.final_review {
+                crate::agent::ReviewOutcome::Approved { summary } => summary.clone(),
+                crate::agent::ReviewOutcome::Revise { critique, .. } => critique.clone(),
+            };
+            return Err(AgentToolFailure {
+                pr_url: None,
+                step_results,
+                agent_trace: Some(pipeline_result),
+                error: anyhow::anyhow!("agent did not converge: {}", critique),
+            });
+        }
+
+        // 4) Stage + commit the agent's changes.
+        let repo_path_commit = repo_path.clone();
+        let task_id = task.id.clone();
+        let commit_message = format!("Task {}: agent run", task_id);
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            run_git(&repo_path_commit, &["add", "."])?;
+            // commit may exit non-zero with "nothing to commit"; that's fine —
+            // we still want to push so the branch is visible upstream.
+            let _ = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_commit)
+                .arg("commit")
+                .arg("-m")
+                .arg(&commit_message)
+                .status();
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("commit join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(AgentToolFailure {
+                pr_url: None,
+                step_results,
+                agent_trace: Some(pipeline_result),
+                error: e,
+            });
+        }
+
+        // 5) Run the per-language test suite against the agent's working tree.
+        let mut step_results = step_results;
+        let test_summary = run_tests_for_workspace(&repo_path);
+        if let Some(last) = step_results.last_mut() {
+            last.test_output = Some(test_summary.summary.clone());
+            if !test_summary.passed {
+                last.status = "failed".to_string();
+                last.error = Some("test runner reported failures".to_string());
+            }
+        }
+        if !test_summary.passed {
+            return Err(AgentToolFailure {
+                pr_url: None,
+                step_results,
+                agent_trace: Some(pipeline_result),
+                error: anyhow::anyhow!("tests failed: {}", test_summary.summary),
+            });
+        }
+
+        // 6) Push.
+        let repo_path_push = repo_path.clone();
+        let branch_for_push = branch.clone();
+        let auth_push_url = remote_url.replacen(
+            "https://",
+            &format!("https://{}@", github_token),
+            1,
+        );
+        if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo_path_push)
+                .arg("push")
+                .arg("-u")
+                .arg(&auth_push_url)
+                .arg(&branch_for_push)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("git push failed"));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("push join error: {}", e))
+        .and_then(|r| r)
+        {
+            return Err(AgentToolFailure {
+                pr_url: None,
+                step_results,
+                agent_trace: Some(pipeline_result),
+                error: e,
+            });
+        }
+
+        // 7) PR + labels.
+        let gh_client = match GitHubClient::new(github_token.to_string()) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(AgentToolFailure {
+                    pr_url: None,
+                    step_results,
+                    agent_trace: Some(pipeline_result),
+                    error: anyhow::anyhow!("failed to create GitHub client: {}", e),
+                });
+            }
+        };
+
+        let approval_summary = match &pipeline_result.final_review {
+            crate::agent::ReviewOutcome::Approved { summary } => summary.clone(),
+            crate::agent::ReviewOutcome::Revise { critique, .. } => critique.clone(),
+        };
+        let tool_call_count: usize = pipeline_result
+            .iterations
+            .iter()
+            .flat_map(|i| i.step_results.iter())
+            .map(|sr| sr.tool_calls.len())
+            .sum();
+        let pr_body = format!(
+            "{}\n\n---\n_Agent verdict_: {}\n\n_Iterations_: {}  •  _Tool calls_: {}\n\n_Test summary_:\n```\n{}\n```",
+            task.description,
+            approval_summary,
+            pipeline_result.iterations.len(),
+            tool_call_count,
+            test_summary.summary
+        );
+        let pr = match gh_client
+            .create_pull_request(
+                owner,
+                repo_name,
+                &format!("Task: {} — {}", task.id, task.description),
+                branch.as_str(),
+                "main",
+                Some(&pr_body),
+                false,
+            )
+            .await
+        {
+            Ok(pr) => pr,
+            Err(e) => {
+                return Err(AgentToolFailure {
+                    pr_url: None,
+                    step_results,
+                    agent_trace: Some(pipeline_result),
+                    error: anyhow::anyhow!("failed to create PR: {}", e),
+                });
+            }
+        };
+
+        if !task.labels.is_empty() {
+            match gh_client
+                .add_labels(owner, repo_name, pr.number, &task.labels)
+                .await
+            {
+                Ok(_) => info!(pr = pr.number, labels = ?task.labels, "Applied PR labels"),
+                Err(e) => warn!(pr = pr.number, error = %e, "Failed to apply PR labels"),
+            }
+        }
+
+        Ok(AgentToolSuccess {
+            pr_url: Some(pr.html_url),
+            step_results,
+            agent_trace: Some(pipeline_result),
+        })
+    }
+
     /// outputs locally but skips the push + PR creation (useful for dry-run
     /// or when the watcher is offline-only).
     pub async fn execute_with_agent(
@@ -871,6 +1163,43 @@ impl FailureOutcome {
         Self {
             pr_url: None,
             step_results,
+            error,
+        }
+    }
+}
+
+// Same shape as `SuccessOutcome` / `FailureOutcome` but carries the
+// `PipelineResult` so the wrapper can embed it in `TaskResult.agent_trace`.
+struct AgentToolSuccess {
+    pr_url: Option<String>,
+    step_results: Vec<StepResult>,
+    agent_trace: Option<crate::agent::PipelineResult>,
+}
+
+struct AgentToolFailure {
+    pr_url: Option<String>,
+    step_results: Vec<StepResult>,
+    agent_trace: Option<crate::agent::PipelineResult>,
+    error: anyhow::Error,
+}
+
+impl AgentToolFailure {
+    fn early(steps: &[String], error: anyhow::Error) -> Self {
+        let step_results = steps
+            .iter()
+            .map(|s| StepResult {
+                step: s.clone(),
+                status: "pending".to_string(),
+                actions: Vec::new(),
+                test_output: None,
+                error: None,
+                completed_at: None,
+            })
+            .collect();
+        Self {
+            pr_url: None,
+            step_results,
+            agent_trace: None,
             error,
         }
     }

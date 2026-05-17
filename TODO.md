@@ -177,11 +177,37 @@
   > `#[serde(default, skip_serializing_if = "Option::is_none")]` so existing
   > result files keep working.
 
-- [ ] **AGENT-D: per-step tool execution inside the executor phase**
-  > During Phase 2, Sonnet may emit tool calls (file create/edit, bash, search).
-  > Wire `runtime::execute_bash` (RC-CRATES-C) and `plugins::PluginLifecycle` (RC-CRATES-D)
-  > as the tool backends so the executor can actually modify files, not just describe changes.
-  > Per-language test runner (TASK-C) should be called automatically after each file-modifying step.
+- [x] **AGENT-D: per-step tool execution inside the executor phase**
+  > **Done 2026-05-17.**
+  > - `src/agent/tools.rs` defines a `ToolBackend` trait with one default impl,
+  >   `FileSystemTools`, scoped to a sandbox root. It exposes `write_file`,
+  >   `edit_file`, `read_file`, and (opt-in) `run_command`. Absolute paths and
+  >   `..` traversals return `PathEscape`; outputs are truncated past 16 KiB.
+  > - `AgentPipeline` gained `run_with_tools` and `run_streaming_with_tools`.
+  >   The executor phase switches into Anthropic tool use when a backend is
+  >   present: each step alternates `tool_use`/`tool_result` turns up to
+  >   `MAX_TOOL_ITERATIONS_PER_STEP = 12` before falling out as a step failure.
+  > - `StepExecutionResult.tool_calls: Vec<ToolCallRecord>` records every
+  >   invocation (input, status, truncated output) for the result file trace.
+  > - `TaskExecutor::execute_with_agent_tools` is the new watcher entry point:
+  >   clones first, then runs the pipeline with `FileSystemTools` rooted at
+  >   the clone (with `run_command` enabled — the working tree is throwaway),
+  >   commits the agent's edits, runs the per-language test suite, pushes,
+  >   opens the PR with the tool-call count in the body. `execute_with_agent`
+  >   stays for the no-token / text-only fallback path.
+  > - `src/server.rs` dispatch now prefers `execute_with_agent_tools` when
+  >   both an agent and `GITHUB_TOKEN` are available.
+  >
+  > **Deferred:** the TODO calls for `runtime::execute_bash` /
+  > `plugins::PluginLifecycle` integration; that's gated on RC-CRATES-C and
+  > RC-CRATES-D. For now `FileSystemTools` runs commands directly via
+  > `tokio::process` rooted at the workspace, which is enough to drive
+  > `cargo`, `pytest`, `npm`, and other build / test runners. Replacing the
+  > backend with the runtime-crate sandbox is a one-line trait swap.
+  > **Also deferred:** auto-running the test runner *between* file-modifying
+  > steps. Today we run it once after the pipeline converges; per-step would
+  > require parsing tool calls to detect "this step touched files" — a
+  > follow-up.
 
 ---
 
