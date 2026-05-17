@@ -27,7 +27,14 @@ Requests to `/v1/chat/completions` are classified by `ModelRouter` and routed:
 
 ```
 Request → ModelRouter::classify_prompt_async()
-    ├── xAI (Grok) ← DEFAULT for all requests
+    │
+    ├── (when ANTHROPIC_API_KEY is set):
+    │   ├── ArchitecturalReason / CodeReview / Unknown → Claude Opus 4.7 (planner)
+    │   └── ScaffoldStub / TodoTagging / TreeSummary /
+    │       SymbolExtraction / RepoQuestion            → Claude Sonnet 4.6 (executor)
+    │
+    ├── (fallback when only XAI_API_KEY is set):
+    │   └── all kinds → xAI Grok
     │
     └── (when Ollama is enabled and reachable):
         ├── ScaffoldStub / TodoTagging / TreeSummary → Ollama (local)
@@ -35,7 +42,8 @@ Request → ModelRouter::classify_prompt_async()
         └── ArchitecturalReason / CodeReview         → Grok (remote)
 ```
 
-Ollama is optional. Set `XAI_API_KEY` and everything routes through Grok.
+Anthropic is the primary path when `ANTHROPIC_API_KEY` is set. Grok and Ollama are
+fallbacks; either can be enabled independently.
 
 ## Quick start
 
@@ -64,7 +72,10 @@ docker run -p 3500:3500 --env-file .env rustcode
 
 | Env var | Required | Description |
 |---------|----------|-------------|
-| `XAI_API_KEY` | ✅ | xAI (Grok) API key — default LLM provider |
+| `ANTHROPIC_API_KEY` | Recommended | Anthropic API key — when set, Claude is the primary LLM |
+| `RC_PLANNER_MODEL` | Optional | Override planner-tier model (default: `claude-opus-4-7`) |
+| `RC_EXECUTOR_MODEL` | Optional | Override executor-tier model (default: `claude-sonnet-4-6`) |
+| `XAI_API_KEY` | Fallback | xAI (Grok) API key — fallback when `ANTHROPIC_API_KEY` is absent |
 | `DATABASE_URL` | ✅ | Postgres connection string |
 | `RC_PROXY_API_KEYS` | Recommended | Comma-separated bearer tokens for auth |
 | `GITHUB_TOKEN` | Optional | PAT for repo sync and webhook |
@@ -72,6 +83,8 @@ docker run -p 3500:3500 --env-file .env rustcode
 | `OLLAMA_ENABLED` | Optional | Set `true` to enable Ollama routing |
 | `REPOS_DIR` | Optional | Where to clone repos (default: `/repos`) |
 | `REPO_SYNC_INTERVAL_SECS` | Optional | Auto-sync interval (default: 3600) |
+
+At least one of `ANTHROPIC_API_KEY` or `XAI_API_KEY` must be set for the LLM proxy to work.
 
 Auth is enforced when `RC_PROXY_API_KEYS` is set. All `/api/*` and `/v1/*` routes require `Authorization: Bearer <key>` or `X-API-Key: <key>`. Set `RC_AUTH_DISABLED=true` to opt out (dev only — logs a loud warning).
 
@@ -121,14 +134,21 @@ Responses from `/v1/chat/completions` include an `x_ra_metadata` field:
 ```json
 {
   "x_ra_metadata": {
-    "answered_by": "grok-3",
+    "task_kind": "ArchitecturalReason",
+    "used_fallback": false,
+    "repo_context_injected": true,
     "rag_chunks_used": 4,
     "cached": false,
-    "tokens_used": 1240,
-    "estimated_cost_usd": 0.0062
+    "cache_key": "proxy:a1b2c3d4e5f6g7h8",
+    "cache_creation_input_tokens": 1820,
+    "cache_read_input_tokens": 240
   }
 }
 ```
+
+`cache_creation_input_tokens` and `cache_read_input_tokens` are only populated for
+Claude responses and reflect Anthropic prompt-cache activity (80–90% cost reduction
+on repeated repo-context calls).
 
 ## Stats
 

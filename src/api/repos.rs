@@ -41,6 +41,10 @@ pub struct RepoAppState {
     pub ollama_client: Arc<OllamaClient>,
     // Optional Grok client for remote completions — `None` when XAI_API_KEY is unset.
     pub grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+    // Optional Anthropic client — `None` when ANTHROPIC_API_KEY is unset.
+    // When present, the proxy uses it instead of constructing a one-shot client
+    // per request, preserving the attached PromptCache across requests.
+    pub anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>>,
     // Multi-tier cache (in-memory LRU + optional Redis).
     pub cache: Arc<CacheLayer>,
 }
@@ -586,13 +590,15 @@ where
 impl RepoAppState {
     // Construct a `RepoAppState` wiring all clients from environment variables.
     //
-    // * `sync_service` — caller-owned `Arc<RwLock<RepoSyncService>>`
-    // * `model_router` — caller-owned `Arc<ModelRouter>`
-    // * `grok_client`  — `None` when `XAI_API_KEY` is unset (local-only mode)
+    // * `sync_service`     — caller-owned `Arc<RwLock<RepoSyncService>>`
+    // * `model_router`     — caller-owned `Arc<ModelRouter>`
+    // * `grok_client`      — `None` when `XAI_API_KEY` is unset (local-only mode)
+    // * `anthropic_client` — `None` when `ANTHROPIC_API_KEY` is unset
     pub async fn from_env(
         sync_service: Arc<RwLock<RepoSyncService>>,
         model_router: Arc<ModelRouter>,
         grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+        anthropic_client: Option<Arc<::api::providers::anthropic::AnthropicClient>>,
     ) -> Self {
         // Build Ollama client, attaching Grok as its fallback if available.
         let ollama_client = {
@@ -629,6 +635,7 @@ impl RepoAppState {
             model_router,
             ollama_client,
             grok_client,
+            anthropic_client,
             cache,
         }
     }

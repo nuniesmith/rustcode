@@ -30,9 +30,11 @@ pub struct Config {
     pub model: ModelConfig,
     // Auto-scanner configuration
     pub auto_scan: AutoScanConfig,
-    // Task executor configuration
+    // Task executor configuration (not serialized — populated at startup).
+    #[serde(skip, default)]
     pub task_executor: TaskExecutorOptions,
-    // Task watcher configuration
+    // Task watcher configuration (not serialized — populated at startup).
+    #[serde(skip, default)]
     pub task_watcher: TaskWatcherConfig,
 }
 
@@ -182,7 +184,14 @@ impl Config {
         };
 
         let model = ModelConfig {
-            xai_api_key: std::env::var("XAI_API_KEY").ok(),
+            anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            planner_model: std::env::var("RC_PLANNER_MODEL")
+                .unwrap_or_else(|_| "claude-opus-4-7".to_string()),
+            executor_model: std::env::var("RC_EXECUTOR_MODEL")
+                .unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
+            xai_api_key: std::env::var("XAI_API_KEY").ok().filter(|s| !s.is_empty()),
             remote_model: std::env::var("REMOTE_MODEL")
                 .unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string()),
             local_model: std::env::var("LOCAL_MODEL")
@@ -224,6 +233,8 @@ impl Config {
             database,
             model,
             auto_scan,
+            task_executor: TaskExecutorOptions::default(),
+            task_watcher: TaskWatcherConfig::default(),
         })
     }
 
@@ -267,6 +278,8 @@ impl Default for Config {
             database: DatabaseConfig::default(),
             model: ModelConfig::default(),
             auto_scan: AutoScanConfig::default(),
+            task_executor: TaskExecutorOptions::default(),
+            task_watcher: TaskWatcherConfig::default(),
         }
     }
 }
@@ -577,12 +590,19 @@ impl Default for DatabaseConfig {
     }
 }
 
-// Model router configuration for XAI/Ollama inference routing
+// Model router configuration for Claude/XAI/Ollama inference routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
-    // XAI (Grok) API key — set via XAI_API_KEY
+    // Anthropic API key — set via ANTHROPIC_API_KEY. Presence enables Claude routing
+    // (primary path); absence falls back to Grok/Ollama.
+    pub anthropic_api_key: Option<String>,
+    // Claude Planner tier model slug — set via RC_PLANNER_MODEL (default: claude-opus-4-7)
+    pub planner_model: String,
+    // Claude Executor tier model slug — set via RC_EXECUTOR_MODEL (default: claude-sonnet-4-6)
+    pub executor_model: String,
+    // XAI (Grok) API key — set via XAI_API_KEY (fallback when ANTHROPIC_API_KEY is absent)
     pub xai_api_key: Option<String>,
-    // Remote model name (e.g. grok-4-1-fast-reasoning) — set via REMOTE_MODEL
+    // Remote (Grok) model name — set via REMOTE_MODEL
     pub remote_model: String,
     // Local Ollama model name (e.g. qwen2.5-coder:7b) — set via LOCAL_MODEL
     pub local_model: String,
@@ -595,6 +615,9 @@ pub struct ModelConfig {
 impl Default for ModelConfig {
     fn default() -> Self {
         Self {
+            anthropic_api_key: None,
+            planner_model: "claude-opus-4-7".to_string(),
+            executor_model: "claude-sonnet-4-6".to_string(),
             xai_api_key: None,
             remote_model: "grok-4-1-fast-reasoning".to_string(),
             local_model: "qwen2.5-coder:7b".to_string(),
@@ -757,6 +780,9 @@ mod tests {
     #[test]
     fn test_default_model_config() {
         let config = Config::default();
+        assert!(config.model.anthropic_api_key.is_none());
+        assert_eq!(config.model.planner_model, "claude-opus-4-7");
+        assert_eq!(config.model.executor_model, "claude-sonnet-4-6");
         assert!(config.model.xai_api_key.is_none());
         assert_eq!(config.model.remote_model, "grok-4-1-fast-reasoning");
         assert_eq!(config.model.local_model, "qwen2.5-coder:7b");

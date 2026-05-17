@@ -43,6 +43,42 @@ impl TaskKind {
                 | TaskKind::RepoQuestion
         )
     }
+
+    // Which Claude tier should handle this task when Claude routing is enabled.
+    //
+    // - `Planner` (Opus 4.7) for tasks that need deep reasoning or critique
+    // - `Executor` (Sonnet 4.6) for high-volume scaffold/extract/answer work
+    pub fn tier(&self) -> ClaudeTier {
+        match self {
+            TaskKind::ArchitecturalReason | TaskKind::CodeReview | TaskKind::Unknown => {
+                ClaudeTier::Planner
+            }
+            TaskKind::ScaffoldStub
+            | TaskKind::TodoTagging
+            | TaskKind::TreeSummary
+            | TaskKind::SymbolExtraction
+            | TaskKind::RepoQuestion => ClaudeTier::Executor,
+        }
+    }
+}
+
+// Two-tier split for Anthropic routing: cheap/fast Sonnet for the bulk of
+// requests, expensive/deep Opus for planning and review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClaudeTier {
+    // Opus 4.7 — deep reasoning, planning, code review
+    Planner,
+    // Sonnet 4.6 — high-volume scaffold/extract/tagging
+    Executor,
+}
+
+impl fmt::Display for ClaudeTier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClaudeTier::Planner => f.write_str("planner"),
+            ClaudeTier::Executor => f.write_str("executor"),
+        }
+    }
 }
 
 impl fmt::Display for TaskKind {
@@ -61,6 +97,9 @@ pub enum ModelTarget {
     Local { model: String, base_url: String },
     // Remote xAI Grok API
     Remote { model: String, api_key: String },
+    // Anthropic Claude API — `tier` decides which model slug is used.
+    // Auth comes from the `ANTHROPIC_API_KEY` env var read by `AnthropicClient::from_env()`.
+    Claude { model: String, tier: ClaudeTier },
 }
 
 impl fmt::Display for ModelTarget {
@@ -68,6 +107,7 @@ impl fmt::Display for ModelTarget {
         match self {
             ModelTarget::Local { model, .. } => write!(f, "local/{}", model),
             ModelTarget::Remote { model, .. } => write!(f, "remote/{}", model),
+            ModelTarget::Claude { model, tier } => write!(f, "claude({})/{}", tier, model),
         }
     }
 }
@@ -86,6 +126,13 @@ pub struct ModelRouterConfig {
     pub force_remote: bool,
     // If local Ollama is unreachable, fall back to remote automatically
     pub fallback_to_remote: bool,
+    // Claude Planner tier model slug (default: claude-opus-4-7)
+    pub planner_model: String,
+    // Claude Executor tier model slug (default: claude-sonnet-4-6)
+    pub executor_model: String,
+    // True when ANTHROPIC_API_KEY is configured — enables Claude routing.
+    // The actual key is read at request time by `AnthropicClient::from_env()`.
+    pub anthropic_enabled: bool,
 }
 
 impl Default for ModelRouterConfig {
@@ -97,6 +144,9 @@ impl Default for ModelRouterConfig {
             remote_api_key: String::new(),
             force_remote: false,
             fallback_to_remote: true,
+            planner_model: "claude-opus-4-7".to_string(),
+            executor_model: "claude-sonnet-4-6".to_string(),
+            anthropic_enabled: false,
         }
     }
 }
@@ -306,7 +356,23 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
     }
 
     // Decide which model target to use for a given task.
+    //
+    // Routing precedence:
+    // 1. `anthropic_enabled` — Claude is the primary path (Opus for planner tasks,
+    //    Sonnet for executor tasks).
+    // 2. `force_remote` or non-local task without Claude — Grok remote.
+    // 3. Local task without Claude — Ollama.
     pub fn route(&self, task: &TaskKind) -> ModelTarget {
+        if self.config.anthropic_enabled {
+            let tier = task.tier();
+            let model = match tier {
+                ClaudeTier::Planner => self.config.planner_model.clone(),
+                ClaudeTier::Executor => self.config.executor_model.clone(),
+            };
+            info!(task = %task, target = "claude", tier = %tier, model = %model, "Routing to Claude");
+            return ModelTarget::Claude { model, tier };
+        }
+
         if self.config.force_remote || !task.is_local() {
             info!(task = %task, target = "remote", "Routing to remote model");
             return ModelTarget::Remote {
@@ -320,6 +386,19 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             model: self.config.local_model.clone(),
             base_url: self.config.local_base_url.clone(),
         }
+    }
+
+    // Build a Claude target for a specific tier, regardless of task.
+    // Used by callers that want to force planner or executor selection.
+    pub fn claude_target(&self, tier: ClaudeTier) -> Option<ModelTarget> {
+        if !self.config.anthropic_enabled {
+            return None;
+        }
+        let model = match tier {
+            ClaudeTier::Planner => self.config.planner_model.clone(),
+            ClaudeTier::Executor => self.config.executor_model.clone(),
+        };
+        Some(ModelTarget::Claude { model, tier })
     }
 
     // Route by raw prompt (sync) — classifies via keywords then routes.
@@ -339,7 +418,12 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
     }
 
     // Called when a local model request fails. Returns fallback target if configured.
+    // Prefers Claude (Executor tier) when `anthropic_enabled`, otherwise Grok.
     pub fn on_local_failure(&self, task: &TaskKind) -> Option<ModelTarget> {
+        if self.config.anthropic_enabled {
+            warn!(task = %task, "Local model failed — falling back to Claude");
+            return self.claude_target(task.tier());
+        }
         if self.config.fallback_to_remote {
             warn!(task = %task, "Local model failed — falling back to remote");
             Some(ModelTarget::Remote {
@@ -467,6 +551,56 @@ mod tests {
         let r = ModelRouter::new(config);
         let (_, target) = r.route_prompt("generate a stub");
         assert!(matches!(target, ModelTarget::Remote { .. }));
+    }
+
+    #[test]
+    fn claude_planner_for_review_and_architecture() {
+        let config = ModelRouterConfig {
+            anthropic_enabled: true,
+            ..ModelRouterConfig::default()
+        };
+        let r = ModelRouter::new(config);
+        let (_, target) = r.route_prompt("review this code and tell me if it's correct");
+        assert!(matches!(
+            target,
+            ModelTarget::Claude {
+                tier: ClaudeTier::Planner,
+                ..
+            }
+        ));
+        if let ModelTarget::Claude { model, .. } = target {
+            assert_eq!(model, "claude-opus-4-7");
+        }
+    }
+
+    #[test]
+    fn claude_executor_for_scaffold() {
+        let config = ModelRouterConfig {
+            anthropic_enabled: true,
+            ..ModelRouterConfig::default()
+        };
+        let r = ModelRouter::new(config);
+        let (_, target) = r.route_prompt("create a stub for the cache invalidation fn");
+        assert!(matches!(
+            target,
+            ModelTarget::Claude {
+                tier: ClaudeTier::Executor,
+                ..
+            }
+        ));
+        if let ModelTarget::Claude { model, .. } = target {
+            assert_eq!(model, "claude-sonnet-4-6");
+        }
+    }
+
+    #[test]
+    fn task_kind_tier_mapping() {
+        assert_eq!(TaskKind::CodeReview.tier(), ClaudeTier::Planner);
+        assert_eq!(TaskKind::ArchitecturalReason.tier(), ClaudeTier::Planner);
+        assert_eq!(TaskKind::Unknown.tier(), ClaudeTier::Planner);
+        assert_eq!(TaskKind::ScaffoldStub.tier(), ClaudeTier::Executor);
+        assert_eq!(TaskKind::TodoTagging.tier(), ClaudeTier::Executor);
+        assert_eq!(TaskKind::RepoQuestion.tier(), ClaudeTier::Executor);
     }
 
     #[test]
