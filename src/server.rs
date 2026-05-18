@@ -266,6 +266,45 @@ pub async fn run_server(config: Config) -> Result<()> {
     );
 
     // ------------------------------------------------------------------
+    // Nightly agent-memory prune cron. Runs every `RC_MEMORY_PRUNE_INTERVAL_SECS`
+    // (default 86400 = 24h) when agent memory is configured. Uses
+    // `PruneConfig::default()` (30-day decay window, 90-day delete window,
+    // 0.95 cosine dedupe). Operators can also kick it off on demand via
+    // `POST /api/v1/memory/prune`.
+    // ------------------------------------------------------------------
+    if let Some(memory) = repo_app_state.agent_memory.clone() {
+        let interval_secs: u64 = std::env::var("RC_MEMORY_PRUNE_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(86_400);
+        info!(
+            interval_secs,
+            "Starting agent memory prune cron"
+        );
+        tokio::spawn(async move {
+            // Skip the first tick so we don't slam the DB at boot before
+            // the embedder is even warmed up. `tokio::time::interval` fires
+            // immediately on the first `tick`; we burn that one.
+            let mut ticker =
+                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                let config = crate::memory::PruneConfig::default();
+                match memory.prune(&config).await {
+                    Ok(report) => info!(
+                        decayed = report.decayed,
+                        deleted = report.deleted,
+                        merged = report.merged,
+                        "agent memory prune cron: complete"
+                    ),
+                    Err(e) => warn!(error = %e, "agent memory prune cron: failed"),
+                }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Bootstrap RAG index from existing embeddings in Postgres.
     // Run in the background so it doesn't block server startup.
     // ------------------------------------------------------------------

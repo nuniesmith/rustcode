@@ -15,12 +15,13 @@
 // `AppState`, and embeddings sit alongside `document_embeddings` in the
 // same schema.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
 use sqlx::PgPool;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::embeddings::EmbeddingGenerator;
@@ -286,6 +287,116 @@ impl AgentMemory {
         Ok(rows.rows_affected() > 0)
     }
 
+    /// Three-phase memory hygiene pass:
+    ///
+    /// 1. **Decay** — entries with `access_count == 0` and
+    ///    `created_at < NOW() - decay_age_days` have their importance
+    ///    lowered to `decay_to` (no-op when the current value is already
+    ///    that low). Pure SQL.
+    /// 2. **Delete** — entries with `importance < delete_importance_below`
+    ///    and `created_at < NOW() - delete_age_days` are removed. Pure SQL.
+    /// 3. **Dedupe** (optional, when `dedupe_enabled`) — for each project
+    ///    scope independently, load the surviving rows and find pairs with
+    ///    cosine similarity > `dedupe_similarity`. Within each pair keep
+    ///    the higher-importance entry; delete the other. O(n²) per
+    ///    project, so we cap candidates at `MAX_CANDIDATES`.
+    ///
+    /// Returns a `PruneReport` summarizing what happened. Failures inside
+    /// individual phases are returned as `Err`; partial progress already
+    /// committed to the database is not rolled back.
+    pub async fn prune(&self, config: &PruneConfig) -> Result<PruneReport> {
+        let decayed = self.decay_phase(config).await?;
+        let deleted = self.delete_phase(config).await?;
+        let merged = if config.dedupe_enabled {
+            self.dedupe_phase(config).await?
+        } else {
+            0
+        };
+        info!(
+            decayed, deleted, merged,
+            "agent memory: prune complete"
+        );
+        Ok(PruneReport {
+            decayed,
+            deleted,
+            merged,
+        })
+    }
+
+    async fn decay_phase(&self, config: &PruneConfig) -> Result<u64> {
+        let result = sqlx::query(
+            r#"
+            UPDATE agent_memory
+            SET importance = $1
+            WHERE access_count = 0
+              AND importance > $1
+              AND created_at < NOW() - ($2 || ' days')::INTERVAL
+            "#,
+        )
+        .bind(config.decay_to)
+        .bind(config.decay_age_days.to_string())
+        .execute(&self.pool)
+        .await
+        .context("prune: decay phase")?;
+        Ok(result.rows_affected())
+    }
+
+    async fn delete_phase(&self, config: &PruneConfig) -> Result<u64> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM agent_memory
+            WHERE importance < $1
+              AND created_at < NOW() - ($2 || ' days')::INTERVAL
+            "#,
+        )
+        .bind(config.delete_importance_below)
+        .bind(config.delete_age_days.to_string())
+        .execute(&self.pool)
+        .await
+        .context("prune: delete phase")?;
+        Ok(result.rows_affected())
+    }
+
+    async fn dedupe_phase(&self, config: &PruneConfig) -> Result<u64> {
+        // Find the distinct project scopes (including NULL → represented
+        // as `Option::None`) so we can dedupe each scope independently.
+        // Memories in different projects should never merge.
+        let scopes: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT DISTINCT project FROM agent_memory",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("prune: list project scopes")?;
+
+        let mut total_merged: u64 = 0;
+        for scope in scopes {
+            let rows = self.fetch_candidates(scope.as_deref()).await?;
+            // Restrict to entries in THIS scope (fetch_candidates returns
+            // globals too for non-None scope, but those belong to
+            // `None`'s dedupe pass — skip here to avoid double-counting).
+            let same_scope: Vec<MemoryEntry> =
+                rows.into_iter().filter(|e| e.project == scope).collect();
+
+            let to_delete = find_duplicates(&same_scope, config.dedupe_similarity);
+            if to_delete.is_empty() {
+                continue;
+            }
+            let ids: Vec<Uuid> = to_delete.into_iter().collect();
+            let deleted = sqlx::query("DELETE FROM agent_memory WHERE id = ANY($1)")
+                .bind(&ids)
+                .execute(&self.pool)
+                .await
+                .context("prune: dedupe delete")?;
+            debug!(
+                project = ?scope,
+                merged = deleted.rows_affected(),
+                "prune: deduped project scope"
+            );
+            total_merged = total_merged.saturating_add(deleted.rows_affected());
+        }
+        Ok(total_merged)
+    }
+
     /// Manually bump access tracking for an entry (e.g. when the caller
     /// surfaced it through a non-search path and still wants it to count
     /// against MEM-D's pruning heuristic).
@@ -412,6 +523,201 @@ mod format_tests {
         let hits = vec![hit(MemoryKind::TaskOutcome, "tests pass with strategy X")];
         let out = format_memories_for_prompt(&hits);
         assert!(out.contains("- (TaskOutcome) tests pass with strategy X"));
+    }
+}
+
+/// Tunable thresholds for `AgentMemory::prune`.
+///
+/// Defaults match the values called out in `TODO.md` under MEM-D:
+/// 30-day decay window, 90-day delete window, importance floor of 0.1,
+/// cosine-similarity dedupe threshold of 0.95.
+#[derive(Debug, Clone)]
+pub struct PruneConfig {
+    /// Entries with `access_count == 0` older than this many days are
+    /// demoted to `decay_to` importance.
+    pub decay_age_days: i64,
+    /// Importance value applied to decayed entries.
+    pub decay_to: f32,
+    /// Entries with `importance` strictly below this AND older than
+    /// `delete_age_days` are deleted.
+    pub delete_importance_below: f32,
+    pub delete_age_days: i64,
+    /// Cosine similarity threshold for dedupe. Pairs at or above this
+    /// value (within the same project scope) collapse to the
+    /// higher-importance entry.
+    pub dedupe_similarity: f32,
+    /// When false, dedupe is skipped (decay + delete still run).
+    /// Defaults to true — the expensive pass is bounded by
+    /// `MAX_CANDIDATES` per project scope.
+    pub dedupe_enabled: bool,
+}
+
+impl Default for PruneConfig {
+    fn default() -> Self {
+        Self {
+            decay_age_days: 30,
+            decay_to: 0.1,
+            delete_importance_below: 0.1,
+            delete_age_days: 90,
+            dedupe_similarity: 0.95,
+            dedupe_enabled: true,
+        }
+    }
+}
+
+/// Summary of what a single `prune` invocation did. All counts are
+/// row-level totals across every project scope touched.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct PruneReport {
+    pub decayed: u64,
+    pub deleted: u64,
+    pub merged: u64,
+}
+
+impl PruneReport {
+    #[must_use]
+    pub fn total_changes(&self) -> u64 {
+        self.decayed + self.deleted + self.merged
+    }
+}
+
+/// Identify near-duplicate entries within a single project scope.
+///
+/// For each pair `(a, b)` with `cosine(a.embedding, b.embedding) >= threshold`,
+/// the lower-importance entry is queued for deletion (ties broken by older
+/// `last_accessed`). A single entry can only be flagged once even if it has
+/// multiple near-duplicates — the survivor accumulates the matches.
+///
+/// Returns the set of IDs to delete. O(n²) in `entries.len()` — keep the
+/// candidate count bounded by `MAX_CANDIDATES`.
+fn find_duplicates(entries: &[MemoryEntry], threshold: f32) -> HashSet<Uuid> {
+    let mut to_delete: HashSet<Uuid> = HashSet::new();
+    for (i, a) in entries.iter().enumerate() {
+        if to_delete.contains(&a.id) {
+            continue;
+        }
+        for b in entries.iter().skip(i + 1) {
+            if to_delete.contains(&b.id) {
+                continue;
+            }
+            let sim = crate::memory::cosine_similarity(&a.embedding, &b.embedding);
+            if sim < threshold {
+                continue;
+            }
+            // Keep the higher-importance entry; if tied, keep the most
+            // recently accessed one.
+            let loser = if a.importance > b.importance {
+                b.id
+            } else if b.importance > a.importance {
+                a.id
+            } else if a.last_accessed >= b.last_accessed {
+                b.id
+            } else {
+                a.id
+            };
+            to_delete.insert(loser);
+        }
+    }
+    to_delete
+}
+
+#[cfg(test)]
+mod prune_tests {
+    use super::*;
+    use crate::memory::types::{MemoryEntry, MemoryKind};
+    use chrono::{Duration, Utc};
+
+    fn entry(importance: f32, embedding: Vec<f32>, age_secs: i64) -> MemoryEntry {
+        let now = Utc::now();
+        MemoryEntry {
+            id: Uuid::new_v4(),
+            project: None,
+            kind: MemoryKind::Observation,
+            content: "x".to_string(),
+            embedding,
+            importance,
+            created_at: now,
+            last_accessed: now - Duration::seconds(age_secs),
+            access_count: 0,
+        }
+    }
+
+    #[test]
+    fn duplicates_collapse_to_higher_importance() {
+        let lower = entry(0.3, vec![1.0, 0.0, 0.0], 0);
+        let higher = entry(0.7, vec![1.0, 0.0, 0.0], 0);
+        let lower_id = lower.id;
+        let higher_id = higher.id;
+        let to_delete = find_duplicates(&[lower, higher], 0.95);
+        assert!(to_delete.contains(&lower_id));
+        assert!(!to_delete.contains(&higher_id));
+    }
+
+    #[test]
+    fn dissimilar_entries_are_not_flagged() {
+        let a = entry(0.5, vec![1.0, 0.0], 0);
+        let b = entry(0.5, vec![0.0, 1.0], 0);
+        let to_delete = find_duplicates(&[a, b], 0.95);
+        assert!(to_delete.is_empty());
+    }
+
+    #[test]
+    fn tie_broken_by_last_accessed() {
+        // Same importance — older entry should be the one deleted.
+        let older = entry(0.5, vec![1.0, 0.0, 0.0], 1000);
+        let newer = entry(0.5, vec![1.0, 0.0, 0.0], 0);
+        let older_id = older.id;
+        let newer_id = newer.id;
+        let to_delete = find_duplicates(&[older, newer], 0.95);
+        assert!(to_delete.contains(&older_id));
+        assert!(!to_delete.contains(&newer_id));
+    }
+
+    #[test]
+    fn already_flagged_entries_dont_chain() {
+        // Three near-identical entries with descending importance.
+        // The top one should survive; the other two should be flagged.
+        let a = entry(0.9, vec![1.0, 0.0, 0.0], 0);
+        let b = entry(0.5, vec![1.0, 0.0, 0.0], 0);
+        let c = entry(0.3, vec![1.0, 0.0, 0.0], 0);
+        let a_id = a.id;
+        let to_delete = find_duplicates(&[a, b, c], 0.95);
+        assert_eq!(to_delete.len(), 2);
+        assert!(!to_delete.contains(&a_id));
+    }
+
+    #[test]
+    fn empty_input_yields_empty_set() {
+        let to_delete = find_duplicates(&[], 0.95);
+        assert!(to_delete.is_empty());
+    }
+
+    #[test]
+    fn single_entry_yields_empty_set() {
+        let only = entry(0.5, vec![1.0, 0.0], 0);
+        let to_delete = find_duplicates(&[only], 0.95);
+        assert!(to_delete.is_empty());
+    }
+
+    #[test]
+    fn default_config_matches_todo_spec() {
+        let c = PruneConfig::default();
+        assert_eq!(c.decay_age_days, 30);
+        assert!((c.decay_to - 0.1).abs() < 1e-6);
+        assert!((c.delete_importance_below - 0.1).abs() < 1e-6);
+        assert_eq!(c.delete_age_days, 90);
+        assert!((c.dedupe_similarity - 0.95).abs() < 1e-6);
+        assert!(c.dedupe_enabled);
+    }
+
+    #[test]
+    fn prune_report_totals_count_all_phases() {
+        let r = PruneReport {
+            decayed: 5,
+            deleted: 2,
+            merged: 3,
+        };
+        assert_eq!(r.total_changes(), 10);
     }
 }
 

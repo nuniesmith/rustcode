@@ -79,6 +79,9 @@ pub fn repo_router(state: RepoAppState) -> Router {
         // Ollama status
         .route("/ollama/health", get(ollama_health))
         .route("/ollama/models", get(ollama_models))
+        // Agent memory hygiene — POST to trigger the prune pass on demand.
+        // Same pass runs nightly from `server.rs::start_memory_prune_cron`.
+        .route("/memory/prune", post(crate::api::memory::handle_prune))
         .with_state(state)
 }
 
