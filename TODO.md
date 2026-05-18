@@ -670,5 +670,25 @@
 - [ ] CI/CD re-enable: move `ci-cd.yml` back to `.github/workflows/` after OpenClaw OOM fix + Tailscale second-device verification
 - [ ] Split `crates/commands/src/lib.rs` (140K, skipped in pack as too large) — it's currently a single-file crate with no internal module structure; break into submodules by command group
 - [ ] Split `crates/rusty-claude-cli/src/main.rs` (272K, skipped in pack) — same issue
-- [ ] **MEM-E: memory dashboard** — `GET /api/v1/memory` endpoint listing stored entries with importance scores; `DELETE /api/v1/memory/:id` for manual pruning; expose in OpenWebUI via a custom tool
+- [x] **MEM-E: memory dashboard** — `GET /api/v1/memory` endpoint listing stored entries with importance scores; `DELETE /api/v1/memory/:id` for manual pruning; expose in OpenWebUI via a custom tool
+  > **Done 2026-05-18.**
+  > - `GET /api/v1/memory?project=&kind=&limit=` returns
+  >   `{total, entries: [MemoryEntryView]}`. The view strips the
+  >   `embedding` field (large + useless to dashboard consumers); all
+  >   other fields including `importance`, `access_count`,
+  >   `last_accessed` are exposed. `limit` is clamped to `[1, 500]`
+  >   with a default of 50.
+  > - `DELETE /api/v1/memory/:id` removes a single entry by UUID,
+  >   returning `{deleted: true|false, id}` (404 when the id was
+  >   unknown).
+  > - Both endpoints reuse `AgentMemory::list` / `delete` and return
+  >   503 with a structured error body when memory isn't configured
+  >   (matching the `POST /memory/prune` behaviour).
+  > - Routes registered alongside `/memory/prune` in `repo_router`
+  >   so they all sit under `/api/v1/memory*` and inherit the
+  >   standard bearer-token auth middleware.
+  > - **Tests:** 4 new unit tests cover the view's embedding-strip,
+  >   limit clamping (oversize + negative), and `ListQuery` serde
+  >   round-trip.
+  > - **OpenWebUI tool:** out of scope for this PR (config-only).
 - [ ] **AGENT-E: agent persona memory** — after OSS-D (persona integration) is done, store persona-specific memories separately so the quantitative-analyst agent and rust-systems-engineer agent build independent knowledge bases
