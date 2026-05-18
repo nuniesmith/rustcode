@@ -84,7 +84,6 @@ pub mod tags;
 pub mod task;
 pub mod task_executor;
 pub mod task_watcher;
-pub mod tasks;
 pub mod telemetry;
 pub mod test_generator;
 pub mod tests_runner;
@@ -225,7 +224,10 @@ pub use tag_schema::{
     SimpleIssueDetector, TagCategory, TagSchema, TagValidation,
 };
 pub use tags::TagScanner;
-pub use tasks::TaskGenerator;
+// `TaskGenerator` moved to `crate::audit::tasks` (RC-CLEANUP-D).
+// Top-level re-export preserved so external callers using
+// `rustcode::TaskGenerator` keep working.
+pub use audit::tasks::TaskGenerator;
 pub use telemetry::{TelemetryConfig, init_telemetry};
 pub use test_generator::{
     Fixture, GeneratedTests, TestCase, TestFramework, TestGapAnalysis, TestGenerator, TestType,
@@ -328,7 +330,7 @@ pub mod prelude {
         Priority, SimpleIssueDetector, TagCategory, TagSchema, TagValidation,
     };
     pub use crate::tags::TagScanner;
-    pub use crate::tasks::TaskGenerator;
+    pub use crate::audit::tasks::TaskGenerator;
     pub use crate::tests_runner::{TestResults, TestRunner};
     pub use crate::todo_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
     pub use crate::tree_state::{
