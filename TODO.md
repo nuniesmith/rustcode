@@ -555,19 +555,28 @@
   > to `src/repo/cache.rs`, and move `src/repo_manager.rs`, `src/repo_sync.rs`,
   > `src/repo_analysis.rs` alongside it into `src/repo/`.
 
-- [ ] **RC-CLEANUP-D: resolve task/todo naming collisions**
-  > Two pairs of overlapping names causing confusion:
+- [~] **RC-CLEANUP-D: resolve task/todo naming collisions**
+  > **Tasks half done 2026-05-18.**
+  > `src/tasks.rs` (audit-driven `TaskGenerator`) moved to
+  > `src/audit/tasks.rs` where it conceptually belongs. The top-level
+  > `pub use rustcode::TaskGenerator` is preserved as a shim
+  > re-exporting from the new location, so external callers keep
+  > working. `crate::tasks` is no longer a module — `src/task/`
+  > (DB-backed task management) is the only `task*` module at the
+  > top level now.
   >
-  > Tasks: `src/tasks.rs` has `TaskGenerator` (converts audit findings → task list).
-  > `src/task/` has a DB-backed `Task` management system (CRUD, grouping, status).
-  > These are genuinely different things. Rename `src/tasks.rs` → `src/audit_tasks.rs`
-  > (or move it into `src/audit/` as `src/audit/tasks.rs` where it conceptually belongs).
-  >
-  > Todos: `src/todo_scanner.rs` at root defines `TodoItem` and a basic regex scanner.
-  > `src/todo/scanner.rs` is the richer version used by the full todo pipeline.
-  > The root file is the ancestor that wasn't removed when `src/todo/` was built.
-  > Check all callsites of `crate::todo_scanner::TodoItem` — most likely they should
-  > import from `crate::todo::scanner` instead — then delete `src/todo_scanner.rs`.
+  > **Todos half deferred to a follow-up.**
+  > `src/todo_scanner.rs` exports `TodoItem` / `TodoPriority` /
+  > `TodoScanner`; `src/todo/scanner.rs` exports the richer
+  > `TodoCommentItem` / `CommentPriority` / `TodoCommentScanner`.
+  > The APIs differ enough that the swap isn't mechanical:
+  > `scoring.rs`, `static_analysis.rs`, and `auto_scanner.rs` all
+  > consume the legacy types and would need API-level changes (e.g.
+  > the simple `TodoItem.category` field doesn't exist on
+  > `TodoCommentItem`). Leaving the legacy file in place for now —
+  > follow-up PR will either move it under `src/todo/legacy.rs` for
+  > structural cleanup or do the full migration after auditing
+  > which fields the callers actually need.
 
 - [ ] **RC-CLEANUP-E: consolidate context modules into `src/context/`**
   > `src/context.rs` builds `GlobalContextBundle` (signature maps, dependency graphs,

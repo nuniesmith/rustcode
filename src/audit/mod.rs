@@ -43,6 +43,7 @@ pub mod endpoint;
 pub mod full_audit;
 pub mod report;
 pub mod runner;
+pub mod tasks;
 pub mod types;
 
 // ============================================================================
@@ -58,4 +59,5 @@ pub use full_audit::{
 };
 pub use report::{AuditReport, ReportFormat};
 pub use runner::{AuditRunner, AuditRunnerConfig};
+pub use tasks::TaskGenerator;
 pub use types::{AuditFinding, AuditRequest, AuditResponse, AuditSeverity, AuditStatus};
