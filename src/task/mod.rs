@@ -38,6 +38,7 @@
 // };
 // ```
 
+pub mod automerge;
 pub mod grouping;
 pub mod models;
 pub mod schema;
@@ -54,4 +55,4 @@ pub use models::{
     mark_task_failed, update_task_analysis, update_task_status,
 };
 
-pub use schema::{StepResult, TaskFile, TaskResult};
+pub use schema::{MergeState, StepResult, TaskFile, TaskResult};
