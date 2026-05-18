@@ -29,7 +29,7 @@
 // ```
 
 use crate::db::Database;
-use crate::response_cache::ResponseCache;
+use crate::cache::responses::ResponseCache;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -641,7 +641,7 @@ Code:
     }
 
     // Get cache statistics
-    pub async fn get_cache_stats(&self) -> Result<Option<crate::response_cache::CacheStats>> {
+    pub async fn get_cache_stats(&self) -> Result<Option<crate::cache::responses::CacheStats>> {
         if let Some(ref cache) = self.cache {
             Ok(Some(cache.get_stats().await?))
         } else {
