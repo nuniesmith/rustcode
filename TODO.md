@@ -82,10 +82,50 @@
 - [~] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
   > **Partial 2026-05-17.** PR creation + label application now live in `execute_real`.
   > `GitHubClient::add_labels` was added and is invoked after PR open.
-- [ ] **TASK-D:** Auto-merge logic: if all CI checks pass and `auto_merge: true`, merge the PR
-  > `GitHubClient::merge_pull_request` was added in this iteration but no caller yet —
-  > need a CI status poller (with timeout + backoff) that calls `get_commit_combined_status`
-  > and only merges when `state == "success"`. Deferred to follow-up.
+- [x] **TASK-D:** Auto-merge logic: if all CI checks pass and `auto_merge: true`, merge the PR
+  > **Done 2026-05-18.**
+  > - `src/task/automerge.rs::poll_and_merge` polls the PR's combined
+  >   CI status every `poll_interval` (default 15s) up to a `timeout`
+  >   (default 10 minutes), returning a `MergeState` enum
+  >   (`Merged | NeedsReview | Timeout | MergeFailed`).
+  > - On `state == "success"` → calls `merge_pull_request` with the
+  >   configured `merge_method` (default `"squash"`).
+  > - On `state == "failure" | "error"` → calls `add_labels` with the
+  >   configured `failure_label` (default `"needs-review"`).
+  >   **Completes the failure-handling half of TASK-F** that was
+  >   marked partial in PR #2.
+  > - Refetches the PR each iteration so it always looks at the
+  >   latest head SHA (handles users pushing follow-up commits).
+  > - **Background execution:** `spawn_auto_merge` fires
+  >   `tokio::spawn` after PR creation in all three executor paths
+  >   (`materialize_and_push`, `run_agent_tool_phases`,
+  >   `execute_real`). Watcher returns the `TaskResult` immediately;
+  >   the poller updates `tasks/results/{id}.json` in place once CI
+  >   settles, atomic-rename via temp file.
+  > - `TaskResult` schema additions:
+  >   - `auto_merge_requested: bool` (copied from `task.auto_merge`)
+  >   - `merge_state: Option<MergeState>` (filled by the poller)
+  >   Both are `#[serde(default, skip_serializing_if = ...)]` for
+  >   backward compat with old result files.
+  > - **Configurable via env:**
+  >   - `RC_AUTOMERGE_POLL_SECS` (default 15)
+  >   - `RC_AUTOMERGE_TIMEOUT_SECS` (default 600)
+  >   - `RC_AUTOMERGE_METHOD` (default `squash`)
+  >   - `RC_AUTOMERGE_FAILURE_LABEL` (default `needs-review`)
+  > - **Tests:** 4 new unit tests cover `AutoMergeConfig::default()`,
+  >   `MergeState` serde shape (`kind: "merged" | "needs_review"`),
+  >   `MergeState` round-trip, and
+  >   `update_result_with_merge_state` patching exactly the
+  >   `merge_state` field of an on-disk JSON file (all other fields
+  >   preserved verbatim).
+
+- [x] **TASK-F:** Failed task handling — if any step fails or tests fail, tag PR `needs-review` and write error details to result file; never auto-merge
+  > **Done 2026-05-18** (the second half — tagging the PR
+  > `needs-review` when CI fails post-push — landed with TASK-D
+  > above). Writing the result file on every code path landed in
+  > PR #2. Never auto-merging on failure is enforced by the
+  > `match state { "failure" | "error" => add_labels ... }` arm in
+  > `poll_and_merge` — the merge branch only runs on `"success"`.
 - [x] **TASK-E:** Task result file — write `tasks/results/{id}.json` with outcome, PR URL, test results, any errors
   > **Done.** `write_result_file` is now the single sink; both `execute_dry_run` and
   > `execute_real` go through it on every code path (success and failure).

@@ -173,6 +173,37 @@ pub struct TaskResult {
     /// paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_trace: Option<PipelineResult>,
+
+    /// Whether the task file requested auto-merge. Copied from
+    /// `TaskFile.auto_merge` so the result file is self-contained.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_merge_requested: bool,
+
+    /// Outcome of the auto-merge poller. `None` when no poll happened
+    /// (either `auto_merge_requested == false`, no PR was opened, or
+    /// the poller hasn't completed yet — the field is updated
+    /// asynchronously by `task::automerge::poll_and_merge`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_state: Option<MergeState>,
+}
+
+/// Outcome of the auto-merge poller. Persisted into
+/// `TaskResult::merge_state` once the poll loop settles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MergeState {
+    /// CI passed and the PR was merged via the GitHub API.
+    Merged { merge_method: String },
+    /// CI failed; the PR was tagged with `needs-review` for manual
+    /// attention. `reason` records what the CI state was
+    /// (`"failure"`, `"error"`, etc.).
+    NeedsReview { reason: String },
+    /// CI didn't settle within the configured timeout. PR left open;
+    /// no labels applied beyond what the task file requested.
+    Timeout { waited_secs: u64 },
+    /// CI succeeded but the merge API call itself failed (e.g.
+    /// mergeability conflict, branch protection rule rejection).
+    MergeFailed { error: String },
 }
 
 /// Result of a single step execution

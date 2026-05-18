@@ -184,6 +184,8 @@ impl TaskExecutor {
             completed_at,
             duration_secs: 0,
             agent_trace: None,
+            auto_merge_requested: task.auto_merge,
+            merge_state: None,
         };
 
         write_result_file(&result)?;
@@ -258,6 +260,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: None,
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
             Err(failure) => TaskResult {
                 task_id: task.id.clone(),
@@ -270,6 +274,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: None,
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
         };
 
@@ -466,6 +472,13 @@ impl TaskExecutor {
             }
         }
 
+        // 8) Auto-merge poller — when the task requested it, spawn a
+        //    background task that watches CI and merges on green
+        //    (or tags `needs-review` on failure). The watcher returns
+        //    the TaskResult immediately; the poller updates the result
+        //    file in place once CI settles.
+        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
             step_results,
@@ -516,6 +529,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: success.agent_trace,
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
             Err(failure) => TaskResult {
                 task_id: task.id.clone(),
@@ -528,6 +543,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: failure.agent_trace,
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
         };
 
@@ -767,6 +784,8 @@ impl TaskExecutor {
             }
         }
 
+        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+
         Ok(AgentToolSuccess {
             pr_url: Some(pr.html_url),
             step_results,
@@ -803,6 +822,8 @@ impl TaskExecutor {
                     completed_at: Utc::now().timestamp(),
                     duration_secs: (Utc::now().timestamp() - started_at).max(0) as u64,
                     agent_trace: None,
+                    auto_merge_requested: task.auto_merge,
+                    merge_state: None,
                 };
                 write_result_file(&result)?;
                 return Ok(result);
@@ -830,6 +851,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs: (completed_at - started_at).max(0) as u64,
                 agent_trace: Some(pipeline_result),
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             };
             write_result_file(&result)?;
             return Ok(result);
@@ -852,6 +875,8 @@ impl TaskExecutor {
                     completed_at,
                     duration_secs: (completed_at - started_at).max(0) as u64,
                     agent_trace: Some(pipeline_result),
+                    auto_merge_requested: task.auto_merge,
+                    merge_state: None,
                 };
                 write_result_file(&result)?;
                 info!(task = %task.id, "Agent approved but no GITHUB_TOKEN — skipping PR");
@@ -877,6 +902,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: Some(pipeline_result),
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
             Err(failure) => TaskResult {
                 task_id: task.id.clone(),
@@ -889,6 +916,8 @@ impl TaskExecutor {
                 completed_at,
                 duration_secs,
                 agent_trace: Some(pipeline_result),
+                auto_merge_requested: task.auto_merge,
+                merge_state: None,
             },
         };
 
@@ -1096,6 +1125,8 @@ impl TaskExecutor {
                 Err(e) => warn!(pr = pr.number, error = %e, "Failed to apply PR labels"),
             }
         }
+
+        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
 
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
@@ -1355,6 +1386,46 @@ fn placeholder_steps(steps: &[String], status: &str) -> Vec<StepResult> {
             completed_at: None,
         })
         .collect()
+}
+
+/// Spawn the auto-merge poller for a freshly-opened PR. When
+/// `auto_merge_requested` is false the call is a no-op. When true, a
+/// background `tokio::task` polls CI status and (on green) calls
+/// `merge_pull_request`, or (on red) tags the PR `needs-review` —
+/// updating `tasks/results/{id}.json` with the terminal `MergeState`.
+fn spawn_auto_merge(
+    gh: GitHubClient,
+    task_id: &str,
+    auto_merge_requested: bool,
+    owner: &str,
+    repo: &str,
+    pr_number: i32,
+) {
+    if !auto_merge_requested {
+        return;
+    }
+    let task_id = task_id.to_string();
+    let owner = owner.to_string();
+    let repo = repo.to_string();
+    let config = crate::task::automerge::AutoMergeConfig::from_env();
+    info!(
+        task = %task_id,
+        pr = pr_number,
+        poll_interval_secs = config.poll_interval.as_secs(),
+        timeout_secs = config.timeout.as_secs(),
+        "Spawning auto-merge poller"
+    );
+    tokio::spawn(async move {
+        let state = crate::task::automerge::poll_and_merge(
+            gh, owner, repo, pr_number, config,
+        )
+        .await;
+        if let Err(e) =
+            crate::task::automerge::update_result_with_merge_state(&task_id, state)
+        {
+            warn!(error = %e, task = %task_id, "auto-merge: result file update failed");
+        }
+    });
 }
 
 fn write_result_file(result: &TaskResult) -> anyhow::Result<()> {
