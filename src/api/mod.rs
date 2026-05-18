@@ -12,6 +12,7 @@ pub mod agent;
 pub mod auth;
 pub mod handlers;
 pub mod jobs;
+pub mod memory;
 pub mod proxy;
 pub mod proxy_client;
 pub mod rate_limit;

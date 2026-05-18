@@ -318,12 +318,40 @@
   > Sonnet — enough for normal runs; the summary-compression step
   > would let us handle very long traces.
 
-- [ ] **MEM-D: importance scoring + pruning**
-  > Increment `access_count` and update `last_accessed` on every memory retrieval.
-  > Nightly cron (or manual trigger via `POST /api/v1/memory/prune`):
-  > - Mark entries with `access_count == 0` and age > 30 days as low-importance
-  > - Delete entries with `importance < 0.1` and age > 90 days
-  > - Merge near-duplicate entries (cosine similarity > 0.95) — keep higher-importance copy
+- [x] **MEM-D: importance scoring + pruning**
+  > **Done 2026-05-17.**
+  > - Access tracking already lands in MEM-A: every `AgentMemory::search`
+  >   call ends with a `touch_many` that bumps `access_count` and
+  >   `last_accessed` for every returned hit. No change needed here.
+  > - `AgentMemory::prune(&PruneConfig)` is the new three-phase pass:
+  >   1. **Decay** (pure SQL) — entries with `access_count == 0` and
+  >      `created_at < NOW() - decay_age_days` have their importance
+  >      lowered to `decay_to`.
+  >   2. **Delete** (pure SQL) — entries with
+  >      `importance < delete_importance_below` AND
+  >      `created_at < NOW() - delete_age_days` are removed.
+  >   3. **Dedupe** (per-project Rust loop) — for each project scope
+  >      independently, find pairs with cosine ≥ `dedupe_similarity`
+  >      and keep the higher-importance entry (ties broken by older
+  >      `last_accessed`). Capped at `MAX_CANDIDATES` per scope.
+  > - `PruneConfig::default()` matches the TODO spec: 30-day decay
+  >   window, 90-day delete window, 0.1 importance floor, 0.95 cosine
+  >   dedupe threshold.
+  > - `PruneReport { decayed, deleted, merged }` returned from every
+  >   call.
+  > - **Manual trigger:** `POST /api/v1/memory/prune` accepts an
+  >   optional body to override individual `PruneConfig` fields and
+  >   returns the report. Returns 503 when memory isn't configured.
+  > - **Nightly cron:** `server.rs` spawns a `tokio::time::interval`
+  >   loop that calls `prune(&PruneConfig::default())` every
+  >   `RC_MEMORY_PRUNE_INTERVAL_SECS` (default 86400 = 24h). Skips
+  >   the first tick so boot isn't slammed.
+  > - **Tests:** 7 new unit tests on the in-memory dedupe logic
+  >   (duplicates collapse to higher importance, dissimilar pairs not
+  >   flagged, tie-broken-by-last-accessed, multiple near-duplicates
+  >   chain correctly, empty/single inputs, defaults match TODO spec,
+  >   report totals). Plus 3 endpoint tests on the `PruneRequest`
+  >   override semantics.
 
 ---
 
