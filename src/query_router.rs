@@ -40,7 +40,7 @@
 // ```
 
 use crate::context_rag::{Context, ContextBuilder};
-use crate::response_cache::ResponseCache;
+use crate::cache::responses::ResponseCache;
 use anyhow::{Context as AnyhowContext, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

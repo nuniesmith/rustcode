@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 use crate::cost_tracker::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
 use crate::db::{Database, Repository};
-use crate::prompt_router::{PromptRouter, TierKind};
+use crate::prompt_tier::{PromptRouter, TierKind};
 use crate::refactor_assistant::RefactorAssistant;
 use crate::repo_cache_sql::RepoCacheSql;
 use crate::repo_manager::RepoManager;

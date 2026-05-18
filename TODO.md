@@ -537,15 +537,33 @@
   >
   > `lib.rs` drops from 48 pub mods to ~40.
 
-- [ ] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
-  > Four separate cache systems sit as top-level siblings with no grouping:
-  > - `src/cache.rs` → `src/cache/audit.rs` (file-based audit cache)
-  > - `src/cache_layer.rs` → `src/cache/layer.rs` (Redis + in-memory LRU)
-  > - `src/response_cache.rs` → `src/cache/responses.rs` (SQLite LLM response cache)
-  > - `src/cache_migrate.rs` → `src/cache/migrate.rs` (migration utility)
+- [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
+  > **Done 2026-05-18.** Pure restructure — no behaviour changes.
+  > Four top-level files moved under `src/cache/`:
+  > - `src/cache.rs` → `src/cache/audit.rs`
+  > - `src/cache_layer.rs` → `src/cache/layer.rs`
+  > - `src/response_cache.rs` → `src/cache/responses.rs`
+  > - `src/cache_migrate.rs` → `src/cache/migrate.rs`
   >
-  > Create `src/cache/mod.rs` that re-exports each. No logic changes needed yet —
-  > pure restructure. `lib.rs` loses 3 top-level mods, gains 1 `pub mod cache`.
+  > `src/cache/mod.rs` declares the four submodules and re-exports the
+  > `audit` module's public API at the module root so existing
+  > `use crate::cache::{AuditCache, CacheEntry, CACHE_DIR}` callers
+  > (in `tree_state.rs`, `grok_reasoning.rs`, `llm_audit.rs`) keep
+  > working without changes. The `CacheStats` naming collision (all
+  > three of audit/layer/responses define one) is resolved by
+  > re-exporting only `audit::CacheStats` at the root; the other two
+  > are reached via submodule paths.
+  >
+  > Top-level `pub use` lines in `src/lib.rs` updated to use the new
+  > `cache::layer::*`, `cache::responses::*`, `cache::migrate::*`
+  > paths — external API (`rustcode::CacheLayer`,
+  > `rustcode::ResponseCache`, etc.) is unchanged.
+  >
+  > In-source callers (`grok_client.rs`, `query_router.rs`,
+  > `api/repos.rs`) updated to import from the new paths.
+  >
+  > `lib.rs` loses 3 top-level mods (`cache_layer`, `cache_migrate`,
+  > `response_cache`), gains 0 (already had `pub mod cache`).
 
 - [ ] **RC-CLEANUP-C: remove the old file-based repo cache**
   > `src/repo_cache.rs` is the original file-based implementation.
@@ -593,11 +611,14 @@
   > but it currently compiles into the library crate. Move to `tests/integration/grok.rs`.
   > Remove it from `lib.rs` and add the `[[test]]` entry in `Cargo.toml`.
 
-- [ ] **RC-CLEANUP-G: rename `prompt_router.rs` to avoid confusion with `query_router.rs`**
-  > `src/query_router.rs` — routes user queries by intent (greeting/search/analysis).
-  > `src/prompt_router.rs` — routes *files* to prompt tiers (minimal/standard/deep-dive)
-  > based on static analysis scores. Different layers, confusingly similar names.
-  > Rename `prompt_router.rs` → `prompt_tier.rs` and update all use sites.
+- [x] **RC-CLEANUP-G: rename `prompt_router.rs` to avoid confusion with `query_router.rs`**
+  > **Done 2026-05-18.** `git mv src/prompt_router.rs src/prompt_tier.rs`
+  > preserves history. Three use sites updated: `src/lib.rs`
+  > (`pub mod`, top-level `pub use`, deprecated re-exports block) and
+  > `src/auto_scanner.rs` (`use crate::prompt_tier::{PromptRouter, TierKind}`).
+  > The struct name `PromptRouter` is unchanged — only the module path
+  > is `prompt_tier` now, so the file name and the type's role
+  > (routing files to prompt tiers) match.
 
 ---
 

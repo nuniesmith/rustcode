@@ -24,7 +24,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::cache_layer::{CacheConfig, CacheLayer};
+use crate::cache::layer::{CacheConfig, CacheLayer};
 use crate::model_router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::ollama_client::OllamaClient;
 use crate::repo_sync::{RegisteredRepo, RepoSyncService, SyncResult};

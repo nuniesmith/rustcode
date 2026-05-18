@@ -28,8 +28,6 @@ pub mod audit;
 pub mod auto_scanner;
 pub mod backup;
 pub mod cache;
-pub mod cache_layer;
-pub mod cache_migrate;
 pub mod chunking;
 pub mod cli;
 pub mod code_chunker;
@@ -60,7 +58,7 @@ pub mod multi_tenant;
 pub mod ollama_client;
 pub mod parser;
 pub mod prompt_hashes;
-pub mod prompt_router;
+pub mod prompt_tier;
 pub mod query_analytics;
 pub mod query_router;
 pub mod query_templates;
@@ -72,7 +70,6 @@ pub mod repo_cache_sql;
 pub mod repo_manager;
 pub mod repo_sync;
 pub mod research;
-pub mod response_cache;
 pub mod scanner;
 pub mod scoring;
 pub mod search;
@@ -102,11 +99,16 @@ pub use api::{
     UploadDocumentResponse, create_api_router, create_default_api_router, generate_api_key,
     hash_api_key,
 };
+// RC-CLEANUP-B: cache modules consolidated under `crate::cache::*`.
+// Top-level re-exports preserved so external callers using
+// `rustcode::CacheLayer`, `rustcode::ResponseCache`, etc. keep working.
 pub use cache::{AuditCache, CacheEntry, CacheStats};
-pub use cache_layer::{
+pub use cache::layer::{
     CacheConfig as CacheLayerConfig, CacheKey, CacheLayer, CacheStats as CacheLayerStats,
 };
-pub use cache_migrate::{CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult};
+pub use cache::migrate::{
+    CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult,
+};
 pub use chunking::{ChunkConfig, ChunkData, chunk_document};
 pub use cli::{
     QueueCommands, ReportCommands, ScanCommands, TaskCommands, handle_queue_command,
@@ -193,13 +195,13 @@ pub use metrics::{
     track_search,
 };
 pub use multi_tenant::{QuotaType, Tenant, TenantManager, TenantQuota, TenantUsage, UsageMetric};
-pub use prompt_router::{
+pub use prompt_tier::{
     PromptRouter, PromptRouterConfig, PromptRoutingStats, PromptTier, TierKind,
 };
 pub use query_analytics::{
     AnalyticsConfig, AnalyticsStats, QueryAnalytics, QueryPattern, SearchAnalytics,
 };
-pub use response_cache::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
+pub use cache::responses::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
     DetectedTodo, GitHubRepo, ScanResult, Scanner, TreeNode as ScannerTreeNode, build_dir_tree,
     fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree, save_file_analysis,
@@ -308,7 +310,7 @@ pub mod prelude {
     pub use crate::repo_cache::{
         CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry,
     };
-    pub use crate::response_cache::{
+    pub use crate::cache::responses::{
         CacheStats as ResponseCacheStats, CachedResponse, ResponseCache,
     };
     pub use crate::scanner::{
@@ -321,7 +323,7 @@ pub mod prelude {
         SemanticSearcher,
     };
 
-    pub use crate::prompt_router::{PromptRouter, PromptRouterConfig, PromptTier, TierKind};
+    pub use crate::prompt_tier::{PromptRouter, PromptRouterConfig, PromptTier, TierKind};
     pub use crate::static_analysis::{
         AnalysisRecommendation, StaticAnalysisResult, StaticAnalyzer,
     };
