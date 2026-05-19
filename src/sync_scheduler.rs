@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 use tokio::time;
 use tracing::{error, info, warn};
 
-use crate::repo_sync::RepoSyncService;
+use crate::repo::sync::RepoSyncService;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -108,7 +108,7 @@ impl SyncScheduler {
         // Gate concurrency with a semaphore so we never run more than
         // `config.concurrency` syncs simultaneously.
         let semaphore = Arc::new(Semaphore::new(self.config.concurrency));
-        let mut join_set: JoinSet<(String, anyhow::Result<crate::repo_sync::SyncResult>)> =
+        let mut join_set: JoinSet<(String, anyhow::Result<crate::repo::sync::SyncResult>)> =
             JoinSet::new();
 
         for id in due_ids {

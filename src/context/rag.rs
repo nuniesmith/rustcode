@@ -39,7 +39,7 @@
 // ```
 
 use crate::db::Database;
-use crate::repo_analysis::RepoAnalyzer;
+use crate::repo::analysis::RepoAnalyzer;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

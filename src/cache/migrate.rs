@@ -36,8 +36,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-use crate::repo_cache::{CacheType, RepoCacheEntry};
-use crate::repo_cache_sql::RepoCacheSql;
+use crate::repo::file_cache::{CacheType, RepoCacheEntry};
+use crate::repo::cache::RepoCacheSql;
 
 // Migration progress information
 #[derive(Debug, Clone, Serialize, Deserialize)]

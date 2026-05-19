@@ -69,12 +69,12 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 // Re-export CacheType from repo_cache
-pub use crate::repo_cache::CacheType;
+pub use crate::repo::file_cache::CacheType;
 
 // Parameters for setting cache entries
 #[derive(Debug)]
 pub struct CacheSetParams<'a> {
-    pub cache_type: crate::repo_cache::CacheType,
+    pub cache_type: crate::repo::file_cache::CacheType,
     pub repo_path: &'a str,
     pub file_path: &'a str,
     pub content: &'a str,
@@ -356,7 +356,7 @@ impl RepoCacheSql {
     #[allow(clippy::too_many_arguments)]
     pub async fn get(
         &self,
-        cache_type: crate::repo_cache::CacheType,
+        cache_type: crate::repo::file_cache::CacheType,
         file_path: &str,
         content: &str,
         _provider: &str,
@@ -482,7 +482,7 @@ impl RepoCacheSql {
     #[allow(clippy::too_many_arguments)]
     pub async fn set_with_cache_key(
         &self,
-        cache_type: crate::repo_cache::CacheType,
+        cache_type: crate::repo::file_cache::CacheType,
         repo_path: &str,
         file_path: &str,
         file_hash: &str,
@@ -541,7 +541,7 @@ impl RepoCacheSql {
     }
 
     // Clear all entries of a specific type
-    pub async fn clear_type(&self, cache_type: crate::repo_cache::CacheType) -> Result<u64> {
+    pub async fn clear_type(&self, cache_type: crate::repo::file_cache::CacheType) -> Result<u64> {
         let result = sqlx::query(
             r#"
             DELETE FROM cache_entries WHERE cache_type = $1
@@ -897,7 +897,7 @@ mod tests {
         let result = serde_json::json!({"score": 95});
         cache
             .set(CacheSetParams {
-                cache_type: crate::repo_cache::CacheType::Refactor,
+                cache_type: crate::repo::file_cache::CacheType::Refactor,
                 repo_path: "/test/repo",
                 file_path: "src/main.rs",
                 content: "fn main() {}",
@@ -913,7 +913,7 @@ mod tests {
 
         let cached = cache
             .get(
-                crate::repo_cache::CacheType::Refactor,
+                crate::repo::file_cache::CacheType::Refactor,
                 "src/main.rs",
                 "fn main() {}",
                 "xai",
@@ -936,7 +936,7 @@ mod tests {
         let result = serde_json::json!({"score": 95});
         cache
             .set(CacheSetParams {
-                cache_type: crate::repo_cache::CacheType::Refactor,
+                cache_type: crate::repo::file_cache::CacheType::Refactor,
                 repo_path: "/test/repo",
                 file_path: "src/main.rs",
                 content: "fn main() {}",
@@ -953,7 +953,7 @@ mod tests {
         // Different content should miss
         let cached = cache
             .get(
-                crate::repo_cache::CacheType::Refactor,
+                crate::repo::file_cache::CacheType::Refactor,
                 "src/main.rs",
                 "fn main() { println!(\"Hello\"); }",
                 "xai",
@@ -974,7 +974,7 @@ mod tests {
 
         cache
             .set(CacheSetParams {
-                cache_type: crate::repo_cache::CacheType::Refactor,
+                cache_type: crate::repo::file_cache::CacheType::Refactor,
                 repo_path: "/test/repo",
                 file_path: "src/main.rs",
                 content: "fn main() {}",
@@ -1000,7 +1000,7 @@ mod tests {
 
         cache
             .set(CacheSetParams {
-                cache_type: crate::repo_cache::CacheType::Refactor,
+                cache_type: crate::repo::file_cache::CacheType::Refactor,
                 repo_path: "/test/repo",
                 file_path: "src/main.rs",
                 content: "fn main() {}",
@@ -1015,7 +1015,7 @@ mod tests {
             .unwrap();
 
         let deleted = cache
-            .clear_type(crate::repo_cache::CacheType::Refactor)
+            .clear_type(crate::repo::file_cache::CacheType::Refactor)
             .await
             .unwrap();
         assert_eq!(deleted, 1);
@@ -1033,7 +1033,7 @@ mod tests {
         for i in 0..10 {
             cache
                 .set(CacheSetParams {
-                    cache_type: crate::repo_cache::CacheType::Refactor,
+                    cache_type: crate::repo::file_cache::CacheType::Refactor,
                     repo_path: "/test/repo",
                     file_path: &format!("src/file{}.rs", i),
                     content: &format!("fn file{}() {{}}", i),

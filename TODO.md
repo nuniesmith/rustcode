@@ -565,13 +565,32 @@
   > `lib.rs` loses 3 top-level mods (`cache_layer`, `cache_migrate`,
   > `response_cache`), gains 0 (already had `pub mod cache`).
 
-- [ ] **RC-CLEANUP-C: remove the old file-based repo cache**
-  > `src/repo_cache.rs` is the original file-based implementation.
-  > `src/repo_cache_sql.rs` is the SQL replacement.
-  > `src/cache_migrate.rs` exists to move data between them.
-  > If the SQL path is stable, delete `src/repo_cache.rs`, rename `src/repo_cache_sql.rs`
-  > to `src/repo/cache.rs`, and move `src/repo_manager.rs`, `src/repo_sync.rs`,
-  > `src/repo_analysis.rs` alongside it into `src/repo/`.
+- [~] **RC-CLEANUP-C: remove the old file-based repo cache**
+  > **Structural half done 2026-05-19.** Five top-level repo files
+  > consolidated under `src/repo/`:
+  >   - `src/repo_cache_sql.rs`  → `src/repo/cache.rs` (canonical)
+  >   - `src/repo_cache.rs`      → `src/repo/file_cache.rs` (legacy, kept for now)
+  >   - `src/repo_manager.rs`    → `src/repo/manager.rs`
+  >   - `src/repo_sync.rs`       → `src/repo/sync.rs`
+  >   - `src/repo_analysis.rs`   → `src/repo/analysis.rs`
+  >
+  > New `src/repo/mod.rs` declares the five submodules. `lib.rs`
+  > drops 5 top-level `pub mod`s, gains 1 (`repo`). External public
+  > API (`rustcode::{RepoCache, RepoCacheSql, RepoSyncService,
+  > RepoAnalyzer, ...}`) is preserved by re-routing all top-level
+  > `pub use` lines through the new submodule paths. 30 internal
+  > callsites across 9 files updated in one bulk pass.
+  >
+  > **Deletion deferred.** The file-based `RepoCache` lives at
+  > `src/repo/file_cache.rs` for now. Removing it cleanly needs:
+  > (a) verification the SQL path is stable in production;
+  > (b) extracting the shared `CacheType` / `RepoCacheEntry` types
+  > out of the file-based version so the SQL version stops
+  > importing from it (today `repo::cache.rs` imports
+  > `crate::repo::file_cache::{CacheType, ...}` for the enum);
+  > (c) deleting `src/cache/migrate.rs` since its sole job —
+  > moving data from file-based to SQL — becomes vacuous.
+  > Easier as a focused follow-up.
 
 - [x] **RC-CLEANUP-D: resolve task/todo naming collisions**
   > **Done 2026-05-18.** Two halves landed across two PRs.

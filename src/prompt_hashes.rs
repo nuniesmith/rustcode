@@ -184,8 +184,8 @@ pub fn get_prompt_hash(cache_type: &str) -> String {
 }
 
 // Get prompt hash for cache type enum
-pub fn get_prompt_hash_for_type(cache_type: crate::repo_cache::CacheType) -> String {
-    use crate::repo_cache::CacheType;
+pub fn get_prompt_hash_for_type(cache_type: crate::repo::file_cache::CacheType) -> String {
+    use crate::repo::file_cache::CacheType;
 
     match cache_type {
         CacheType::Refactor => refactor_prompt_hash(),
