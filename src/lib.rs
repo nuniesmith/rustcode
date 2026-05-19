@@ -64,11 +64,10 @@ pub mod query_router;
 pub mod query_templates;
 pub mod queue;
 pub mod refactor_assistant;
-pub mod repo_analysis;
-pub mod repo_cache;
-pub mod repo_cache_sql;
-pub mod repo_manager;
-pub mod repo_sync;
+// RC-CLEANUP-A: the five `repo_*` top-level modules
+// (`repo_analysis`, `repo_cache`, `repo_cache_sql`, `repo_manager`,
+// `repo_sync`) consolidated under `crate::repo::*`.
+pub mod repo;
 pub mod research;
 pub mod scanner;
 pub mod scoring;
@@ -179,14 +178,17 @@ pub use refactor_assistant::{
     RefactoringAnalysis, RefactoringExample, RefactoringPlan, RefactoringPriority,
     RefactoringSuggestion, RefactoringType, Risk, SmellSeverity,
 };
-pub use repo_analysis::{
+// Top-level re-exports routed through the consolidated `crate::repo::*`.
+// External callers using `rustcode::{RepoAnalyzer, RepoCache, RepoCacheSql, ...}`
+// keep working.
+pub use repo::analysis::{
     FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
 };
-pub use repo_cache::{
+pub use repo::file_cache::{
     CacheSetParams, CacheStats as RepoCacheStats, CacheStrategy, CacheType, RepoCache,
     RepoCacheEntry,
 };
-pub use repo_cache_sql::{
+pub use repo::cache::{
     CacheEntry as RepoCacheEntrySql, CacheStats as RepoCacheStatsSql, CacheTypeStats,
     EvictionPolicy, ModelStats, RepoCacheSql,
 };
@@ -309,10 +311,10 @@ pub mod prelude {
         capture_todo, enqueue, get_pending_items, get_queue_item, get_queue_stats,
         get_retriable_items, mark_failed, update_analysis,
     };
-    pub use crate::repo_analysis::{
+    pub use crate::repo::analysis::{
         FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
     };
-    pub use crate::repo_cache::{
+    pub use crate::repo::file_cache::{
         CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry,
     };
     pub use crate::cache::responses::{

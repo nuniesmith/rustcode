@@ -27,7 +27,7 @@ use tracing::{debug, error, info, warn};
 use crate::cache::layer::{CacheConfig, CacheLayer};
 use crate::model_router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::ollama_client::OllamaClient;
-use crate::repo_sync::{RegisteredRepo, RepoSyncService, SyncResult};
+use crate::repo::sync::{RegisteredRepo, RepoSyncService, SyncResult};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 // ---------------------------------------------------------------------------

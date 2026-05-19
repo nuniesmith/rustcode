@@ -30,8 +30,8 @@ use crate::db::scan_events;
 use crate::db::{Database, Repository};
 use crate::prompt_tier::{PromptRouter, TierKind};
 use crate::refactor_assistant::RefactorAssistant;
-use crate::repo_cache_sql::RepoCacheSql;
-use crate::repo_manager::RepoManager;
+use crate::repo::cache::RepoCacheSql;
+use crate::repo::manager::RepoManager;
 use crate::static_analysis::{AnalysisRecommendation, StaticAnalyzer};
 use crate::todo::legacy_scanner::TodoScanner;
 
@@ -1465,7 +1465,7 @@ impl AutoScanner {
         // Check cache first
         if cache
             .get(
-                crate::repo_cache::CacheType::Refactor,
+                crate::repo::file_cache::CacheType::Refactor,
                 &rel_path,
                 &content,
                 "xai",
@@ -1515,8 +1515,8 @@ impl AutoScanner {
         // Cache the result
         let result_json = serde_json::to_value(&analysis)?;
         cache
-            .set(crate::repo_cache_sql::CacheSetParams {
-                cache_type: crate::repo_cache::CacheType::Refactor,
+            .set(crate::repo::cache::CacheSetParams {
+                cache_type: crate::repo::file_cache::CacheType::Refactor,
                 repo_path: &repo_path.to_string_lossy(),
                 file_path: &rel_path,
                 content: &content,
@@ -1860,7 +1860,7 @@ Respond in ONLY valid JSON (no markdown fences):
         &self,
         repo_id: &str,
         repo_name: &str,
-        all_entries: &[crate::repo_cache_sql::CacheEntry],
+        all_entries: &[crate::repo::cache::CacheEntry],
         grok: &crate::grok_client::GrokClient,
     ) -> Result<usize> {
         // Collect files with issues, sorted by issue count descending

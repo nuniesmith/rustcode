@@ -13,7 +13,7 @@ use crate::github::webhook::{WebhookHandler, WebhookPayload};
 use crate::llm::LlmClient;
 use crate::model_router::{ModelRouter, ModelRouterConfig};
 use crate::queue::{QueueStats, get_queue_stats};
-use crate::repo_sync::RepoSyncService;
+use crate::repo::sync::RepoSyncService;
 use crate::research::worker::refresh_rag_index;
 use crate::scanner::Scanner;
 use crate::scanner::github::sync_repos_to_db;
