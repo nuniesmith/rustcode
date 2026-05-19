@@ -13,7 +13,7 @@
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::repo_analysis::RepoAnalyzer;
+// use rustcode::RepoAnalyzer;
 //
 // #[tokio::main]
 // async fn main() -> anyhow::Result<()> {

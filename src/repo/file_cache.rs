@@ -27,7 +27,7 @@
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::repo_cache::{RepoCache, CacheType, CacheSetParams};
+// use rustcode::{RepoCache, CacheType, CacheSetParams};
 // use std::path::Path;
 //
 // # async fn example() -> anyhow::Result<()> {
