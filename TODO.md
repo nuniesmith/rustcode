@@ -573,28 +573,36 @@
   > to `src/repo/cache.rs`, and move `src/repo_manager.rs`, `src/repo_sync.rs`,
   > `src/repo_analysis.rs` alongside it into `src/repo/`.
 
-- [~] **RC-CLEANUP-D: resolve task/todo naming collisions**
-  > **Tasks half done 2026-05-18.**
-  > `src/tasks.rs` (audit-driven `TaskGenerator`) moved to
-  > `src/audit/tasks.rs` where it conceptually belongs. The top-level
-  > `pub use rustcode::TaskGenerator` is preserved as a shim
-  > re-exporting from the new location, so external callers keep
-  > working. `crate::tasks` is no longer a module — `src/task/`
-  > (DB-backed task management) is the only `task*` module at the
-  > top level now.
+- [x] **RC-CLEANUP-D: resolve task/todo naming collisions**
+  > **Done 2026-05-18.** Two halves landed across two PRs.
   >
-  > **Todos half deferred to a follow-up.**
-  > `src/todo_scanner.rs` exports `TodoItem` / `TodoPriority` /
-  > `TodoScanner`; `src/todo/scanner.rs` exports the richer
-  > `TodoCommentItem` / `CommentPriority` / `TodoCommentScanner`.
-  > The APIs differ enough that the swap isn't mechanical:
-  > `scoring.rs`, `static_analysis.rs`, and `auto_scanner.rs` all
-  > consume the legacy types and would need API-level changes (e.g.
-  > the simple `TodoItem.category` field doesn't exist on
-  > `TodoCommentItem`). Leaving the legacy file in place for now —
-  > follow-up PR will either move it under `src/todo/legacy.rs` for
-  > structural cleanup or do the full migration after auditing
-  > which fields the callers actually need.
+  > **Tasks half (earlier PR):** `src/tasks.rs` (audit-driven
+  > `TaskGenerator`) moved to `src/audit/tasks.rs` where it
+  > conceptually belongs. The top-level
+  > `pub use rustcode::TaskGenerator` is preserved as a shim
+  > re-exporting from the new location. `crate::tasks` is no
+  > longer a module — `src/task/` (DB-backed task management) is
+  > the only `task*` module at the top level now.
+  >
+  > **Todos half (this PR):** Structural cleanup option chosen
+  > over full API migration. `src/todo_scanner.rs` moved to
+  > `src/todo/legacy_scanner.rs` (`git mv` preserves history). The
+  > top-level `pub mod todo_scanner` declaration in `src/lib.rs`
+  > is gone; the top-level `pub use rustcode::{TodoItem,
+  > TodoPriority, TodoScanner, TodoSummary}` re-export now flows
+  > through `todo::legacy_scanner`, keeping the external API
+  > unchanged. The new module path is intentionally NOT
+  > re-exported at the `crate::todo` root because `TodoItem`
+  > would collide with `todo::todo_file::TodoItem` (different
+  > shape — checkbox/section vs. file/line/text). Internal callers
+  > (`scoring.rs`, `static_analysis.rs`, `auto_scanner.rs`)
+  > updated to `crate::todo::legacy_scanner::*`.
+  >
+  > **Still deferred:** full API migration from the legacy
+  > scanner to `todo::scanner` (`TodoCommentScanner` etc.). That
+  > requires field-level adaptation of the three callers
+  > (`TodoItem.category` doesn't exist on `TodoCommentItem`) and
+  > deserves its own focused PR.
 
 - [ ] **RC-CLEANUP-E: consolidate context modules into `src/context/`**
   > `src/context.rs` builds `GlobalContextBundle` (signature maps, dependency graphs,

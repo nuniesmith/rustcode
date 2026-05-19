@@ -545,7 +545,7 @@ impl StaticAnalyzer {
         &self,
         file_path: &str,
         content: &str,
-        todo_scanner: &crate::todo_scanner::TodoScanner,
+        todo_scanner: &crate::todo::legacy_scanner::TodoScanner,
     ) -> StaticAnalysisResult {
         let mut result = self.analyze(file_path, content);
 
@@ -569,7 +569,7 @@ impl StaticAnalyzer {
         &self,
         _file_path: &str,
         content: &str,
-        _todo_scanner: &crate::todo_scanner::TodoScanner,
+        _todo_scanner: &crate::todo::legacy_scanner::TodoScanner,
         result: &mut StaticAnalysisResult,
     ) {
         let mut high = 0usize;
@@ -1559,7 +1559,7 @@ mod tests {
     #[test]
     fn test_analyze_with_todos_merges_priorities() {
         let analyzer = StaticAnalyzer::new();
-        let todo_scanner = crate::todo_scanner::TodoScanner::new().unwrap();
+        let todo_scanner = crate::todo::legacy_scanner::TodoScanner::new().unwrap();
 
         let content = r#"
 fn process_data() {
@@ -1602,7 +1602,7 @@ fn process_data() {
     #[test]
     fn test_analyze_with_todos_no_upgrade_for_low_priority() {
         let analyzer = StaticAnalyzer::new();
-        let todo_scanner = crate::todo_scanner::TodoScanner::new().unwrap();
+        let todo_scanner = crate::todo::legacy_scanner::TodoScanner::new().unwrap();
 
         let content = r#"
 fn process_data() {

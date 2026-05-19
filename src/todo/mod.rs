@@ -52,6 +52,18 @@
 // by RustCode share the same project layout conventions, so the same
 // binary works across every project.
 
+// `legacy_scanner` is the original regex-based TODO scanner that used to
+// live at `src/todo_scanner.rs`. Moved here under `todo/` in RC-CLEANUP-D
+// so the top-level namespace stops carrying two near-identical scanner
+// modules. Its public types (`TodoItem`, `TodoPriority`, `TodoScanner`,
+// `TodoSummary`) are intentionally NOT re-exported at the `crate::todo`
+// root — that would collide with `todo_file::{TodoItem, Priority}`. Reach
+// them through the submodule path `crate::todo::legacy_scanner::*`.
+//
+// `scanner` (`TodoCommentScanner` etc.) is the richer replacement.
+// Migrating callers from the legacy types to the rich ones is a separate
+// follow-up — see TODO.md RC-CLEANUP-D notes.
+pub mod legacy_scanner;
 pub mod planner;
 pub mod scaffolder;
 pub mod scanner;
