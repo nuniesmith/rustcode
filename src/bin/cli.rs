@@ -16,8 +16,12 @@ use rustcode::db::{
     self, create_note, get_next_task, get_stats, list_notes, list_repositories, list_tasks,
     search_notes, update_task_status,
 };
-use rustcode::repo_cache::{CacheType, RepoCache};
-use rustcode::repo_cache_sql::{CacheSetParams as SqlCacheSetParams, RepoCacheSql};
+// `CacheType` / `RepoCache` (file-based) and `RepoCacheSql` are re-exported
+// through `rustcode` at the top level — see `src/lib.rs`. `CacheSetParams`
+// is name-overloaded between the two caches, so we go through the submodule
+// path for the SQL variant and rename it locally.
+use rustcode::{CacheType, RepoCache, RepoCacheSql};
+use rustcode::repo::cache::CacheSetParams as SqlCacheSetParams;
 
 // Todo pipeline imports
 use rustcode::todo::{

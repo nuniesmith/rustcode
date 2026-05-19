@@ -589,7 +589,16 @@
   > importing from it (today `repo::cache.rs` imports
   > `crate::repo::file_cache::{CacheType, ...}` for the enum);
   > (c) deleting `src/cache/migrate.rs` since its sole job —
-  > moving data from file-based to SQL — becomes vacuous.
+  > moving data from file-based to SQL — becomes vacuous;
+  > (d) deciding what to do with `src/bin/cli.rs`'s
+  > `cache init` subcommand — it calls `RepoCache::new` to lay
+  > down the file-cache directory structure. Either remove the
+  > subcommand or migrate it to no-op the file path. **2026-05-19
+  > follow-up fixed cli.rs's stale `rustcode::repo_cache::*` and
+  > `rustcode::repo_cache_sql::*` import paths (broken by the
+  > structural move); the cli still functions but now goes through
+  > the top-level `rustcode::{CacheType, RepoCache, RepoCacheSql}`
+  > re-exports and `rustcode::repo::cache::CacheSetParams`.**
   > Easier as a focused follow-up.
 
 - [x] **RC-CLEANUP-D: resolve task/todo naming collisions**

@@ -15,8 +15,8 @@
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::repo_cache_sql::{RepoCacheSql, CacheSetParams};
-// use rustcode::repo_cache::CacheType;
+// use rustcode::{RepoCacheSql}; use rustcode::repo::cache::CacheSetParams;
+// use rustcode::CacheType;
 //
 // #[tokio::main]
 // async fn main() -> anyhow::Result<()> {
