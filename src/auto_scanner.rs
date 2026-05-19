@@ -33,7 +33,7 @@ use crate::refactor_assistant::RefactorAssistant;
 use crate::repo_cache_sql::RepoCacheSql;
 use crate::repo_manager::RepoManager;
 use crate::static_analysis::{AnalysisRecommendation, StaticAnalyzer};
-use crate::todo_scanner::TodoScanner;
+use crate::todo::legacy_scanner::TodoScanner;
 
 // Maximum file size to send to LLM analysis (100 KB)
 const MAX_ANALYSIS_FILE_SIZE: u64 = 100 * 1024;

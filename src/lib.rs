@@ -85,7 +85,7 @@ pub mod telemetry;
 pub mod test_generator;
 pub mod tests_runner;
 pub mod todo;
-pub mod todo_scanner;
+// RC-CLEANUP-D: `todo_scanner` moved to `crate::todo::legacy_scanner`.
 pub mod token_budget;
 pub mod tree_state;
 pub mod types;
@@ -236,7 +236,10 @@ pub use test_generator::{
     UntestFunction,
 };
 pub use tests_runner::{TestResults, TestRunner};
-pub use todo_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
+// Re-exported from `crate::todo::legacy_scanner` (was `crate::todo_scanner`
+// before RC-CLEANUP-D). Top-level public API is unchanged for external
+// callers using `rustcode::{TodoItem, TodoPriority, TodoScanner, TodoSummary}`.
+pub use todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
 pub use token_budget::{BudgetConfig, ModelTokenStats, MonthlyTracker, TokenPricing, TokenStats};
 pub use tree_state::{
     CategoryChangeSummary, ChangeType, DiffSummary, FileCategory, FileChange, FileState, TreeDiff,
@@ -334,7 +337,7 @@ pub mod prelude {
     pub use crate::tags::TagScanner;
     pub use crate::audit::tasks::TaskGenerator;
     pub use crate::tests_runner::{TestResults, TestRunner};
-    pub use crate::todo_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
+    pub use crate::todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
     pub use crate::tree_state::{
         CategoryChangeSummary, ChangeType, DiffSummary, FileCategory, FileChange, FileState,
         TreeDiff, TreeState, TreeStateManager, TreeSummaryStats,

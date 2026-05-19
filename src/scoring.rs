@@ -8,7 +8,7 @@
 // - Security concerns
 
 use crate::error::Result;
-use crate::todo_scanner::{TodoItem, TodoPriority};
+use crate::todo::legacy_scanner::{TodoItem, TodoPriority};
 use crate::types::AuditTag;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
