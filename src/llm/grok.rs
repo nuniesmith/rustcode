@@ -1,21 +1,29 @@
 // Grok LLM Analyzer
 //
 // Uses xAI's Grok API to analyze content and files for the processing queue.
+//
+// RC-CRATES-B (2026-05-19): migrated from raw `reqwest::Client` to
+// `::api::OpenAiCompatClient`. The previous `json_mode` parameter (which
+// set `response_format: {"type": "json_object"}` on the request) is
+// gone — the api crate's `MessageRequest` doesn't expose
+// `response_format`. All 4 of the previous `json_mode=true` call sites
+// already have system prompts that explicitly request JSON output and
+// Grok 3 / 4.1 reliably comply; the post-call `serde_json::from_str`
+// error handling at each call site catches any drift.
 
 use crate::queue::processor::{AnalysisResult, FileAnalysisResult, LlmAnalyzer};
+use ::api::{
+    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
+};
 use anyhow::Result;
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::time::Duration;
-use tracing::{debug, error};
+use tracing::debug;
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const GROK_API_URL: &str = "https://api.x.ai/v1/chat/completions";
 const DEFAULT_MODEL: &str = "grok-3-mini"; // Fast and cheap for analysis
 const ANALYSIS_MODEL: &str = "grok-3"; // Better for complex file analysis
 
@@ -24,22 +32,16 @@ const ANALYSIS_MODEL: &str = "grok-3"; // Better for complex file analysis
 // ============================================================================
 
 pub struct GrokAnalyzer {
-    client: Client,
-    api_key: String,
+    inner: OpenAiCompatClient,
     // Track token usage for cost management
     tokens_used: std::sync::atomic::AtomicU64,
 }
 
 impl GrokAnalyzer {
     pub fn new(api_key: String) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .expect("Failed to build HTTP client");
-
+        let inner = OpenAiCompatClient::new(api_key, OpenAiCompatConfig::xai());
         Self {
-            client,
-            api_key,
+            inner,
             tokens_used: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -53,84 +55,63 @@ impl GrokAnalyzer {
         model: &str,
         system_prompt: &str,
         user_prompt: &str,
-        json_mode: bool,
+        // The `_json_mode` parameter is retained for call-site
+        // compatibility but ignored — see the module-level note.
+        _json_mode: bool,
     ) -> Result<(String, Option<usize>)> {
-        let mut payload = json!({
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 2048
-        });
-
-        if json_mode {
-            payload["response_format"] = json!({"type": "json_object"});
-        }
+        let request = MessageRequest {
+            model: model.to_string(),
+            max_tokens: 2048,
+            messages: vec![InputMessage::user_text(user_prompt.to_string())],
+            system: Some(system_prompt.to_string()),
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        };
 
         let response = self
-            .client
-            .post(GROK_API_URL)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await?;
+            .inner
+            .send_message(&request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Grok API call failed: {}", e))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            error!("Grok API error: {} - {}", status, body);
-            anyhow::bail!("Grok API error: {}", status);
-        }
-
-        let result: GrokResponse = response.json().await?;
-
-        // Track usage
-        let tokens = result.usage.as_ref().map(|u| u.total_tokens as usize);
-        if let Some(usage) = result.usage {
-            self.tokens_used.fetch_add(
-                usage.total_tokens as u64,
-                std::sync::atomic::Ordering::Relaxed,
-            );
+        // Track token usage on the cumulative atomic counter.
+        let total_tokens = response.usage.total_tokens();
+        let tokens = Some(total_tokens as usize);
+        if total_tokens > 0 {
+            self.tokens_used
+                .fetch_add(total_tokens as u64, std::sync::atomic::Ordering::Relaxed);
             debug!(
                 "Tokens used: {} (total: {})",
-                usage.total_tokens,
+                total_tokens,
                 self.tokens_used()
             );
         }
 
-        let content = result
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
+        // Concatenate all text content blocks. Grok normally returns a
+        // single text block, but the api crate's content shape allows
+        // multiple (e.g. when tools are involved); fold defensively.
+        let content = response
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                OutputContentBlock::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
 
         Ok((content, tokens))
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct GrokResponse {
-    choices: Vec<GrokChoice>,
-    usage: Option<GrokUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GrokChoice {
-    message: GrokMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct GrokMessage {
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GrokUsage {
-    total_tokens: u32,
-}
+// Note: the local `GrokResponse` / `GrokChoice` / `GrokMessage` /
+// `GrokUsage` types that used to live here are gone. The api crate's
+// `MessageResponse` (returned by `OpenAiCompatClient::send_message`)
+// normalises the OpenAI-shaped wire response into the same shape
+// rustcode uses everywhere else — its `usage.total_tokens()` replaces
+// `GrokUsage.total_tokens` and `content` (Vec<OutputContentBlock>)
+// replaces `choices[0].message.content`.
 
 // ============================================================================
 // LLM Analyzer Implementation
