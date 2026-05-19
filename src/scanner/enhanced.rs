@@ -1,6 +1,6 @@
 // Enhanced scanner with test running and deep context analysis
 
-use crate::context_llm::{ContextBuilder, GlobalContextBundle};
+use crate::context::global::{ContextBuilder, GlobalContextBundle};
 use crate::error::Result;
 use crate::llm::{FileAuditResult, LlmClient};
 use crate::scanner::Scanner;

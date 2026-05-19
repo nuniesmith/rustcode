@@ -407,7 +407,7 @@ Code:
     pub async fn ask_with_context(
         &self,
         question: &str,
-        context: &crate::context_rag::Context,
+        context: &crate::context::rag::Context,
         repository_id: Option<i64>,
     ) -> Result<String> {
         let prompt = format!(
@@ -427,7 +427,7 @@ Code:
     // Analyze entire repository for patterns and issues
     pub async fn analyze_repository(
         &self,
-        context: &crate::context_rag::Context,
+        context: &crate::context::rag::Context,
         repository_id: Option<i64>,
     ) -> Result<RepositoryAnalysis> {
         let prompt = format!(
@@ -458,7 +458,7 @@ Code:
     // Find code patterns across repository
     pub async fn find_patterns(
         &self,
-        context: &crate::context_rag::Context,
+        context: &crate::context::rag::Context,
         pattern_type: &str,
         repository_id: Option<i64>,
     ) -> Result<Vec<String>> {

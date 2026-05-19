@@ -604,20 +604,40 @@
   > (`TodoItem.category` doesn't exist on `TodoCommentItem`) and
   > deserves its own focused PR.
 
-- [ ] **RC-CLEANUP-E: consolidate context modules into `src/context/`**
-  > `src/context.rs` builds `GlobalContextBundle` (signature maps, dependency graphs,
-  > architectural rules) for LLM analysis.
-  > `src/context_builder.rs` builds `ContextBuilder` for RAG (loads repo files into
-  > the 2M token window).
-  > Related concepts, unrelated positions in `lib.rs`. Move to:
-  > - `src/context/global.rs` (from context.rs)
-  > - `src/context/rag.rs` (from context_builder.rs)
-  > - `src/context/mod.rs` re-exporting both
+- [x] **RC-CLEANUP-E: consolidate context modules into `src/context/`**
+  > **Done 2026-05-19.** `git mv`s preserve history.
+  > - `src/context_llm.rs` → `src/context/global.rs` (1016 lines)
+  > - `src/context_rag.rs` → `src/context/rag.rs` (553 lines)
+  > - New `src/context/mod.rs` declares the two submodules with
+  >   docstrings calling out the global-vs-RAG distinction.
+  >
+  > Callsites updated to the new paths (`crate::context::global::*`
+  > and `crate::context::rag::*`):
+  > - `src/query_router.rs`
+  > - `src/grok_client.rs` (3 method signatures)
+  > - `src/types.rs`
+  > - `src/scanner/enhanced.rs` (post-cleanup path; see below)
+  > - `src/lib.rs` deprecated re-exports block
+  >
+  > `lib.rs` loses two top-level `pub mod`s (`context_llm`,
+  > `context_rag`).
 
-- [ ] **RC-CLEANUP-F: move integration test file out of `src/`**
-  > `src/test_grok_integration.rs` requires live API keys and is gated behind a feature flag,
-  > but it currently compiles into the library crate. Move to `tests/integration/grok.rs`.
-  > Remove it from `lib.rs` and add the `[[test]]` entry in `Cargo.toml`.
+- [x] **RC-CLEANUP-F: move integration test file out of `src/`**
+  > **Done 2026-05-19.** `src/test_grok_integration.rs` moved to
+  > `tests/test_grok_integration.rs` (`git mv` preserves history).
+  > The file was already gated by `#![cfg(feature = "integration")]`
+  > but had no Cargo wiring — it sat as an orphan and a stray
+  > `pub mod` candidate. `Cargo.toml` now defines the `integration`
+  > feature alongside `clipboard`, plus a `[[test]] name =
+  > "test_grok_integration"` entry with
+  > `required-features = ["integration"]` so a plain `cargo test`
+  > continues to skip it.
+  >
+  > **Bonus:** also folded `src/enhanced_scanner.rs` (360 lines,
+  > only the deprecated re-exports block referenced it) into
+  > `src/scanner/enhanced.rs`. `src/scanner/mod.rs` declares the
+  > new submodule and re-exports `EnhancedScanner` so the external
+  > public API (`rustcode::EnhancedScanner`) is unchanged.
 
 - [x] **RC-CLEANUP-G: rename `prompt_router.rs` to avoid confusion with `query_router.rs`**
   > **Done 2026-05-18.** `git mv src/prompt_router.rs src/prompt_tier.rs`
