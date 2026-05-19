@@ -30,15 +30,16 @@
 
 use crate::db::Database;
 use crate::cache::responses::ResponseCache;
-use anyhow::{Context, Result};
+use ::api::{
+    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
+};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-// Grok API base URL
-const GROK_API_BASE: &str = "https://api.x.ai/v1";
-
-// Grok model for fast reasoning
+// Grok model for fast reasoning. The base URL and credential env var
+// (`XAI_API_KEY`) come from `OpenAiCompatConfig::xai()`.
 const GROK_MODEL: &str = "grok-4-1-fast-reasoning";
 
 // Pricing per million tokens for Grok 4.1 Fast
@@ -53,12 +54,15 @@ const MAX_RETRIES: usize = 3;
 // Initial retry delay in milliseconds
 const INITIAL_RETRY_DELAY_MS: u64 = 1000;
 
-// Grok API client with cost tracking and caching
+// Grok API client with cost tracking and caching.
+//
+// As of RC-CRATES-B (2026-05-19) the raw `reqwest::Client` was replaced
+// with `::api::OpenAiCompatClient` configured for xAI. The retry loop
+// in `call_api` still lives here because it's interleaved with
+// cost-tracking (one DB record per logical call, not per HTTP attempt);
+// the inner per-request retry/backoff is owned by `OpenAiCompatClient`.
 pub struct GrokClient {
-    // HTTP client
-    client: reqwest::Client,
-    // API key
-    api_key: String,
+    inner: OpenAiCompatClient,
     // Database for cost tracking
     db: Database,
     // Model to use
@@ -69,41 +73,10 @@ pub struct GrokClient {
     caching_enabled: bool,
 }
 
-// File scoring request
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<Message>,
-    temperature: f64,
-    max_tokens: usize,
-}
-
-// Chat message
-#[derive(Debug, Serialize, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-// API response
-#[derive(Debug, Deserialize)]
-struct ChatCompletionResponse {
-    #[allow(dead_code)]
-    id: String,
-    choices: Vec<Choice>,
-    usage: Usage,
-}
-
-// Response choice
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: Message,
-    #[allow(dead_code)]
-    finish_reason: String,
-}
-
-// Token usage information
-#[derive(Debug, Clone, Deserialize)]
+// Token usage information. Built locally from `api::Usage` after each
+// `OpenAiCompatClient::send_message` call; cost calculation + DB
+// recording downstream expect i64-shaped fields.
+#[derive(Debug, Clone)]
 struct Usage {
     prompt_tokens: i64,
     completion_tokens: i64,
@@ -204,15 +177,10 @@ impl GrokClient {
     // Create a new Grok client
     pub fn new(api_key: impl Into<String>, db: Database) -> Self {
         let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| GROK_MODEL.to_string());
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(180))
-            .build()
-            .expect("Failed to build HTTP client");
+        let inner = OpenAiCompatClient::new(api_key, OpenAiCompatConfig::xai());
 
         Self {
-            client,
-            api_key: api_key.into(),
+            inner,
             db,
             model,
             cache: None,
@@ -545,21 +513,26 @@ Code:
             .unwrap_or_else(|| anyhow::anyhow!("API call failed after {} retries", MAX_RETRIES)))
     }
 
-    // Make a single API call
+    // Make a single API call through `::api::OpenAiCompatClient`.
+    //
+    // The api-crate client owns the per-request retry / backoff policy
+    // (transport errors, 429s, 5xx). The outer retry loop in `call_api`
+    // wraps THIS call to retry on logical failures while keeping the
+    // cost-record count aligned with the number of *logical* attempts.
     async fn call_api_once(&self, prompt: &str) -> Result<ApiResponse> {
-        let max_tokens = std::env::var("XAI_MAX_TOKENS")
+        let max_tokens: u32 = std::env::var("XAI_MAX_TOKENS")
             .ok()
-            .and_then(|v| v.parse::<usize>().ok())
+            .and_then(|v| v.parse().ok())
             .unwrap_or(8000);
 
-        let request = ChatCompletionRequest {
+        let request = MessageRequest {
             model: self.model.clone(),
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            }],
-            temperature: 0.3,
             max_tokens,
+            messages: vec![InputMessage::user_text(prompt.to_string())],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: false,
         };
 
         debug!(
@@ -568,41 +541,34 @@ Code:
         );
 
         let response = self
-            .client
-            .post(format!("{}/chat/completions", GROK_API_BASE))
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
+            .inner
+            .send_message(&request)
             .await
-            .context("Failed to send request to Grok API")?;
+            .map_err(|e| anyhow::anyhow!("xAI API call failed: {}", e))?;
 
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow::anyhow!(
-                "API returned error {}: {}",
-                status,
-                error_text
-            ));
+        let content = response
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                OutputContentBlock::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if content.is_empty() {
+            return Err(anyhow::anyhow!("API returned no text content"));
         }
 
-        let api_response: ChatCompletionResponse = response
-            .json()
-            .await
-            .context("Failed to parse API response")?;
+        // Bridge the api crate's `Usage` (u32 fields) into the local
+        // i64-shaped `Usage` so cost tracking + DB schema stay unchanged.
+        let usage = Usage {
+            prompt_tokens: i64::from(response.usage.input_tokens),
+            completion_tokens: i64::from(response.usage.output_tokens),
+            total_tokens: i64::from(response.usage.total_tokens()),
+        };
 
-        if api_response.choices.is_empty() {
-            return Err(anyhow::anyhow!("API returned no choices"));
-        }
-
-        Ok(ApiResponse {
-            content: api_response.choices[0].message.content.clone(),
-            usage: api_response.usage,
-        })
+        Ok(ApiResponse { content, usage })
     }
 
     // Calculate estimated cost from usage

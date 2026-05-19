@@ -452,24 +452,35 @@
   > Known sqlx feature caveat: src/rc/Cargo.toml uses `runtime-tokio` + `tls-rustls-ring`
   > (sqlx 0.8 feature names). Adjust if your FKS sqlx version differs.
 
-- [ ] **RC-CRATES-B: replace LLM call code with `api` crate**
-  > `src/simple_client.rs` is already migrated — it wraps `api::OpenAiCompatClient`.
-  > Remaining raw-reqwest LLM callers to migrate, in priority order:
+- [~] **RC-CRATES-B: replace LLM call code with `api` crate**
+  > `src/simple_client.rs` was already migrated — wraps `api::OpenAiCompatClient`.
   >
-  > 1. `src/grok_client.rs` — heaviest user; replace `reqwest::Client` with `api::OpenAiCompatClient`.
-  >    Also carries cost-tracking logic — once migrated, this file should be deleted and its
-  >    cost-tracking folded into `src/llm/` (see RC-CLEANUP-A).
-  > 2. `src/grok_reasoning.rs` — uses `GrokReasoningClient`; same pattern. After migration,
-  >    consolidate into `src/llm/reasoning.rs`.
-  > 3. `src/llm/grok.rs` — third independent client using raw reqwest, used by the queue processor.
-  >    Migrate to `api::OpenAiCompatClient`, then merge into the unified `src/llm/client.rs`.
-  > 4. `src/model_router.rs` — uses raw reqwest for Ollama health-check + Grok fallback;
-  >    wire Ollama path via `api::OpenAiCompatClient` with base URL override.
-  > 5. `src/ollama_client.rs` — wire `api::OpenAiCompatClient` with Ollama base URL override;
-  >    move to `src/llm/ollama.rs` after migration.
+  > **`src/grok_client.rs` migrated 2026-05-19.** The heaviest raw-reqwest
+  > caller now goes through `api::OpenAiCompatClient` configured for xAI.
+  > Public surface unchanged — all 12 public methods (`ask`, `ask_tracked`,
+  > `ask_with_context`, `score_file`, `analyze_repository`, `find_patterns`,
+  > `quick_analysis`, plus the cost-tracking accessors and cache helpers)
+  > keep their signatures. `call_api_once` lost its raw HTTP construction
+  > (request builder, `Authorization: Bearer` header, `.json().await`)
+  > in favour of `inner.send_message(&MessageRequest)`. The outer retry
+  > loop in `call_api` stays — its job is to record one DB cost-tracking
+  > row per *logical* attempt, separate from the api crate's per-request
+  > transport retries. Dropped local types: `ChatCompletionRequest`,
+  > `Message`, `ChatCompletionResponse`, `Choice`, and the
+  > `GROK_API_BASE` constant. `Usage` stayed (i64-shaped wrapper around
+  > `api::Usage`'s u32 fields so the DB schema is unchanged).
   >
-  > End state: all five files above are gone. `src/llm/` owns one coherent set of clients.
-  > `src/llm/simple_client.rs` is the template to follow for all of them.
+  > **Still to migrate:**
+  > 2. `src/grok_reasoning.rs` — `GrokReasoningClient`; same pattern.
+  > 3. `src/llm/grok.rs` — third independent client used by the queue
+  >    processor; migrate then merge into `src/llm/client.rs`.
+  > 4. `src/model_router.rs` — raw reqwest for Ollama health-check + Grok
+  >    fallback; wire Ollama via `OpenAiCompatClient` with base URL override.
+  > 5. `src/ollama_client.rs` — wire `OpenAiCompatClient` with Ollama base
+  >    URL override; move to `src/llm/ollama.rs` after migration.
+  >
+  > End state (after all five): the raw-reqwest LLM call layer is gone.
+  > `src/llm/simple_client.rs` is the template to follow.
 
 - [ ] **RC-CRATES-C: replace scanner with `runtime` crate**
   > `runtime::execute_bash`, `runtime::ProviderClient`, `runtime::worker_boot` are the key
