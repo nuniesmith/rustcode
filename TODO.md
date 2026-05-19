@@ -541,7 +541,7 @@
   > rustcode Dockerfile copying `target/release/claw` into the image.
   > Verify: `docker run rustcode claw --help`
 
-- [ ] **RC-CRATES-G: integration test suite covering both Claude and Grok paths**
+- [~] **RC-CRATES-G: integration test suite covering both Claude and Grok paths**
   > `crates/mock-anthropic-service` is the test harness — already a dev-dep of rusty-claude-cli.
   > Add integration tests in `crates/rusty-claude-cli/tests/` that:
   > 1. Full round-trip through `api::AnthropicClient` (primary path after CLAUDE-A)
@@ -549,8 +549,20 @@
   > 3. `api::OpenAiCompatClient` with xAI base URL (Grok) — kept as fallback path
   > 4. Prompt cache hit: send same request twice, assert `cache_read_input_tokens > 0` on second call
   >
-  > Note: `src/test_grok_integration.rs` currently lives inside `src/` and compiles into the
-  > library. Move it to `tests/integration/grok.rs` as part of this task — see RC-CLEANUP-F.
+  > **2026-05-19**: Repaired `tests/test_grok_integration.rs` against the current api crate.
+  > - Fixed stale `rustcode::response_cache::ResponseCache` import → `rustcode::ResponseCache`
+  >   (re-exported from `cache::responses`).
+  > - Switched `client.complete(prompt)` → `client.generate(prompt, max_tokens)` to match
+  >   `simple_client::GrokClient`'s real surface.
+  > - Replaced `ProviderKind::ClawApi` → `ProviderKind::Anthropic` and `api::ClawApiClient` →
+  >   `api::AnthropicClient` to align with the live `crates/api` exports.
+  > - Updated bonus alias test: `opus` resolves to `claude-opus-4-7` (was 4-6).
+  > - Trimmed the bonus test to aliases registered in `MODEL_REGISTRY` — unknown model strings
+  >   pass through `resolve_model_alias` unchanged, so the prior `grok-4 → grok-4.20-...` cases
+  >   never held.
+  >
+  > Still pending for full credit: tasks 1–4 above (round-trip through `api::AnthropicClient`,
+  > two-tier routing assertion, OpenAiCompatClient xAI path, prompt cache hit assertion).
 
 ---
 

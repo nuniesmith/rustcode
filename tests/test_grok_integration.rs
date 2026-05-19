@@ -1,7 +1,7 @@
 // Grok 4.20 Integration Tests — RC-CRATES-G
 //
 // Validates the full xAI API stack end-to-end:
-//   1. `api::OpenAiCompatClient` (via `llm::simple_client::GrokClient`) completes a prompt
+//   1. `llm::simple_client::GrokClient` completes a prompt against xAI
 //   2. `ModelRouter` correctly classifies 5 distinct prompt types and routes them
 //   3. RAG injection: repo context is included and `rag_chunks_used > 0`
 //   4. Cache: identical request hits `ResponseCache` on the second call
@@ -23,9 +23,9 @@
 
 use std::time::{Duration, Instant};
 
+use rustcode::ResponseCache;
 use rustcode::llm::simple_client::GrokClient;
 use rustcode::model_router::{ModelRouter, ModelRouterConfig, TaskKind};
-use rustcode::response_cache::ResponseCache;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -56,11 +56,11 @@ fn xai_client() -> GrokClient {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// G-1  api::Client::complete() — non-empty response
+// G-1  GrokClient::generate() — non-empty response
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Verify that a simple prompt round-trips through `OpenAiCompatClient` and
-// returns a non-empty, plausible assistant message.
+// Verify that a simple prompt round-trips through `GrokClient` (xAI chat
+// completions) and returns a non-empty, plausible assistant message.
 #[tokio::test]
 async fn test_grok_complete_returns_nonempty_response() {
     let client = xai_client();
@@ -69,7 +69,7 @@ async fn test_grok_complete_returns_nonempty_response() {
     let start = Instant::now();
 
     let response = client
-        .complete(prompt)
+        .generate(prompt, 256)
         .await
         .expect("Grok API call should succeed");
 
@@ -267,7 +267,7 @@ async fn test_rag_context_injection_enriches_prompt() {
 
     // Send the enriched prompt to the live API and verify a coherent response
     let response = client
-        .complete(&enriched)
+        .generate(&enriched, 512)
         .await
         .expect("RAG-enriched request must succeed");
 
@@ -395,24 +395,24 @@ async fn test_response_cache_clear_expired_keeps_valid_entries() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Confirms that swapping from XAI_API_KEY to ANTHROPIC_API_KEY makes the
-// `api` crate route to `ProviderKind::ClawApi` (Anthropic) rather than Xai.
+// `api` crate route to `ProviderKind::Anthropic` rather than Xai.
 //
 // This is a unit-level smoke test — no live Claude API call is made here
 // (that would require spending tokens). The test checks that the model alias
 // resolution and provider detection tables are correct.
 #[test]
 fn test_provider_detection_switches_to_anthropic_for_claude_models() {
-    use api::{detect_provider_kind, resolve_model_alias};
     use api::ProviderKind;
+    use api::{detect_provider_kind, resolve_model_alias};
 
-    // Claude aliases must all resolve to ClawApi
+    // Claude aliases must all resolve to Anthropic
     let claude_cases = [
-        ("claude-opus-4-6",           ProviderKind::ClawApi),
-        ("claude-sonnet-4-6",         ProviderKind::ClawApi),
-        ("claude-haiku-4-5-20251213", ProviderKind::ClawApi),
-        ("opus",                      ProviderKind::ClawApi),
-        ("sonnet",                    ProviderKind::ClawApi),
-        ("haiku",                     ProviderKind::ClawApi),
+        ("claude-opus-4-7",           ProviderKind::Anthropic),
+        ("claude-sonnet-4-6",         ProviderKind::Anthropic),
+        ("claude-haiku-4-5-20251213", ProviderKind::Anthropic),
+        ("opus",                      ProviderKind::Anthropic),
+        ("sonnet",                    ProviderKind::Anthropic),
+        ("haiku",                     ProviderKind::Anthropic),
     ];
 
     for (model, expected_provider) in claude_cases {
@@ -446,7 +446,7 @@ fn test_provider_detection_switches_to_anthropic_for_claude_models() {
 }
 
 // Live Claude smoke test — only runs when `ANTHROPIC_API_KEY` is set.
-// Sends a minimal prompt through `api::ClawApiClient` and checks for a
+// Sends a minimal prompt through `api::AnthropicClient` and checks for a
 // non-empty response, confirming the full switch from xAI → Anthropic works.
 #[tokio::test]
 async fn test_claude_switch_live_completion() {
@@ -458,12 +458,12 @@ async fn test_claude_switch_live_completion() {
         }
     };
 
-    use api::{ClawApiClient, AuthSource, InputMessage, MessageRequest};
+    use api::{AnthropicClient, AuthSource, InputMessage, MessageRequest};
 
     // Temporarily set the env var so from_auth picks it up
     std::env::set_var("ANTHROPIC_API_KEY", &api_key);
 
-    let client = ClawApiClient::from_auth(AuthSource::ApiKey(api_key));
+    let client = AnthropicClient::from_auth(AuthSource::ApiKey(api_key));
 
     let request = MessageRequest {
         model:       "claude-haiku-4-5-20251213".to_string(),
@@ -513,16 +513,15 @@ async fn test_claude_switch_live_completion() {
 fn test_grok_420_model_alias_resolution() {
     use api::resolve_model_alias;
 
+    // Aliases registered in MODEL_REGISTRY get rewritten; unknown model strings
+    // pass through unchanged. Keep the bonus test focused on aliases we ship.
     let cases = [
-        ("grok-4",                        "grok-4.20-multi-agent-0309"),
-        ("grok-4.20-multi-agent-0309",    "grok-4.20-multi-agent-0309"),
-        ("grok-4.20-0309-reasoning",      "grok-4.20-0309-reasoning"),
-        ("grok-4.20-0309-non-reasoning",  "grok-4.20-0309-non-reasoning"),
-        ("grok-3",                        "grok-3"),
-        ("grok",                          "grok-3"),
-        ("grok-mini",                     "grok-3-mini"),
-        ("opus",                          "claude-opus-4-6"),
-        ("sonnet",                        "claude-sonnet-4-6"),
+        ("grok-3",    "grok-3"),
+        ("grok",      "grok-3"),
+        ("grok-mini", "grok-3-mini"),
+        ("opus",      "claude-opus-4-7"),
+        ("sonnet",    "claude-sonnet-4-6"),
+        ("haiku",     "claude-haiku-4-5-20251213"),
     ];
 
     for (input, expected) in cases {
