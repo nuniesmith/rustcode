@@ -470,17 +470,44 @@
   > `GROK_API_BASE` constant. `Usage` stayed (i64-shaped wrapper around
   > `api::Usage`'s u32 fields so the DB schema is unchanged).
   >
-  > **Still to migrate:**
-  > 2. `src/grok_reasoning.rs` — `GrokReasoningClient`; same pattern.
-  > 3. `src/llm/grok.rs` — third independent client used by the queue
-  >    processor; migrate then merge into `src/llm/client.rs`.
-  > 4. `src/model_router.rs` — raw reqwest for Ollama health-check + Grok
-  >    fallback; wire Ollama via `OpenAiCompatClient` with base URL override.
-  > 5. `src/ollama_client.rs` — wire `OpenAiCompatClient` with Ollama base
-  >    URL override; move to `src/llm/ollama.rs` after migration.
+  > **`src/llm/grok.rs` migrated 2026-05-19.** `GrokAnalyzer` now uses
+  > `OpenAiCompatClient` (xAI). Public surface (`new`,
+  > `tokens_used`, the `LlmAnalyzer` trait methods) is unchanged.
+  > Local `GrokResponse` / `GrokChoice` / `GrokMessage` / `GrokUsage`
+  > types deleted along with the `GROK_API_URL` constant — the api
+  > crate's `MessageResponse` carries the same information.
   >
-  > End state (after all five): the raw-reqwest LLM call layer is gone.
-  > `src/llm/simple_client.rs` is the template to follow.
+  > **Behavioural caveat:** the previous `call_grok(..., json_mode)`
+  > parameter set OpenAI's `response_format: {"type": "json_object"}`
+  > on requests. The api crate's `MessageRequest` doesn't expose that
+  > field, so the parameter is now ignored. All 4 of the previous
+  > `json_mode=true` call sites have system prompts that explicitly
+  > demand JSON output and Grok 3 / 4.1 reliably comply; the
+  > downstream `serde_json::from_str` calls already catch any drift.
+  > Adding `response_format` to the api crate is the proper fix but
+  > out of scope for this PR.
+  >
+  > **Still to migrate (with notes on each):**
+  > 2. `src/grok_reasoning.rs` — uses xAI's `/responses` endpoint
+  >    (different from `/chat/completions` that `OpenAiCompatClient`
+  >    targets). Needs either a new `/responses` client in the api
+  >    crate or migration to `/chat/completions` (behavioral change).
+  >    **Not a clean drop-in migration.**
+  > 4. `src/model_router.rs` — only uses raw reqwest for an Ollama
+  >    health-check (a single `GET /api/tags`). Worth migrating only
+  >    once the rest of the LLM crate consolidation is done.
+  > 5. `src/ollama_client.rs` — depends on Ollama-native features
+  >    (`num_ctx` context-window control, NDJSON streaming format,
+  >    `prompt_eval_count`/`eval_count` token fields) that aren't
+  >    exposed by Ollama's OpenAI-compat endpoint. The TODO's
+  >    "wire with Ollama base URL override" suggestion silently
+  >    drops `num_ctx`. **Not a clean drop-in migration** — needs
+  >    either api-crate Ollama-specific extensions or accepting
+  >    feature loss.
+  >
+  > 2/5 migrations done. Of the remaining three, only `model_router.rs`
+  > is a clean migration; `grok_reasoning.rs` and `ollama_client.rs`
+  > both need additional api-crate capabilities first.
 
 - [ ] **RC-CRATES-C: replace scanner with `runtime` crate**
   > `runtime::execute_bash`, `runtime::ProviderClient`, `runtime::worker_boot` are the key
