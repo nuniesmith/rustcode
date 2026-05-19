@@ -3,6 +3,10 @@
 // Provides repository scanning functionality for TODOs, file analysis, and directory trees.
 
 pub mod compat;
+// `enhanced` is the audit-flow scanner that wraps `compat::Scanner` with
+// `TestRunner` + `ContextBuilder` for deeper analysis. Folded under
+// `scanner/` in RC-CLEANUP-F — used to live at `src/enhanced_scanner.rs`.
+pub mod enhanced;
 pub mod github;
 
 // Re-export main types and functions
@@ -14,3 +18,4 @@ pub use github::{
 
 // Re-export compatibility scanner
 pub use compat::Scanner;
+pub use enhanced::EnhancedScanner;

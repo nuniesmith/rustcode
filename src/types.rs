@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 // Re-export types from other modules
-pub use crate::context_llm::GlobalContextBundle;
+pub use crate::context::global::GlobalContextBundle;
 pub use crate::tests_runner::TestResults;
 
 // File category based on location and purpose

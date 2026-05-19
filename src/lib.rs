@@ -40,7 +40,7 @@ pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
 pub mod embeddings;
-pub mod enhanced_scanner;
+// RC-CLEANUP-F: `enhanced_scanner` moved to `crate::scanner::enhanced`.
 pub mod error;
 pub mod formatter;
 pub mod git;
@@ -139,7 +139,9 @@ pub use doc_generator::{DocGenerator, FunctionDoc, ModuleDoc, ParameterDoc, Read
 pub use embeddings::{
     Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
 };
-pub use enhanced_scanner::EnhancedScanner;
+// Re-exported from the new location (`crate::scanner::enhanced`) so
+// `rustcode::EnhancedScanner` remains a valid external import.
+pub use scanner::EnhancedScanner;
 pub use error::{AuditError, Result};
 pub use formatter::{BatchFormatResult, CodeFormatter, FormatMode, FormatResult, Formatter};
 pub use git::GitManager;
@@ -266,8 +268,8 @@ pub mod prelude {
         ChunkerConfig, ChunkingStats, CodeChunk, CodeChunker, DedupIndex, EntityType,
     };
     pub use crate::config::Config;
-    pub use crate::context_llm::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
-    pub use crate::context_rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
+    pub use crate::context::global::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
+    pub use crate::context::rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
     pub use crate::cost_tracker::{
         BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
         TokenUsage,
@@ -282,7 +284,7 @@ pub mod prelude {
     pub use crate::embeddings::{
         Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
     };
-    pub use crate::enhanced_scanner::EnhancedScanner;
+    pub use crate::scanner::enhanced::EnhancedScanner;
     pub use crate::error::{AuditError, Result};
     pub use crate::git::GitManager;
     pub use crate::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};

@@ -187,6 +187,16 @@ path = "src/bin/github-sync-daemon.rs"
 
 [features]
 clipboard = []
+# Enables `tests/test_grok_integration.rs`. The integration tests hit
+# the live xAI / Anthropic APIs and need real keys in the environment;
+# they should never run in CI without explicit opt-in.
+integration = []
+
+# Live-API integration test for Grok / Claude routing. Gated behind the
+# `integration` feature so a plain `cargo test` skips it.
+[[test]]
+name = "test_grok_integration"
+required-features = ["integration"]
 
 # ============================================================================
 # Dependencies
