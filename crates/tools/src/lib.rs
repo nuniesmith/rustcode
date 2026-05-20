@@ -3465,6 +3465,7 @@ impl ApiClient for ProviderRuntimeClient {
             system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
             tools: (!tools.is_empty()).then_some(tools),
             tool_choice: (!self.allowed_tools.is_empty()).then_some(ToolChoice::Auto),
+            temperature: None,
             stream: true,
         };
 
@@ -3548,6 +3549,7 @@ impl ApiClient for ProviderRuntimeClient {
             let response = self
                 .client
                 .send_message(&MessageRequest {
+                    temperature: None,
                     stream: false,
                     ..message_request.clone()
                 })

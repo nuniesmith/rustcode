@@ -66,6 +66,7 @@ impl GrokAnalyzer {
             system: Some(system_prompt.to_string()),
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 

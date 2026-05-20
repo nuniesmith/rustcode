@@ -4549,6 +4549,7 @@ impl ApiClient for AnthropicRuntimeClient {
                 .enable_tools
                 .then(|| filter_tool_specs(&self.tool_registry, self.allowed_tools.as_ref())),
             tool_choice: self.enable_tools.then_some(ToolChoice::Auto),
+            temperature: None,
             stream: true,
         };
 

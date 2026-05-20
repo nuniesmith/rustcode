@@ -42,6 +42,7 @@ fn scenario_request(model: &str, scenario: &str) -> MessageRequest {
         system: None,
         tools: None,
         tool_choice: None,
+        temperature: None,
         stream: false,
     }
 }
@@ -129,6 +130,7 @@ fn openai_compat_client_consumes_openai_shaped_response() {
             system: None,
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 

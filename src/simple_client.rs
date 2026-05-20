@@ -61,6 +61,7 @@ impl GrokClient {
             system:      None,
             tools:       None,
             tool_choice: None,
+            temperature: None,
             stream:      false,
         };
 
@@ -100,6 +101,7 @@ impl GrokClient {
             system:      Some(system.to_string()),
             tools:       None,
             tool_choice: None,
+            temperature: None,
             stream:      false,
         };
 

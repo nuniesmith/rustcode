@@ -494,18 +494,14 @@
   > Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. Dropped
   > five inline structs (`Req`, `Msg`, `Opts`, `Resp`, `RespMsg`).
   >
-  > **Behavioural caveat:** the old Ollama-native payload set
-  > `options.temperature = 0.0` and `options.num_predict = 16` on the
-  > classification request. `MessageRequest` exposes `max_tokens` (kept
-  > as 16) but no `temperature`, so the classifier no longer pins
-  > determinism. The existing keyword fallback already handles
-  > misclassifications via the `Unknown label` arm, so accuracy
-  > degradation surfaces as a fallback rather than a wrong target. Built
-  > an explicit 8 s `tokio::time::timeout` to replace the old reqwest
-  > builder timeout, and `with_retry_policy(0, ...)` to preserve
-  > one-shot semantics. Adding `temperature` to `api::MessageRequest`
-  > is the proper fix for the determinism regression and is out of
-  > scope for this PR.
+  > **Behavioural caveat (resolved 2026-05-20):** the old Ollama-native
+  > payload set `options.temperature = 0.0` and `options.num_predict = 16`
+  > on the classification request. `MessageRequest` exposes `max_tokens`
+  > (kept as 16) but originally had no `temperature`. PR #24 added
+  > `temperature: Option<f32>` to `api::MessageRequest` and `llm_classify`
+  > now pins `temperature: Some(0.0)` again. Built an explicit 8 s
+  > `tokio::time::timeout` to replace the old reqwest builder timeout, and
+  > `with_retry_policy(0, ...)` to preserve one-shot semantics.
   >
   > **Still to migrate (with notes on each):**
   > 2. `src/grok_reasoning.rs` — uses xAI's `/responses` endpoint

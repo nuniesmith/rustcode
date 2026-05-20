@@ -544,6 +544,7 @@ impl CliApp {
             system: None,
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: true,
         }
     }

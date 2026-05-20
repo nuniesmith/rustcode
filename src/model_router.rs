@@ -3,10 +3,10 @@
 //
 // Note on the Ollama classifier: `llm_classify` talks to Ollama's
 // OpenAI-compatible `/v1/chat/completions` endpoint via `api::OpenAiCompatClient`
-// rather than the Ollama-native `/api/chat` endpoint. The compat endpoint
-// doesn't surface `temperature` / `options.num_predict` knobs, so the classifier
-// no longer pins `temperature: 0.0` — the keyword fallback handles any
-// misclassifications via the `Unknown label` arm.
+// rather than the Ollama-native `/api/chat` endpoint. The classifier pins
+// `temperature: 0.0` for deterministic label selection; `options.num_predict`
+// is replaced by `max_tokens: 16` which the compat endpoint translates back to
+// the same Ollama option.
 
 use api::{InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock};
 use serde::{Deserialize, Serialize};
@@ -253,6 +253,9 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             system: Some(CLASSIFY_SYSTEM.to_string()),
             tools: None,
             tool_choice: None,
+            // Deterministic classification — restored after the
+            // /api/chat → /v1/chat/completions migration in PR #23.
+            temperature: Some(0.0),
             stream: false,
         };
 
