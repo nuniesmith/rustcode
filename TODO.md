@@ -487,15 +487,32 @@
   > Adding `response_format` to the api crate is the proper fix but
   > out of scope for this PR.
   >
+  > **`src/model_router.rs` migrated 2026-05-20.** `llm_classify` (the
+  > prompt classifier — the TODO originally mis-described this as a
+  > `GET /api/tags` health-check, but it was actually a `POST /api/chat`
+  > LLM call) now goes through `api::OpenAiCompatClient` pointing at
+  > Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. Dropped
+  > five inline structs (`Req`, `Msg`, `Opts`, `Resp`, `RespMsg`).
+  >
+  > **Behavioural caveat:** the old Ollama-native payload set
+  > `options.temperature = 0.0` and `options.num_predict = 16` on the
+  > classification request. `MessageRequest` exposes `max_tokens` (kept
+  > as 16) but no `temperature`, so the classifier no longer pins
+  > determinism. The existing keyword fallback already handles
+  > misclassifications via the `Unknown label` arm, so accuracy
+  > degradation surfaces as a fallback rather than a wrong target. Built
+  > an explicit 8 s `tokio::time::timeout` to replace the old reqwest
+  > builder timeout, and `with_retry_policy(0, ...)` to preserve
+  > one-shot semantics. Adding `temperature` to `api::MessageRequest`
+  > is the proper fix for the determinism regression and is out of
+  > scope for this PR.
+  >
   > **Still to migrate (with notes on each):**
   > 2. `src/grok_reasoning.rs` — uses xAI's `/responses` endpoint
   >    (different from `/chat/completions` that `OpenAiCompatClient`
   >    targets). Needs either a new `/responses` client in the api
   >    crate or migration to `/chat/completions` (behavioral change).
   >    **Not a clean drop-in migration.**
-  > 4. `src/model_router.rs` — only uses raw reqwest for an Ollama
-  >    health-check (a single `GET /api/tags`). Worth migrating only
-  >    once the rest of the LLM crate consolidation is done.
   > 5. `src/ollama_client.rs` — depends on Ollama-native features
   >    (`num_ctx` context-window control, NDJSON streaming format,
   >    `prompt_eval_count`/`eval_count` token fields) that aren't
@@ -505,9 +522,8 @@
   >    either api-crate Ollama-specific extensions or accepting
   >    feature loss.
   >
-  > 2/5 migrations done. Of the remaining three, only `model_router.rs`
-  > is a clean migration; `grok_reasoning.rs` and `ollama_client.rs`
-  > both need additional api-crate capabilities first.
+  > 3/5 migrations done. The remaining two (`grok_reasoning.rs`,
+  > `ollama_client.rs`) both need additional api-crate capabilities first.
 
 - [ ] **RC-CRATES-C: replace scanner with `runtime` crate**
   > `runtime::execute_bash`, `runtime::ProviderClient`, `runtime::worker_boot` are the key
