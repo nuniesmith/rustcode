@@ -217,6 +217,60 @@ fn test_model_router_routes_to_correct_provider() {
     }
 }
 
+// G-2d: with `anthropic_enabled=true`, verify Opus is selected for the planner
+// tier (`ArchitecturalReason`) and Sonnet for the executor tier (`ScaffoldStub`).
+// This is the two-tier routing assertion called out in RC-CRATES-G.
+#[test]
+fn test_model_router_two_tier_claude_routing_planner_vs_executor() {
+    use rustcode::model_router::{ClaudeTier, ModelTarget};
+
+    let config = ModelRouterConfig {
+        anthropic_enabled: true,
+        planner_model: "claude-opus-4-7".to_string(),
+        executor_model: "claude-sonnet-4-6".to_string(),
+        ..Default::default()
+    };
+    let router = ModelRouter::new(config);
+
+    // Planner-tier tasks should get Opus.
+    let planner_tasks = [
+        TaskKind::ArchitecturalReason,
+        TaskKind::CodeReview,
+        TaskKind::Unknown,
+    ];
+    for kind in &planner_tasks {
+        let target = router.route(kind);
+        match &target {
+            ModelTarget::Claude { model, tier } => {
+                assert_eq!(*tier, ClaudeTier::Planner, "{kind:?} should be Planner");
+                assert_eq!(model, "claude-opus-4-7", "{kind:?} should select Opus");
+            }
+            other => panic!("{kind:?} should route Claude, got {other:?}"),
+        }
+        eprintln!("[G-2d] {kind:?} → Claude(Planner)/claude-opus-4-7 ✓");
+    }
+
+    // Executor-tier tasks should get Sonnet.
+    let executor_tasks = [
+        TaskKind::ScaffoldStub,
+        TaskKind::TodoTagging,
+        TaskKind::TreeSummary,
+        TaskKind::SymbolExtraction,
+        TaskKind::RepoQuestion,
+    ];
+    for kind in &executor_tasks {
+        let target = router.route(kind);
+        match &target {
+            ModelTarget::Claude { model, tier } => {
+                assert_eq!(*tier, ClaudeTier::Executor, "{kind:?} should be Executor");
+                assert_eq!(model, "claude-sonnet-4-6", "{kind:?} should select Sonnet");
+            }
+            other => panic!("{kind:?} should route Claude, got {other:?}"),
+        }
+        eprintln!("[G-2d] {kind:?} → Claude(Executor)/claude-sonnet-4-6 ✓");
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // G-3  RAG injection — rag_chunks_used > 0 when context is populated
 // ─────────────────────────────────────────────────────────────────────────────
