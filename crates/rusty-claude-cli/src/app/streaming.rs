@@ -439,7 +439,7 @@ mod tests {
         accumulate_stream_event(
             &mut messages,
             &mut usage,
-            &StreamEvent::MessageStop(api::MessageStopEvent { index: 0 }),
+            &StreamEvent::MessageStop(api::MessageStopEvent {}),
         );
 
         assert!(messages.is_empty());
