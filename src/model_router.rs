@@ -1,6 +1,14 @@
 // src/model_router.rs
 // RustCode ModelRouter — routes tasks between local Ollama and remote Grok API
+//
+// Note on the Ollama classifier: `llm_classify` talks to Ollama's
+// OpenAI-compatible `/v1/chat/completions` endpoint via `api::OpenAiCompatClient`
+// rather than the Ollama-native `/api/chat` endpoint. The compat endpoint
+// doesn't surface `temperature` / `options.num_predict` knobs, so the classifier
+// no longer pins `temperature: 0.0` — the keyword fallback handles any
+// misclassifications via the `Unknown label` arm.
 
+use api::{InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -212,7 +220,7 @@ impl ModelRouter {
         Self::keyword_classify(prompt)
     }
 
-    // One-shot LLM classification via a tiny Ollama request.
+    // One-shot LLM classification via Ollama's OpenAI-compatible endpoint.
     //
     // Returns `None` if Ollama is unreachable, times out, or returns an
     // unrecognised label — callers should fall back to keyword matching.
@@ -228,82 +236,53 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             &prompt[..prompt.len().min(400)] // cap to keep the request tiny
         );
 
-        let url = format!("{}/api/chat", self.config.local_base_url);
+        let base_url = format!(
+            "{}/v1",
+            self.config.local_base_url.trim_end_matches('/')
+        );
+        let client = OpenAiCompatClient::new("", OpenAiCompatConfig::openai())
+            .with_base_url(base_url)
+            // Best-effort classifier; the keyword fallback handles failures, so
+            // skip the default retries to preserve one-shot semantics.
+            .with_retry_policy(0, Duration::from_millis(200), Duration::from_secs(2));
 
-        #[derive(serde::Serialize)]
-        struct Req<'a> {
-            model: &'a str,
-            messages: [Msg<'a>; 2],
-            stream: bool,
-            options: Opts,
-        }
-        #[derive(serde::Serialize)]
-        struct Msg<'a> {
-            role: &'a str,
-            content: &'a str,
-        }
-        #[derive(serde::Serialize)]
-        struct Opts {
-            temperature: f32,
-            num_predict: u32,
-        }
-        #[derive(serde::Deserialize)]
-        struct Resp {
-            message: RespMsg,
-        }
-        #[derive(serde::Deserialize)]
-        struct RespMsg {
-            content: String,
-        }
-
-        let body = Req {
-            model: &self.config.local_model,
-            messages: [
-                Msg {
-                    role: "system",
-                    content: CLASSIFY_SYSTEM,
-                },
-                Msg {
-                    role: "user",
-                    content: &classify_prompt,
-                },
-            ],
+        let request = MessageRequest {
+            model: self.config.local_model.clone(),
+            max_tokens: 16,
+            messages: vec![InputMessage::user_text(classify_prompt)],
+            system: Some(CLASSIFY_SYSTEM.to_string()),
+            tools: None,
+            tool_choice: None,
             stream: false,
-            options: Opts {
-                temperature: 0.0,
-                num_predict: 16,
-            },
         };
 
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(8))
-            .build()
+        let response = match tokio::time::timeout(
+            Duration::from_secs(8),
+            client.send_message(&request),
+        )
+        .await
         {
-            Ok(c) => c,
-            Err(_) => return None,
-        };
-
-        let resp = match client.post(&url).json(&body).send().await {
-            Ok(r) if r.status().is_success() => r,
-            Ok(r) => {
-                warn!(status = %r.status(), "LLM classifier: non-success response");
+            Ok(Ok(response)) => response,
+            Ok(Err(e)) => {
+                debug!(error = %e, "LLM classifier: Ollama request failed — using keywords");
                 return None;
             }
-            Err(e) => {
-                debug!(error = %e, "LLM classifier: Ollama unreachable — using keywords");
+            Err(_) => {
+                debug!("LLM classifier: Ollama request timed out — using keywords");
                 return None;
             }
         };
 
-        let parsed: Resp = match resp.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                warn!(error = %e, "LLM classifier: failed to parse response");
-                return None;
-            }
-        };
-
-        let label = parsed.message.content.trim().to_string();
+        let label = response
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                OutputContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>()
+            .trim()
+            .to_string();
         let kind = match label.as_str() {
             "ScaffoldStub" => TaskKind::ScaffoldStub,
             "TodoTagging" => TaskKind::TodoTagging,
