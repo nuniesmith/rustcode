@@ -540,11 +540,27 @@
   > is already `String`, so the four `String::from_utf8_lossy(&output.stdout)`
   > sites became cheap `.clone()`s.
   >
-  > Remaining `runtime` integration points: `ProviderClient` and
-  > `worker_boot` are still untouched in `src/`. Next slice candidates
-  > are `src/auto_scanner.rs` (already heavy on `Command::new` for git
-  > / cargo invocations) and the executor pieces gated on RC-CRATES-C
-  > by lines 242 and 356 above.
+  > **`src/auto_scanner.rs` migrated 2026-05-21 (PR pending).** Five
+  > `Command::new("git")` invocations (`rev-parse HEAD`, `diff
+  > --name-status`, `status --porcelain`, `diff --name-only HEAD~5
+  > HEAD`, `ls-tree -r --name-only HEAD`) now go through
+  > `runtime::execute_bash` via a local `run_git_in(repo_path, args)`
+  > helper. Each call passes `cwd: Some(repo_path.to_path_buf())` to
+  > target the audited repo and `dangerously_disable_sandbox: Some(true)`
+  > to preserve the previous unsandboxed behaviour. The
+  > `output.status.success()` checks all mapped to
+  > `output.return_code_interpretation.is_none()` (None = exit 0). Five
+  > `String::from_utf8_lossy(&output.stdout)` / `.stderr` calls
+  > collapsed since `BashCommandOutput` already exposes both as
+  > `String`. Path/hash args shell-quoted via a per-file POSIX
+  > single-quote helper (duplicated from `tests_runner` per YAGNI; will
+  > extract on third caller).
+  >
+  > Remaining `runtime` integration points still untouched in `src/`:
+  > `ProviderClient`, `worker_boot`, plus the larger `Command::new`
+  > callers — `task_executor.rs` (10 sites), `formatter.rs` (9),
+  > `git.rs` (8). The executor pieces gated on RC-CRATES-C by lines
+  > 242 and 356 above are unblocked once those land.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.

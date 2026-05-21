@@ -18,6 +18,7 @@
 // returned zero issues from the LLM.
 
 use anyhow::{Context, Result};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,6 +28,42 @@ use tracing::{debug, error, info, warn};
 
 use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
+
+// POSIX single-quote escape for embedding a value in a shell command line.
+// `runtime::execute_bash` runs commands via `sh -lc`, so caller-supplied
+// values (e.g. commit hashes from git) need quoting to survive parsing
+// even if they look benign today.
+fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+// Run `git <args>` inside `repo_path` via `runtime::execute_bash`.
+//
+// Sandboxing is intentionally disabled because the scanner is reading the
+// user's real repositories on disk and the previous `std::process::Command`
+// path did not impose one. The returned `BashCommandOutput` matches the
+// success-vs-failure flow that the call sites used to derive from
+// `output.status.success()` — callers should check
+// `output.return_code_interpretation.is_none()` for "exit 0".
+fn run_git_in(repo_path: &Path, args: &[&str]) -> std::io::Result<BashCommandOutput> {
+    let command = std::iter::once("git".to_string())
+        .chain(args.iter().map(|a| shell_quote(a)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: Some(repo_path.to_path_buf()),
+    })
+}
 use crate::db::{Database, Repository};
 use crate::prompt_tier::{PromptRouter, TierKind};
 use crate::refactor_assistant::RefactorAssistant;
@@ -663,20 +700,15 @@ impl AutoScanner {
 
     // Get the current HEAD commit hash for a repository
     fn get_head_hash(&self, repo_path: &Path) -> Result<Option<String>> {
-        use std::process::Command;
-
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(repo_path)
-            .output()
+        let output = run_git_in(repo_path, &["rev-parse", "HEAD"])
             .context("Failed to run git rev-parse HEAD")?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             warn!("git rev-parse HEAD failed for {}", repo_path.display());
             return Ok(None);
         }
 
-        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let hash = output.stdout.trim().to_string();
         if hash.is_empty() {
             Ok(None)
         } else {
@@ -692,22 +724,20 @@ impl AutoScanner {
         current_head: Option<&str>,
     ) -> Result<Vec<PathBuf>> {
         use std::collections::HashSet;
-        use std::process::Command;
 
         let mut changed_set: HashSet<PathBuf> = HashSet::new();
 
         // 1. Check for committed changes since last known hash
         if let (Some(old_hash), Some(new_hash)) = (last_commit_hash, current_head) {
             if old_hash != new_hash {
-                let output = Command::new("git")
-                    .args(["diff", "--name-status", old_hash, new_hash])
-                    .current_dir(repo_path)
-                    .output();
+                let output = run_git_in(
+                    repo_path,
+                    &["diff", "--name-status", old_hash, new_hash],
+                );
 
                 match output {
-                    Ok(out) if out.status.success() => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        for line in stdout.lines() {
+                    Ok(out) if out.return_code_interpretation.is_none() => {
+                        for line in out.stdout.lines() {
                             let parts: Vec<&str> = line.split('\t').collect();
                             if parts.len() < 2 {
                                 continue;
@@ -745,7 +775,7 @@ impl AutoScanner {
                             "git diff failed for {}..{} ({}), falling back to HEAD diff",
                             &old_hash[..8.min(old_hash.len())],
                             &new_hash[..8.min(new_hash.len())],
-                            String::from_utf8_lossy(&out.stderr).trim()
+                            out.stderr.trim()
                         );
                         self.get_files_from_recent_commits(repo_path, &mut changed_set)?;
                     }
@@ -764,15 +794,11 @@ impl AutoScanner {
         }
 
         // 2. Also check for uncommitted changes (working tree + staged)
-        let output = Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(repo_path)
-            .output()
+        let output = run_git_in(repo_path, &["status", "--porcelain"])
             .context("Failed to run git status")?;
 
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
+        if output.return_code_interpretation.is_none() {
+            for line in output.stdout.lines() {
                 if line.len() < 3 {
                     continue;
                 }
@@ -805,21 +831,16 @@ impl AutoScanner {
         repo_path: &Path,
         changed_set: &mut std::collections::HashSet<PathBuf>,
     ) -> Result<()> {
-        use std::process::Command;
-
         // Try to get files changed in the last 5 commits first.
         // This may fail for repos that have fewer than 5 commits (e.g. HEAD~5
         // doesn't exist), so we fall back to listing every tracked file in HEAD.
-        let diff_output = Command::new("git")
-            .args(["diff", "--name-only", "HEAD~5", "HEAD"])
-            .current_dir(repo_path)
-            .output();
+        let diff_output =
+            run_git_in(repo_path, &["diff", "--name-only", "HEAD~5", "HEAD"]);
 
         let used_diff = match diff_output {
-            Ok(ref out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
+            Ok(ref out) if out.return_code_interpretation.is_none() => {
                 let mut found = false;
-                for line in stdout.lines() {
+                for line in out.stdout.lines() {
                     let file_path = line.trim();
                     if !file_path.is_empty() && Self::should_analyze_file(file_path) {
                         let full_path = repo_path.join(file_path);
@@ -850,15 +871,12 @@ impl AutoScanner {
                 "First-scan fallback: listing all tracked files in HEAD for {}",
                 repo_path.display()
             );
-            let ls_output = Command::new("git")
-                .args(["ls-tree", "-r", "--name-only", "HEAD"])
-                .current_dir(repo_path)
-                .output();
+            let ls_output =
+                run_git_in(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]);
 
             match ls_output {
-                Ok(out) if out.status.success() => {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    for line in stdout.lines() {
+                Ok(out) if out.return_code_interpretation.is_none() => {
+                    for line in out.stdout.lines() {
                         let file_path = line.trim();
                         if !file_path.is_empty() && Self::should_analyze_file(file_path) {
                             let full_path = repo_path.join(file_path);
@@ -879,7 +897,7 @@ impl AutoScanner {
                     warn!(
                         "git ls-tree failed for {}: {}",
                         repo_path.display(),
-                        String::from_utf8_lossy(&out.stderr).trim()
+                        out.stderr.trim()
                     );
                 }
                 Err(e) => {
