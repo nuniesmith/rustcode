@@ -556,11 +556,30 @@
   > single-quote helper (duplicated from `tests_runner` per YAGNI; will
   > extract on third caller).
   >
+  > **`src/git.rs` migrated 2026-05-21 (PR pending).** Five subprocess
+  > sites — `clone_repo`, `clone_repo_with_token`, `clone_with_askpass`,
+  > `push_with_askpass`, `push_branch_with_token` — now go through
+  > `runtime::execute_bash`. The previous `Command::new("git").env(...)`
+  > pattern is replaced by an inline `KEY=val git ...` shell prefix via
+  > a new local helper `build_git_command(env, args)`; this avoids
+  > extending the runtime API with an `env` field for now (YAGNI — no
+  > other migrated caller has needed it yet). Two pre-existing
+  > `String::from_utf8_lossy(line.content())` sites in `get_diff` are
+  > unrelated to subprocess output (they're inside a `git2::Diff` print
+  > callback) and were left untouched.
+  >
+  > Behavioural note: the previous code used `Command::status()` which
+  > inherits stdio, so `git clone`'s progress streamed to the parent
+  > terminal. `execute_bash` captures stdout/stderr, so the progress is
+  > no longer interactively visible. Acceptable for the audit/CLI
+  > context; on error the captured `return_code_interpretation` surfaces
+  > in the returned `AuditError`.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
   > `ProviderClient`, `worker_boot`, plus the larger `Command::new`
-  > callers — `task_executor.rs` (10 sites), `formatter.rs` (9),
-  > `git.rs` (8). The executor pieces gated on RC-CRATES-C by lines
-  > 242 and 356 above are unblocked once those land.
+  > callers — `task_executor.rs` (10 sites), `formatter.rs` (9). The
+  > executor pieces gated on RC-CRATES-C by lines 242 and 356 above
+  > are unblocked once those land.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
