@@ -624,14 +624,30 @@
   > shell injection payload that verifies the quoting prevents
   > metacharacter interpretation.
   >
+  > **`src/backup/mod.rs` migrated 2026-05-21 (PR pending).** Nine
+  > subprocess sites — eight `rclone` invocations (`version`,
+  > `listremotes`, `copy`, `size --json`, `lsf --dirs-only`, `purge`,
+  > `lsjson --dirs-only`, plus the restore-side `copy`) and one
+  > `sqlite3 .backup` invocation — now go through `runtime::execute_bash`
+  > via a local `run_command(command)` helper (no cwd; rclone/sqlite3
+  > calls use absolute paths). All remote paths / DB paths / dot-commands
+  > shell-quoted via `runtime::shell_quote`. The sqlite3 `.backup` site
+  > needed a small adaptation: the existing code already builds a
+  > sqlite-dot-command string `.backup '<path>'`, so we shell-quote
+  > that whole string a second time on the way to `sh -lc` (sqlite3
+  > then sees the inner quotes as part of its own dot-command parsing).
+  > `String::from_utf8_lossy(&output.stdout)` parsing dropped to direct
+  > field access on `output.stdout`; `serde_json::from_slice(&output.stdout)`
+  > became `serde_json::from_str(&output.stdout)`.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
   > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
   > `process::Command` callers in `src/` are smaller and varied:
-  > `backup/mod.rs` (10 sites), `repo/manager.rs` (7), `static_analysis.rs`
-  > (4), `code_review.rs` (3), `context/global.rs` (3), `tree_state.rs`
-  > (2), `db/config.rs` (2), `agent/tools.rs` (1, `tokio::process::Command`),
-  > `bin/cli.rs` (1). The executor pieces gated on RC-CRATES-C by lines
-  > 242 and 356 above are unblocked by this slice.
+  > `repo/manager.rs` (7), `static_analysis.rs` (4), `code_review.rs`
+  > (3), `context/global.rs` (3), `tree_state.rs` (2), `db/config.rs`
+  > (2), `agent/tools.rs` (1, `tokio::process::Command`), `bin/cli.rs`
+  > (1). The executor pieces gated on RC-CRATES-C by lines 242 and 356
+  > above are unblocked.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.

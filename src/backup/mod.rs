@@ -2,12 +2,36 @@
 //
 // Handles database and cache backup to Google Drive using rclone.
 // No API keys needed - uses rclone's OAuth flow.
+//
+// RC-CRATES-C (2026-05-21): subprocess invocations migrated from raw
+// `std::process::Command` to `runtime::execute_bash`. Eight `rclone`
+// calls and one `sqlite3` call now go through the same `run_command`
+// helper used by the rest of the RC-CRATES-C migrations. Path/remote
+// args shell-quoted via `runtime::shell_quote`.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tracing::{info, warn};
+
+// Run a shell command via `runtime::execute_bash` with sandboxing
+// disabled (matches the previous `Command::new` paths). No `cwd` —
+// rclone/sqlite3 calls here use absolute paths.
+fn run_command(command: String) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: None,
+    })
+}
 
 // ============================================================================
 // Backup Configuration
@@ -79,19 +103,19 @@ impl BackupManager {
 
     // Check if rclone is installed and configured
     pub fn check_rclone(&self) -> Result<bool> {
-        let output = Command::new("rclone").args(["version"]).output().context(
+        let output = run_command(String::from("rclone version")).context(
             "rclone not found. Install with: curl https://rclone.org/install.sh | sudo bash",
         )?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Ok(false);
         }
 
         // Check if remote is configured
-        let list_output = Command::new("rclone").args(["listremotes"]).output()?;
-
-        let remotes = String::from_utf8_lossy(&list_output.stdout);
-        let remote_exists = remotes.contains(&format!("{}:", self.config.remote_name));
+        let list_output = run_command(String::from("rclone listremotes"))?;
+        let remote_exists = list_output
+            .stdout
+            .contains(&format!("{}:", self.config.remote_name));
 
         if !remote_exists {
             warn!(
@@ -118,23 +142,19 @@ impl BackupManager {
         let snapshot_dir = self.create_snapshot(&timestamp)?;
 
         // Sync to remote
-        let output = Command::new("rclone")
-            .args([
-                "copy",
-                snapshot_dir.to_str().unwrap(),
-                &remote_dest,
-                "--progress",
-                "-v",
-            ])
-            .output()
-            .context("Failed to run rclone copy")?;
+        let snapshot_str = snapshot_dir.display().to_string();
+        let command = format!(
+            "rclone copy {} {} --progress -v",
+            shell_quote(&snapshot_str),
+            shell_quote(&remote_dest),
+        );
+        let output = run_command(command).context("Failed to run rclone copy")?;
 
         // Cleanup local snapshot
         std::fs::remove_dir_all(&snapshot_dir).ok();
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Backup failed: {}", stderr));
+        if output.return_code_interpretation.is_some() {
+            return Err(anyhow::anyhow!("Backup failed: {}", output.stderr));
         }
 
         // Get backup size
@@ -164,14 +184,18 @@ impl BackupManager {
         if db_path.exists() {
             let snapshot_db = snapshot_dir.join("rustcode.db");
 
-            // Use sqlite3 CLI for safe backup
-            let status = Command::new("sqlite3")
-                .arg(&db_path)
-                .arg(format!(".backup '{}'", snapshot_db.display()))
-                .status();
-
-            match status {
-                Ok(s) if s.success() => {
+            // Use sqlite3 CLI for safe backup. The sqlite3 `.backup`
+            // dot-command takes a quoted path in its own argument; we
+            // shell-quote the whole dot-command string so the outer
+            // shell delivers it verbatim to sqlite3.
+            let dot_backup = format!(".backup '{}'", snapshot_db.display());
+            let command = format!(
+                "sqlite3 {} {}",
+                shell_quote(&db_path.display().to_string()),
+                shell_quote(&dot_backup),
+            );
+            match run_command(command) {
+                Ok(output) if output.return_code_interpretation.is_none() => {
                     info!("Database snapshot created");
                 }
                 _ => {
@@ -202,12 +226,11 @@ impl BackupManager {
 
     // Get size of remote backup
     fn get_remote_size(&self, remote_path: &str) -> Result<u64> {
-        let output = Command::new("rclone")
-            .args(["size", remote_path, "--json"])
-            .output()?;
+        let command = format!("rclone size {} --json", shell_quote(remote_path));
+        let output = run_command(command)?;
 
-        if output.status.success() {
-            let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        if output.return_code_interpretation.is_none() {
+            let json: serde_json::Value = serde_json::from_str(&output.stdout)?;
             Ok(json["bytes"].as_u64().unwrap_or(0))
         } else {
             Ok(0)
@@ -219,15 +242,15 @@ impl BackupManager {
         let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
         // List existing backups
-        let output = Command::new("rclone")
-            .args(["lsf", &remote_base, "--dirs-only"])
-            .output()?;
+        let command = format!("rclone lsf {} --dirs-only", shell_quote(&remote_base));
+        let output = run_command(command)?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Ok(()); // No backups yet
         }
 
-        let mut backups: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        let mut backups: Vec<String> = output
+            .stdout
             .lines()
             .filter(|l| l.starts_with("backup_"))
             .map(|l| l.trim_end_matches('/').to_string())
@@ -245,7 +268,7 @@ impl BackupManager {
                 let path = format!("{}/{}", remote_base, backup);
                 info!("Removing old backup: {}", backup);
 
-                Command::new("rclone").args(["purge", &path]).output().ok();
+                let _ = run_command(format!("rclone purge {}", shell_quote(&path)));
             }
         }
 
@@ -256,11 +279,10 @@ impl BackupManager {
     pub fn list_backups(&self) -> Result<Vec<BackupInfo>> {
         let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
-        let output = Command::new("rclone")
-            .args(["lsjson", &remote_base, "--dirs-only"])
-            .output()?;
+        let command = format!("rclone lsjson {} --dirs-only", shell_quote(&remote_base));
+        let output = run_command(command)?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Ok(vec![]);
         }
 
@@ -272,7 +294,7 @@ impl BackupManager {
             mod_time: String,
         }
 
-        let entries: Vec<RcloneEntry> = serde_json::from_slice(&output.stdout)?;
+        let entries: Vec<RcloneEntry> = serde_json::from_str(&output.stdout)?;
 
         let backups: Vec<BackupInfo> = entries
             .into_iter()
@@ -300,20 +322,19 @@ impl BackupManager {
         std::fs::create_dir_all(&restore_dir)?;
 
         // Download backup
-        let output = Command::new("rclone")
-            .args([
-                "copy",
-                &remote_src,
-                restore_dir.to_str().unwrap(),
-                "--progress",
-                "-v",
-            ])
-            .output()
-            .context("Failed to download backup")?;
+        let restore_str = restore_dir.display().to_string();
+        let command = format!(
+            "rclone copy {} {} --progress -v",
+            shell_quote(&remote_src),
+            shell_quote(&restore_str),
+        );
+        let output = run_command(command).context("Failed to download backup")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Restore download failed: {}", stderr));
+        if output.return_code_interpretation.is_some() {
+            return Err(anyhow::anyhow!(
+                "Restore download failed: {}",
+                output.stderr
+            ));
         }
 
         // Stop any running services (user should do this)
