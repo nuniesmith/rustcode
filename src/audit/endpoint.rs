@@ -32,7 +32,7 @@ use crate::audit::cache::RedisAuditCache;
 use crate::audit::report::{AuditReport, ReportConfig, ReportFormat};
 use crate::audit::runner::{AuditRunner, AuditRunnerConfig};
 use crate::audit::types::{AuditRequest, AuditResponse, AuditStatus};
-use crate::grok_client::GrokClient;
+use crate::llm::grok_client::GrokClient;
 
 // ============================================================================
 // State

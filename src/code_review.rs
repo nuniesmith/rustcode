@@ -30,7 +30,7 @@
 // ```
 
 use crate::db::Database;
-use crate::grok_client::{FileScoreResult, GrokClient};
+use crate::llm::grok_client::{FileScoreResult, GrokClient};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

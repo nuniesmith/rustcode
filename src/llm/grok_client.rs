@@ -13,7 +13,7 @@
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::grok_client::GrokClient;
+// use rustcode::llm::grok_client::GrokClient;
 // use rustcode::db::Database;
 //
 // #[tokio::main]

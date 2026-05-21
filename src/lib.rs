@@ -44,8 +44,6 @@ pub mod error;
 pub mod formatter;
 pub mod git;
 pub mod github;
-pub mod grok_client;
-pub mod grok_reasoning;
 pub mod indexing;
 pub mod llm;
 pub mod llm_audit;
@@ -139,8 +137,8 @@ pub use scanner::EnhancedScanner;
 pub use error::{AuditError, Result};
 pub use formatter::{BatchFormatResult, CodeFormatter, FormatMode, FormatResult, Formatter};
 pub use git::GitManager;
-pub use grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
-pub use grok_reasoning::{
+pub use llm::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
+pub use llm::grok_reasoning::{
     BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult, FileBatch, FileForAnalysis,
     GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig, analyze_all_batches,
 };
@@ -286,8 +284,8 @@ pub mod prelude {
     pub use crate::scanner::enhanced::EnhancedScanner;
     pub use crate::error::{AuditError, Result};
     pub use crate::git::GitManager;
-    pub use crate::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
-    pub use crate::grok_reasoning::{
+    pub use crate::llm::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
+    pub use crate::llm::grok_reasoning::{
         BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult, FileBatch,
         FileForAnalysis, GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig,
         analyze_all_batches,

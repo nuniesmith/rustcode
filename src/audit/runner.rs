@@ -20,7 +20,7 @@ use crate::audit::types::{
     FindingCategory,
 };
 use crate::error::{AuditError, Result};
-use crate::grok_client::{FileScoreResult, GrokClient};
+use crate::llm::grok_client::{FileScoreResult, GrokClient};
 use crate::static_analysis::{AnalysisRecommendation, StaticAnalyzer};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

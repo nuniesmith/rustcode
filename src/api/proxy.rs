@@ -722,7 +722,7 @@ async fn handle_streaming(
                     use crate::db::Database;
                     match Database::new("data/rustcode.db").await {
                         Ok(db) => {
-                            let client = crate::grok_client::GrokClient::new(api_key.clone(), db);
+                            let client = crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
                             client.ask_tracked(&prompt, None, "proxy-stream").await
                         }
                         Err(e) => Err(anyhow::anyhow!("DB init failed: {}", e)),
@@ -1384,7 +1384,7 @@ async fn dispatch(
                 use crate::db::Database;
                 match Database::new("data/rustcode.db").await {
                     Ok(db) => {
-                        let client = crate::grok_client::GrokClient::new(api_key.clone(), db);
+                        let client = crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
                         client
                             .ask_tracked(&req.user_prompt, None, "proxy-chat")
                             .await

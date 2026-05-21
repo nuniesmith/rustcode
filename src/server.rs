@@ -194,11 +194,11 @@ pub async fn run_server(config: Config) -> Result<()> {
     // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
     // Re-use the already-initialised PgPool from AppState so we don't open a second
     // connection pool. Database::from_pool wraps an existing PgPool without reconnecting.
-    let grok_for_repo: Option<Arc<crate::grok_client::GrokClient>> =
+    let grok_for_repo: Option<Arc<crate::llm::grok_client::GrokClient>> =
         match config.model.xai_api_key.clone().filter(|k| !k.is_empty()) {
             Some(api_key) => {
                 let db = Database::from_pool(state.db_pool.clone());
-                let client = crate::grok_client::GrokClient::new(api_key, db);
+                let client = crate::llm::grok_client::GrokClient::new(api_key, db);
                 info!("GrokClient ready for repo chat handler (sharing existing PgPool)");
                 Some(Arc::new(client))
             }

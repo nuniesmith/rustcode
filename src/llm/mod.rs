@@ -5,6 +5,8 @@
 pub mod compat;
 pub mod config;
 pub mod grok;
+pub mod grok_client;
+pub mod grok_reasoning;
 pub mod ollama;
 pub mod router;
 pub mod simple_client;

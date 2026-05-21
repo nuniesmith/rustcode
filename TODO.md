@@ -587,7 +587,7 @@
 > Identified during 2026-04-05 code review. ~82K LoC in a 48-module god crate.
 > Items ordered by risk/reward — do before the crate extractions in P2.
 
-- [~] **RC-CLEANUP-A: consolidate LLM clients into `src/llm/`**
+- [x] **RC-CLEANUP-A: consolidate LLM clients into `src/llm/`**
   > Six separate Grok/xAI implementations exist right now (see RC-CRATES-B for the list).
   > Once RC-CRATES-B migrates each caller off raw reqwest, merge all into `src/llm/`:
   > - `src/llm/client.rs` — unified client wrapping `api::AnthropicClient` + `api::OpenAiCompatClient`
@@ -657,8 +657,30 @@
   > requires a new `ollama()` factory in the api crate (no `bearer_auth`
   > on the no-auth Ollama path) and is left for a follow-up.
   >
-  > Remaining slice: heavier `grok_client` / `grok_reasoning`
-  > consolidation into `llm/client` (~2,200 lines combined).
+  > **Slice 6 done 2026-05-21 (PR pending) — RC-CLEANUP-A complete.**
+  > Moved `src/grok_client.rs` (669 lines) → `src/llm/grok_client.rs`
+  > and `src/grok_reasoning.rs` (1,513 lines) → `src/llm/grok_reasoning.rs`
+  > via `git mv`. Both `pub mod` declarations dropped from `lib.rs`;
+  > the four re-exports (top-level + prelude, for both modules)
+  > rewritten through `llm::{grok_client,grok_reasoning}::*`. Crate-root
+  > re-exports (`rustcode::GrokClient`, `rustcode::FileScoreResult`,
+  > `rustcode::QuickAnalysisResult`, `rustcode::GrokReasoningClient`,
+  > etc.) keep their flat names so external/test consumers are unaffected.
+  >
+  > 16 in-tree importer files rewritten by script (~25 individual refs):
+  > `server.rs`, `test_generator.rs`, `refactor_assistant.rs`,
+  > `code_review.rs`, `auto_scanner.rs`, `llm/ollama.rs`,
+  > `audit/{full_audit,endpoint,runner}.rs`, `api/{repos,proxy}.rs`,
+  > `bin/cli.rs`, `todo/{planner,scaffolder,worker}.rs`, plus a
+  > doc-comment example in `llm/grok_client.rs` itself.
+  >
+  > **`lib.rs` module count: 48 → 40 ✓** (matches TODO target).
+  >
+  > Deferred to a separate PR: the "unified client" design (`llm/client.rs`
+  > wrapping `api::AnthropicClient` + `api::OpenAiCompatClient`) and the
+  > optional split of `cache_creation_tokens` / `cache_read_tokens` in
+  > `CostTracker`. These are design decisions that warrant their own
+  > thinking time rather than being folded into a pure-restructure pass.
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
   > **Done 2026-05-18.** Pure restructure — no behaviour changes.
