@@ -7,7 +7,7 @@
 use crate::cache::AuditCache;
 use crate::error::Result;
 use crate::llm::LlmClient;
-use crate::llm_config::LlmConfig;
+use crate::llm::config::LlmConfig;
 use crate::scoring::{CodebaseScore, FileScore, TodoBreakdown};
 use crate::types::Category;
 use serde::{Deserialize, Serialize};

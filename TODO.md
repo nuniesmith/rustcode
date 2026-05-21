@@ -628,9 +628,18 @@
   > to split `cache_creation_tokens` / `cache_read_tokens` separately in
   > `CostTracker` is deferred to a later slice.
   >
-  > Remaining slices: `ollama_client` → `llm/ollama`, `llm_config` →
-  > `llm/config`, `model_router` → `llm/router`, plus the heavier
-  > grok_client/grok_reasoning consolidation into `llm/client`.
+  > **Slice 3 done 2026-05-21 (PR pending).** Moved `src/llm_config.rs`
+  > → `src/llm/config.rs` via `git mv`. Updated `src/llm/mod.rs` to add
+  > `pub mod config;`, dropped `pub mod llm_config;` from `lib.rs` and
+  > rewrote the `pub use llm_config::{LlmConfig, CacheConfig, ...}`
+  > re-export through `llm::config`. Three in-tree importers rewritten:
+  > `src/cache/audit.rs` (6 refs — function sig + 5 test cases),
+  > `src/grok_reasoning.rs`, `src/llm_audit.rs`. Crate-root re-exports
+  > (`rustcode::LlmConfig`, etc.) keep flat names.
+  >
+  > Remaining slices: `ollama_client` → `llm/ollama`, `model_router` →
+  > `llm/router`, plus the heavier grok_client/grok_reasoning
+  > consolidation into `llm/client`.
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
   > **Done 2026-05-18.** Pure restructure — no behaviour changes.

@@ -102,7 +102,7 @@ pub struct AuditCache {
 
 impl AuditCache {
     // Create a new cache manager with config
-    pub fn new(project_root: &Path, config: &crate::llm_config::CacheConfig) -> Result<Self> {
+    pub fn new(project_root: &Path, config: &crate::llm::config::CacheConfig) -> Result<Self> {
         let cache_dir = project_root.join(CACHE_DIR);
 
         // Create cache directory if it doesn't exist
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_cache_creation() {
         let temp = TempDir::new().unwrap();
-        let config = crate::llm_config::CacheConfig::default();
+        let config = crate::llm::config::CacheConfig::default();
         let cache = AuditCache::new(temp.path(), &config).unwrap();
         assert!(cache.is_enabled());
         assert_eq!(cache.entry_count(), 0);
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_hash_content() {
         let temp = TempDir::new().unwrap();
-        let config = crate::llm_config::CacheConfig::default();
+        let config = crate::llm::config::CacheConfig::default();
         let cache = AuditCache::new(temp.path(), &config).unwrap();
 
         let content1 = "fn main() {}";
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_cache_get_set() {
         let temp = TempDir::new().unwrap();
-        let config = crate::llm_config::CacheConfig::default();
+        let config = crate::llm::config::CacheConfig::default();
         let cache = AuditCache::new(temp.path(), &config).unwrap();
 
         let file_path = Path::new("test.rs");
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_cache_invalidation() {
         let temp = TempDir::new().unwrap();
-        let config = crate::llm_config::CacheConfig::default();
+        let config = crate::llm::config::CacheConfig::default();
         let cache = AuditCache::new(temp.path(), &config).unwrap();
 
         let file_path = Path::new("test.rs");
@@ -446,7 +446,7 @@ mod tests {
     #[test]
     fn test_cache_persistence() {
         let temp = TempDir::new().unwrap();
-        let config = crate::llm_config::CacheConfig::default();
+        let config = crate::llm::config::CacheConfig::default();
         let file_path = Path::new("test.rs");
         let content = "fn test() {}";
         let analysis = serde_json::json!({"score": 85});

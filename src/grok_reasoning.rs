@@ -10,7 +10,7 @@
 
 use crate::cache::{AuditCache, CacheEntry};
 use crate::error::{AuditError, Result};
-use crate::llm_config::LimitsConfig;
+use crate::llm::config::LimitsConfig;
 use crate::scoring::FileScore;
 use crate::tree_state::FileCategory;
 use reqwest::Client;

@@ -3,6 +3,7 @@
 // Provides LLM integration for code analysis and content processing.
 
 pub mod compat;
+pub mod config;
 pub mod grok;
 pub mod simple_client;
 pub mod usage;
