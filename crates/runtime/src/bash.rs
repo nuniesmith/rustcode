@@ -32,6 +32,15 @@ pub struct BashCommandInput {
     pub filesystem_mode: Option<FilesystemIsolationMode>,
     #[serde(rename = "allowedMounts")]
     pub allowed_mounts: Option<Vec<String>>,
+    // Working directory for the command. When `None`, the process's current
+    // working directory is used (existing behaviour). When `Some`, the
+    // command runs in the specified directory and sandbox prep (HOME/TMPDIR,
+    // namespace launchers) is resolved relative to it. Lets in-process
+    // callers (e.g. `rustcode::tests_runner` running `cargo test` against
+    // a separate project root) target a specific directory without
+    // mutating the process-wide cwd.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<std::path::PathBuf>,
 }
 
 // Output returned from a bash tool invocation.
@@ -68,7 +77,10 @@ pub struct BashCommandOutput {
 
 // Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
-    let cwd = env::current_dir()?;
+    let cwd = input
+        .cwd
+        .clone()
+        .map_or_else(env::current_dir, Ok)?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
 
     if input.run_in_background.unwrap_or(false) {
@@ -258,6 +270,7 @@ mod tests {
             isolate_network: Some(false),
             filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
             allowed_mounts: None,
+            cwd: None,
         })
         .expect("bash command should execute");
 
@@ -278,10 +291,48 @@ mod tests {
             isolate_network: None,
             filesystem_mode: None,
             allowed_mounts: None,
+            cwd: None,
         })
         .expect("bash command should execute");
 
         assert!(!output.sandbox_status.expect("sandbox status").enabled);
+    }
+
+    #[test]
+    fn explicit_cwd_runs_command_in_that_directory() {
+        // Use a known-existing path (the workspace's parent dir) so we
+        // don't need a tempfile dev-dep just for this test.
+        let target = std::env::current_dir()
+            .expect("current_dir should be readable")
+            .canonicalize()
+            .expect("canonicalize");
+
+        let output = execute_bash(BashCommandInput {
+            command: String::from("pwd"),
+            timeout: Some(1_000),
+            description: None,
+            run_in_background: Some(false),
+            dangerously_disable_sandbox: Some(true),
+            namespace_restrictions: None,
+            isolate_network: None,
+            filesystem_mode: None,
+            allowed_mounts: None,
+            cwd: Some(target.clone()),
+        })
+        .expect("bash command should execute");
+
+        // `sh -lc` may print shell-init noise (e.g. nvm) before `pwd`;
+        // take the last non-empty line as the actual `pwd` output.
+        let last_line = output
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .next_back()
+            .expect("pwd should produce output");
+        let pwd = std::path::PathBuf::from(last_line)
+            .canonicalize()
+            .expect("pwd output should be a real path");
+        assert_eq!(pwd, target);
     }
 }
 
