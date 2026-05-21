@@ -2,11 +2,51 @@
 //
 // This module provides functionality to automatically format code across different
 // languages and tools, integrating with CI/CD pipelines for automated code quality.
+//
+// RC-CRATES-C (2026-05-21): subprocess invocations migrated from raw
+// `std::process::Command` to `runtime::execute_bash`. The four
+// `is_available()` version probes use `execute_bash` with no `cwd`; the
+// four format functions (`format_rust`, `format_kotlin`, `format_prettier`,
+// `format_python`) pass file path lists shell-quoted.
 
 use crate::error::AuditError;
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tracing::{debug, info, warn};
+
+// POSIX single-quote escape for embedding caller-supplied values in a
+// shell command line. `runtime::execute_bash` runs via `sh -lc`, so file
+// paths and other dynamic args need quoting.
+fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+// Run a shell command via `runtime::execute_bash` with sandboxing
+// disabled (matches the previous `Command::new(...)` paths) and the
+// requested working directory.
+fn run_command(command: String, cwd: Option<&Path>) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: cwd.map(Path::to_path_buf),
+    })
+}
+
+// True when `run_command` returns Ok with a zero exit code. Used by the
+// `is_available()` probes.
+fn run_succeeds(command: &str) -> bool {
+    run_command(command.to_string(), None)
+        .map(|out| out.return_code_interpretation.is_none())
+        .unwrap_or(false)
+}
 
 // Supported formatters
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,26 +90,10 @@ impl Formatter {
     // Check if formatter is available on the system
     pub fn is_available(&self) -> bool {
         match self {
-            Self::RustFmt => Command::new("cargo")
-                .args(["fmt", "--version"])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false),
-            Self::KtLint => Command::new("ktlint")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false),
-            Self::Prettier => Command::new("npx")
-                .args(["prettier", "--version"])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false),
-            Self::Black => Command::new("black")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false),
+            Self::RustFmt => run_succeeds("cargo fmt --version"),
+            Self::KtLint => run_succeeds("ktlint --version"),
+            Self::Prettier => run_succeeds("npx prettier --version"),
+            Self::Black => run_succeeds("black --version"),
         }
     }
 }
@@ -282,30 +306,22 @@ impl CodeFormatter {
         for cargo_dir in &cargo_paths {
             debug!("Running cargo fmt in {:?}", cargo_dir);
 
-            let mut cmd = Command::new("cargo");
-            cmd.current_dir(cargo_dir).arg("fmt").arg("--all");
+            let command = match self.mode {
+                FormatMode::Check => "cargo fmt --all --check".to_string(),
+                // cargo fmt defaults to fix mode
+                FormatMode::Fix => "cargo fmt --all".to_string(),
+            };
 
-            match self.mode {
-                FormatMode::Check => {
-                    cmd.arg("--check");
-                }
-                FormatMode::Fix => {
-                    // cargo fmt defaults to fix mode
-                }
-            }
-
-            let output = cmd
-                .output()
+            let output = run_command(command, Some(cargo_dir))
                 .map_err(|e| AuditError::Other(format!("Failed to run cargo fmt: {}", e)))?;
 
-            if !output.status.success() {
+            if output.return_code_interpretation.is_some() {
                 if self.mode == FormatMode::Check {
                     // In check mode, non-zero exit means files need formatting
                     total_changed += 1;
                 } else {
                     // In fix mode, non-zero exit is an error
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    errors.push(format!("cargo fmt failed in {:?}: {}", cargo_dir, stderr));
+                    errors.push(format!("cargo fmt failed in {:?}: {}", cargo_dir, output.stderr));
                 }
             }
         }
@@ -342,32 +358,27 @@ impl CodeFormatter {
             ));
         }
 
-        let mut cmd = Command::new("ktlint");
-
-        match self.mode {
-            FormatMode::Check => {
-                // ktlint default is check mode
-            }
-            FormatMode::Fix => {
-                cmd.arg("-F");
-            }
+        // Build: ktlint [-F] <file1> <file2> ...
+        let mut command = String::from("ktlint");
+        if self.mode == FormatMode::Fix {
+            command.push_str(" -F");
         }
-
-        // Add all Kotlin files
         for file in &kt_files {
-            cmd.arg(file);
+            command.push(' ');
+            command.push_str(&shell_quote(&file.display().to_string()));
         }
 
-        let output = cmd
-            .output()
+        let output = run_command(command, None)
             .map_err(|e| AuditError::Other(format!("Failed to run ktlint: {}", e)))?;
 
+        let succeeded = output.return_code_interpretation.is_none();
         let files_changed = if self.mode == FormatMode::Check {
-            if output.status.success() {
+            if succeeded {
                 0
             } else {
                 // Parse ktlint output to count files with issues
-                String::from_utf8_lossy(&output.stdout)
+                output
+                    .stdout
                     .lines()
                     .filter(|line| line.contains(".kt:"))
                     .count()
@@ -375,11 +386,7 @@ impl CodeFormatter {
         } else {
             // In fix mode, we don't know how many were changed
             // ktlint doesn't provide this info easily
-            if output.status.success() {
-                0
-            } else {
-                kt_files.len()
-            }
+            if succeeded { 0 } else { kt_files.len() }
         };
 
         Ok(FormatResult::success(
@@ -406,28 +413,20 @@ impl CodeFormatter {
             ));
         }
 
-        let mut cmd = Command::new("npx");
-        cmd.arg("prettier");
-
-        match self.mode {
-            FormatMode::Check => {
-                cmd.arg("--check");
-            }
-            FormatMode::Fix => {
-                cmd.arg("--write");
-            }
-        }
-
-        // Add all files
+        // Build: npx prettier (--check|--write) <file1> <file2> ...
+        let mut command = String::from(match self.mode {
+            FormatMode::Check => "npx prettier --check",
+            FormatMode::Fix => "npx prettier --write",
+        });
         for file in &files {
-            cmd.arg(file);
+            command.push(' ');
+            command.push_str(&shell_quote(&file.display().to_string()));
         }
 
-        let output = cmd
-            .output()
+        let output = run_command(command, None)
             .map_err(|e| AuditError::Other(format!("Failed to run prettier: {}", e)))?;
 
-        let files_changed = if !output.status.success() {
+        let files_changed = if output.return_code_interpretation.is_some() {
             files.len()
         } else {
             0
@@ -453,27 +452,21 @@ impl CodeFormatter {
             ));
         }
 
-        let mut cmd = Command::new("black");
-
-        match self.mode {
-            FormatMode::Check => {
-                cmd.arg("--check");
-            }
-            FormatMode::Fix => {
-                // black default is fix mode
-            }
-        }
-
-        // Add all Python files
+        // Build: black [--check] <file1> <file2> ...
+        let mut command = String::from(match self.mode {
+            FormatMode::Check => "black --check",
+            // black default is fix mode
+            FormatMode::Fix => "black",
+        });
         for file in &py_files {
-            cmd.arg(file);
+            command.push(' ');
+            command.push_str(&shell_quote(&file.display().to_string()));
         }
 
-        let output = cmd
-            .output()
+        let output = run_command(command, None)
             .map_err(|e| AuditError::Other(format!("Failed to run black: {}", e)))?;
 
-        let files_changed = if !output.status.success() {
+        let files_changed = if output.return_code_interpretation.is_some() {
             py_files.len()
         } else {
             0
