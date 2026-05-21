@@ -1797,7 +1797,7 @@ Respond in ONLY valid JSON (no markdown fences):
 
         // Call Grok with the full project context
         let db = Database::from_pool(self.pool.clone());
-        let grok = crate::grok_client::GrokClient::from_env(db).await?;
+        let grok = crate::llm::grok_client::GrokClient::from_env(db).await?;
 
         let tracked = grok
             .ask_tracked(&prompt, None, "project_review")
@@ -1861,7 +1861,7 @@ Respond in ONLY valid JSON (no markdown fences):
         repo_id: &str,
         repo_name: &str,
         all_entries: &[crate::repo::cache::CacheEntry],
-        grok: &crate::grok_client::GrokClient,
+        grok: &crate::llm::grok_client::GrokClient,
     ) -> Result<usize> {
         // Collect files with issues, sorted by issue count descending
         let mut files_with_issues: Vec<(&str, usize, f64, &str)> = Vec::new();

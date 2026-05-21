@@ -74,7 +74,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{AuditError, Result};
-use crate::grok_client::GrokClient;
+use crate::llm::grok_client::GrokClient;
 use crate::todo::todo_file::{Priority, TodoFile, TodoItem};
 
 // ============================================================================

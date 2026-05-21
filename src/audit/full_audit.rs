@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::audit::runner::AuditRunnerConfig;
-use crate::grok_client::{FileScoreResult, GrokClient};
+use crate::llm::grok_client::{FileScoreResult, GrokClient};
 
 // ============================================================================
 // Public types

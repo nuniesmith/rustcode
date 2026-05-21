@@ -40,7 +40,7 @@ pub struct RepoAppState {
     pub model_router: Arc<ModelRouter>,
     pub ollama_client: Arc<OllamaClient>,
     // Optional Grok client for remote completions — `None` when XAI_API_KEY is unset.
-    pub grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+    pub grok_client: Option<Arc<crate::llm::grok_client::GrokClient>>,
     // Optional Anthropic client — `None` when ANTHROPIC_API_KEY is unset.
     // When present, the proxy uses it instead of constructing a one-shot client
     // per request, preserving the attached PromptCache across requests.
@@ -501,7 +501,7 @@ async fn dispatch_completion(
                 use crate::db::Database;
                 match Database::new("data/rustcode.db").await {
                     Ok(db) => {
-                        let client = crate::grok_client::GrokClient::new(api_key.clone(), db);
+                        let client = crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
                         client.ask_tracked(&final_prompt, None, "chat").await
                     }
                     Err(e) => Err(anyhow::anyhow!("DB init for one-shot Grok failed: {}", e)),
@@ -608,7 +608,7 @@ impl RepoAppState {
     pub async fn from_env(
         sync_service: Arc<RwLock<RepoSyncService>>,
         model_router: Arc<ModelRouter>,
-        grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+        grok_client: Option<Arc<crate::llm::grok_client::GrokClient>>,
         anthropic_client: Option<Arc<::api::AnthropicClient>>,
         agent_memory: Option<Arc<crate::memory::AgentMemory>>,
     ) -> Self {

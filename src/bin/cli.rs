@@ -1558,7 +1558,7 @@ async fn handle_stats(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 
 async fn handle_test_api(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     use rustcode::db::Database;
-    use rustcode::grok_client::GrokClient;
+    use rustcode::llm::grok_client::GrokClient;
     use std::time::Instant;
 
     println!("🔌 Testing XAI API connection...\n");

@@ -166,7 +166,7 @@ pub struct OllamaClient {
     config: OllamaClientConfig,
     http: reqwest::Client,
     // Optional GrokClient used when Ollama is unreachable.
-    fallback: Option<Arc<crate::grok_client::GrokClient>>,
+    fallback: Option<Arc<crate::llm::grok_client::GrokClient>>,
 }
 
 impl OllamaClient {
@@ -178,7 +178,7 @@ impl OllamaClient {
     // Build a client with an explicit config and optional Grok fallback.
     pub fn new(
         config: OllamaClientConfig,
-        fallback: Option<Arc<crate::grok_client::GrokClient>>,
+        fallback: Option<Arc<crate::llm::grok_client::GrokClient>>,
     ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(config.timeout)
@@ -193,7 +193,7 @@ impl OllamaClient {
     }
 
     // Attach a Grok fallback after construction.
-    pub fn with_fallback(mut self, client: Arc<crate::grok_client::GrokClient>) -> Self {
+    pub fn with_fallback(mut self, client: Arc<crate::llm::grok_client::GrokClient>) -> Self {
         self.fallback = Some(client);
         self
     }
@@ -377,7 +377,7 @@ impl OllamaClient {
     // Emit the entire Grok (or error) response as a single `Delta` followed
     // by `Done`.  Used when Ollama is unreachable during a streaming call.
     async fn streaming_grok_fallback(
-        fallback: Option<&crate::grok_client::GrokClient>,
+        fallback: Option<&crate::llm::grok_client::GrokClient>,
         system_prompt: Option<&str>,
         user_prompt: &str,
         ollama_model: &str,
@@ -624,7 +624,7 @@ impl OllamaClient {
 
     async fn grok_fallback(
         &self,
-        grok: &crate::grok_client::GrokClient,
+        grok: &crate::llm::grok_client::GrokClient,
         system_prompt: Option<&str>,
         user_prompt: &str,
     ) -> Result<OllamaCompletionResponse> {
