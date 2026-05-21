@@ -32,9 +32,27 @@
 use crate::db::Database;
 use crate::llm::grok_client::{FileScoreResult, GrokClient};
 use anyhow::{Context, Result};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+// Run a shell command via `runtime::execute_bash` rooted at `cwd`,
+// matching the previous `Command::new(...).current_dir(cwd)` path with
+// sandboxing disabled.
+fn run_in(cwd: &Path, command: String) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: Some(cwd.to_path_buf()),
+    })
+}
 
 // Code reviewer with AI-powered analysis
 pub struct CodeReviewer {
@@ -317,27 +335,19 @@ impl CodeReviewer {
         let mut files = Vec::new();
 
         // Build git diff command
-        let mut cmd = Command::new("git");
-        cmd.current_dir(repo_path);
-        cmd.arg("diff");
-        cmd.arg("--name-status");
-
+        let mut command = String::from("git diff --name-status");
         if let Some(branch) = base_branch {
-            cmd.arg(branch);
+            command.push(' ');
+            command.push_str(&shell_quote(branch));
         }
 
-        let output = cmd.output().context("Failed to execute git diff command")?;
+        let output = run_in(repo_path, command).context("Failed to execute git diff command")?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Git diff failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+        if output.return_code_interpretation.is_some() {
+            return Err(anyhow::anyhow!("Git diff failed: {}", output.stderr));
         }
 
-        let diff_output = String::from_utf8_lossy(&output.stdout);
-
-        for line in diff_output.lines() {
+        for line in output.stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 let status = parts[0];
@@ -376,22 +386,17 @@ impl CodeReviewer {
         file_path: &str,
         base_branch: Option<&str>,
     ) -> Result<usize> {
-        let mut cmd = Command::new("git");
-        cmd.current_dir(repo_path);
-        cmd.arg("diff");
-        cmd.arg("--numstat");
-
+        let mut command = String::from("git diff --numstat");
         if let Some(branch) = base_branch {
-            cmd.arg(branch);
+            command.push(' ');
+            command.push_str(&shell_quote(branch));
         }
+        command.push_str(" -- ");
+        command.push_str(&shell_quote(file_path));
 
-        cmd.arg("--");
-        cmd.arg(file_path);
+        let output = run_in(repo_path, command).context("Failed to get diff stats")?;
 
-        let output = cmd.output().context("Failed to get diff stats")?;
-        let stats = String::from_utf8_lossy(&output.stdout);
-
-        if let Some(line) = stats.lines().next() {
+        if let Some(line) = output.stdout.lines().next() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 let added: usize = parts[0].parse().unwrap_or(0);

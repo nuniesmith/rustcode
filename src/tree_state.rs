@@ -11,6 +11,7 @@
 
 use crate::cache::CACHE_DIR;
 use crate::error::{AuditError, Result};
+use runtime::{BashCommandInput, execute_bash};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -565,23 +566,26 @@ impl TreeStateManager {
 
     // Get git information
     fn get_git_info(&self) -> (Option<String>, Option<String>) {
-        let commit_hash = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&self.root)
-            .output()
+        let run = |args: &str| -> Option<String> {
+            execute_bash(BashCommandInput {
+                command: format!("git {args}"),
+                timeout: None,
+                description: None,
+                run_in_background: Some(false),
+                dangerously_disable_sandbox: Some(true),
+                namespace_restrictions: None,
+                isolate_network: None,
+                filesystem_mode: None,
+                allowed_mounts: None,
+                cwd: Some(self.root.clone()),
+            })
             .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+            .map(|o| o.stdout.trim().to_string())
+            .filter(|s| !s.is_empty())
+        };
 
-        let branch = std::process::Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .current_dir(&self.root)
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+        let commit_hash = run("rev-parse HEAD");
+        let branch = run("rev-parse --abbrev-ref HEAD");
 
         (commit_hash, branch)
     }

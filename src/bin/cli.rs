@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use runtime::{BashCommandInput, execute_bash};
 
 use std::path::PathBuf;
 
@@ -910,21 +911,29 @@ async fn handle_todo_work(
         if is_rust_repo {
             eprintln!("\n{}  Running compile check on changed files…", "🔬".bold());
 
-            let check_output = std::process::Command::new("cargo")
-                .arg("check")
-                .env("SQLX_OFFLINE", "true")
-                // Suppress the full warning wall — we only care about errors.
-                .env("RUSTFLAGS", "-A warnings")
-                .current_dir(&repo_path)
-                .output();
+            // Env vars become a shell prefix: previously
+            // `Command::env("SQLX_OFFLINE", "true").env("RUSTFLAGS", "-A warnings")`.
+            // The values here are static string literals so no quoting needed.
+            let check_output = execute_bash(BashCommandInput {
+                command: String::from("SQLX_OFFLINE=true RUSTFLAGS='-A warnings' cargo check"),
+                timeout: None,
+                description: None,
+                run_in_background: Some(false),
+                dangerously_disable_sandbox: Some(true),
+                namespace_restrictions: None,
+                isolate_network: None,
+                filesystem_mode: None,
+                allowed_mounts: None,
+                cwd: Some(repo_path.clone()),
+            });
 
             match check_output {
-                Ok(out) if out.status.success() => {
+                Ok(out) if out.return_code_interpretation.is_none() => {
                     eprintln!("{}  Compile check passed ✅", "🔬".bold());
                     true
                 }
                 Ok(out) => {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let stderr = out.stderr;
                     // Extract just the error lines for a concise report.
                     let error_lines: Vec<&str> = stderr
                         .lines()

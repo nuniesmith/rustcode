@@ -4,6 +4,7 @@
 // Reads DATABASE_URL from the environment (set via .env or docker-compose).
 
 use anyhow::{Context, Result};
+use runtime::{BashCommandInput, execute_bash, shell_quote};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
@@ -202,24 +203,43 @@ pub struct DatabaseHealth {
 // `backup_path` should end in `.sql` or `.dump`.
 // Requires `pg_dump` to be available on `PATH`.
 pub async fn backup_database(_pool: &PgPool, backup_path: &std::path::Path) -> Result<()> {
-    use std::process::Command;
-
     if let Some(parent) = backup_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| get_default_db_url());
 
-    let status = Command::new("pg_dump")
-        .arg("--format=custom")
-        .arg("--file")
-        .arg(backup_path)
-        .arg(&db_url)
-        .status()
-        .context("Failed to launch pg_dump — is it installed?")?;
+    // Shell-quote the path and the URL. The URL may contain a password
+    // — the previous `Command::new(...)` argv path was inert against
+    // shell metacharacters, so we need quoting now that we go through
+    // `sh -lc`.
+    let command = format!(
+        "pg_dump --format=custom --file {} {}",
+        shell_quote(&backup_path.display().to_string()),
+        shell_quote(&db_url),
+    );
+    let output = execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: None,
+    })
+    .context("Failed to launch pg_dump — is it installed?")?;
 
-    if !status.success() {
-        anyhow::bail!("pg_dump exited with status: {}", status);
+    if output.return_code_interpretation.is_some() {
+        anyhow::bail!(
+            "pg_dump exited with {}",
+            output
+                .return_code_interpretation
+                .as_deref()
+                .unwrap_or("non-zero exit"),
+        );
     }
 
     info!("Database backed up to: {}", backup_path.display());
