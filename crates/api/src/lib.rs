@@ -23,7 +23,8 @@ pub use sse::{SseParser, parse_frame};
 pub use types::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
     InputContentBlock, InputMessage, MessageDelta, MessageDeltaEvent, MessageStartEvent,
-    MessageStopEvent, OutputContentBlock, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    MessageStopEvent, OutputContentBlock, ResponseFormat, ToolChoice, ToolDefinition,
+    ToolResultContentBlock,
 };
 
 pub use crate::types::{MessageRequest, MessageResponse, StreamEvent, Usage};

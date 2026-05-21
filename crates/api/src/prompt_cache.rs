@@ -718,6 +718,7 @@ mod tests {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         }
     }

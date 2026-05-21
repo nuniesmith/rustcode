@@ -15,6 +15,8 @@ pub struct MessageRequest {
     pub tool_choice: Option<ToolChoice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stream: bool,
 }
@@ -29,6 +31,12 @@ impl MessageRequest {
     #[must_use]
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    #[must_use]
+    pub fn with_response_format(mut self, format: ResponseFormat) -> Self {
+        self.response_format = Some(format);
         self
     }
 }
@@ -107,6 +115,18 @@ pub enum ToolChoice {
     Auto,
     Any,
     Tool { name: String },
+}
+
+// Provider-side response format hint. Currently honored only by
+// `OpenAiCompatClient` (OpenAI / xAI) which translates it into the
+// `response_format` field on the outgoing JSON payload. `AnthropicClient`
+// strips the field before sending — Anthropic models surface structured
+// output via tool use rather than a top-level format hint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseFormat {
+    Text,
+    JsonObject,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -307,6 +327,7 @@ mod tests {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 
@@ -320,5 +341,37 @@ mod tests {
 
         let json_some: Value = serde_json::to_value(&request).unwrap();
         assert_eq!(json_some.get("temperature").and_then(Value::as_f64), Some(0.0));
+    }
+
+    #[test]
+    fn response_format_serializes_with_tagged_type_and_is_omitted_when_none() {
+        use super::ResponseFormat;
+        let mut request = MessageRequest {
+            model: "grok-3".to_string(),
+            max_tokens: 32,
+            messages: vec![InputMessage::user_text("hi")],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            temperature: None,
+            response_format: None,
+            stream: false,
+        };
+
+        let json_none: Value = serde_json::to_value(&request).unwrap();
+        assert!(
+            json_none.get("response_format").is_none(),
+            "got: {json_none}"
+        );
+
+        request = request.with_response_format(ResponseFormat::JsonObject);
+        assert_eq!(request.response_format, Some(ResponseFormat::JsonObject));
+
+        let json_some: Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            json_some.get("response_format"),
+            Some(&serde_json::json!({"type": "json_object"})),
+            "got: {json_some}"
+        );
     }
 }

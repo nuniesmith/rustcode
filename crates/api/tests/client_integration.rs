@@ -608,6 +608,7 @@ async fn live_stream_smoke_test() {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         })
         .await
@@ -789,6 +790,7 @@ fn sample_request(stream: bool) -> MessageRequest {
         }]),
         tool_choice: Some(ToolChoice::Auto),
         temperature: None,
+        response_format: None,
         stream,
     }
 }

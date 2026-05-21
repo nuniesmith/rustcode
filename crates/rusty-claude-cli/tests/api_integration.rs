@@ -43,6 +43,7 @@ fn scenario_request(model: &str, scenario: &str) -> MessageRequest {
         tools: None,
         tool_choice: None,
         temperature: None,
+        response_format: None,
         stream: false,
     }
 }
@@ -91,6 +92,42 @@ fn anthropic_client_round_trips_through_mock_service() {
     });
 }
 
+// G-mock-1b — AnthropicClient strips `response_format` from the outgoing body.
+//
+// `response_format` is an OpenAI-only concept; Anthropic's `/v1/messages`
+// endpoint would reject it as an unknown top-level field. Verify the captured
+// request body has no `response_format` key even when the caller set it.
+#[test]
+fn anthropic_client_strips_response_format_from_request_body() {
+    use api::ResponseFormat;
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime should build");
+    runtime.block_on(async {
+        let mock = MockAnthropicService::spawn()
+            .await
+            .expect("mock service should start");
+
+        let client = AnthropicClient::from_auth(AuthSource::ApiKey("test-key".into()))
+            .with_base_url(mock.base_url());
+
+        let request = scenario_request("claude-sonnet-4-6", "streaming_text")
+            .with_response_format(ResponseFormat::JsonObject);
+
+        let _ = client
+            .send_message(&request)
+            .await
+            .expect("send_message should succeed");
+
+        let captured = mock.captured_requests().await;
+        assert_eq!(captured.len(), 1);
+        let body: serde_json::Value =
+            serde_json::from_str(&captured[0].raw_body).expect("captured body should parse");
+        assert!(
+            body.get("response_format").is_none(),
+            "response_format must be stripped before sending to Anthropic; got body: {body}"
+        );
+    });
+}
+
 // G-mock-2 — OpenAiCompatClient consumes a canned xAI-shaped response.
 //
 // The workspace mock is Anthropic-shaped, so we spin up a tiny inline TCP server
@@ -131,6 +168,7 @@ fn openai_compat_client_consumes_openai_shaped_response() {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 

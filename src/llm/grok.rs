@@ -3,17 +3,15 @@
 // Uses xAI's Grok API to analyze content and files for the processing queue.
 //
 // RC-CRATES-B (2026-05-19): migrated from raw `reqwest::Client` to
-// `::api::OpenAiCompatClient`. The previous `json_mode` parameter (which
-// set `response_format: {"type": "json_object"}` on the request) is
-// gone — the api crate's `MessageRequest` doesn't expose
-// `response_format`. All 4 of the previous `json_mode=true` call sites
-// already have system prompts that explicitly request JSON output and
-// Grok 3 / 4.1 reliably comply; the post-call `serde_json::from_str`
-// error handling at each call site catches any drift.
+// `::api::OpenAiCompatClient`. The `json_mode` parameter is honored again
+// as of 2026-05-20 (PR #25) via `MessageRequest::response_format` →
+// `ResponseFormat::JsonObject`, which `OpenAiCompatClient` translates to
+// xAI's `response_format: {"type": "json_object"}` on the wire.
 
 use crate::queue::processor::{AnalysisResult, FileAnalysisResult, LlmAnalyzer};
 use ::api::{
     InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
+    ResponseFormat,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -55,9 +53,7 @@ impl GrokAnalyzer {
         model: &str,
         system_prompt: &str,
         user_prompt: &str,
-        // The `_json_mode` parameter is retained for call-site
-        // compatibility but ignored — see the module-level note.
-        _json_mode: bool,
+        json_mode: bool,
     ) -> Result<(String, Option<usize>)> {
         let request = MessageRequest {
             model: model.to_string(),
@@ -67,6 +63,7 @@ impl GrokAnalyzer {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: json_mode.then_some(ResponseFormat::JsonObject),
             stream: false,
         };
 
