@@ -640,14 +640,28 @@
   > field access on `output.stdout`; `serde_json::from_slice(&output.stdout)`
   > became `serde_json::from_str(&output.stdout)`.
   >
+  > **`src/repo/manager.rs` migrated 2026-05-21 (PR pending).** Six
+  > subprocess `git` invocations (`clone --depth=1`, `pull --rebase`
+  > × 2, `rev-parse HEAD`, `status --porcelain`, `rev-parse
+  > --abbrev-ref HEAD`) now go through `runtime::execute_bash` via
+  > local `build_git_command(args)` + `run_git_command(command, cwd)`
+  > helpers (same shape as `src/git.rs` from PR #34). Five of the six
+  > sites use `cwd: Some(repo_path)` instead of the previous
+  > `git -C <path>` invocation; the clone site has no `cwd` (target
+  > path is built as an absolute path). All path/URL args shell-quoted;
+  > `GIT_TERMINAL_PROMPT=0` set as an inline `KEY=val git ...` shell
+  > prefix. Three `String::from_utf8_lossy(&output.stderr)` sites and
+  > two `String::from_utf8_lossy(&output.stdout).trim().to_string()`
+  > sites collapsed to direct field access on the now-`String` fields.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
   > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
   > `process::Command` callers in `src/` are smaller and varied:
-  > `repo/manager.rs` (7), `static_analysis.rs` (4), `code_review.rs`
-  > (3), `context/global.rs` (3), `tree_state.rs` (2), `db/config.rs`
-  > (2), `agent/tools.rs` (1, `tokio::process::Command`), `bin/cli.rs`
-  > (1). The executor pieces gated on RC-CRATES-C by lines 242 and 356
-  > above are unblocked.
+  > `static_analysis.rs` (4), `code_review.rs` (3), `context/global.rs`
+  > (3), `tree_state.rs` (2), `db/config.rs` (2), `agent/tools.rs`
+  > (1, `tokio::process::Command`), `bin/cli.rs` (1). The executor
+  > pieces gated on RC-CRATES-C by lines 242 and 356 above are
+  > unblocked.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
