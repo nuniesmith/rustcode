@@ -23,7 +23,7 @@ use crate::task::{StepResult, TaskFile, TaskResult};
 use crate::tests_runner::{ProjectType, TestRunner};
 use chrono::Utc;
 use git2::{Repository, Signature};
-use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use serde_json::to_writer_pretty;
 use std::fs;
 use std::io::BufWriter;
@@ -1177,15 +1177,6 @@ fn parse_owner_repo(repo: &str) -> anyhow::Result<(&str, &str)> {
 }
 
 // Run a git subcommand in `cwd` and fail the function if it exits non-zero.
-// POSIX single-quote escape for embedding caller-supplied values
-// (paths, URLs, branch names, commit messages) in a shell command line.
-// `runtime::execute_bash` runs commands via `sh -lc`, so any value with
-// shell metacharacters needs quoting.
-fn shell_quote(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
-
 // Build a `GIT_TERMINAL_PROMPT=0 git <arg> <arg> ...` shell command with
 // all args shell-quoted.
 fn build_git_command(args: &[&str]) -> String {

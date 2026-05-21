@@ -18,7 +18,7 @@
 // returned zero issues from the LLM.
 
 use anyhow::{Context, Result};
-use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -28,15 +28,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
-
-// POSIX single-quote escape for embedding a value in a shell command line.
-// `runtime::execute_bash` runs commands via `sh -lc`, so caller-supplied
-// values (e.g. commit hashes from git) need quoting to survive parsing
-// even if they look benign today.
-fn shell_quote(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
 
 // Run `git <args>` inside `repo_path` via `runtime::execute_bash`.
 //

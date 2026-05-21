@@ -8,21 +8,11 @@
 // the test toolchain to access the project's real files.
 
 use crate::error::{AuditError, Result};
-use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-
-// POSIX single-quote escape for embedding a path/value in a shell
-// command line. `runtime::execute_bash` runs the command via `sh -lc`,
-// so any caller-supplied path (e.g. the pytest `--json-report-file=...`
-// destination) needs proper quoting to survive shell parsing even when
-// it contains spaces or other metacharacters.
-fn shell_quote(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
 
 // Build a `BashCommandInput` for in-repo tool invocations: no sandbox,
 // targets `self.root`, no timeout cap (the existing call sites didn't
