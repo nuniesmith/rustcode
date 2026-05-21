@@ -3,11 +3,46 @@
 // Manages git repository cloning, updating, and synchronization at runtime.
 // Eliminates the need for bind-mounted host directories by cloning repos into
 // container-managed storage.
+//
+// RC-CRATES-C (2026-05-21): six subprocess `git` invocations migrated
+// from raw `std::process::Command` to `runtime::execute_bash` via local
+// `build_git_command` / `run_git_command` helpers (same shape as
+// `src/git.rs` and `src/task_executor.rs`).
 
 use anyhow::{Context, Result, anyhow};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tracing::{debug, error, info, warn};
+
+// Build a `GIT_TERMINAL_PROMPT=0 git <arg> ...` shell command with all
+// args shell-quoted. The env var prevents git from interactively
+// prompting for credentials; the previous `Command::env(...)` calls
+// did the same.
+fn build_git_command(args: &[&str]) -> String {
+    let args_part = std::iter::once("git".to_string())
+        .chain(args.iter().map(|a| shell_quote(a)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("GIT_TERMINAL_PROMPT=0 {args_part}")
+}
+
+// Run a constructed shell command via `runtime::execute_bash` with
+// sandboxing disabled (matches the previous `Command::new("git")` path
+// which had none).
+fn run_git_command(command: String, cwd: Option<&Path>) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: cwd.map(Path::to_path_buf),
+    })
+}
 
 // Repository manager for git operations
 pub struct RepoManager {
@@ -69,23 +104,14 @@ impl RepoManager {
         // Build authenticated URL if token is available
         let clone_url = self.build_authenticated_url(git_url)?;
 
-        let mut cmd = Command::new("git");
-        cmd.arg("clone")
-            .arg("--depth=1") // Shallow clone to save space
-            .arg(&clone_url)
-            .arg(&repo_path);
-
-        // Set environment to avoid credential prompts
-        cmd.env("GIT_TERMINAL_PROMPT", "0");
-
-        let output = cmd
-            .output()
+        let repo_path_str = repo_path.display().to_string();
+        let command = build_git_command(&["clone", "--depth=1", &clone_url, &repo_path_str]);
+        let output = run_git_command(command, None)
             .context("Failed to execute git clone command")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Git clone failed: {}", stderr);
-            return Err(anyhow!("Git clone failed: {}", stderr));
+        if output.return_code_interpretation.is_some() {
+            error!("Git clone failed: {}", output.stderr);
+            return Err(anyhow!("Git clone failed: {}", output.stderr));
         }
 
         info!("Successfully cloned {} to {:?}", repo_name, repo_path);
@@ -108,30 +134,22 @@ impl RepoManager {
         // Get current commit hash before update
         let old_hash = self.get_current_commit(repo_path).ok();
 
-        // Fetch and pull latest changes
-        let mut cmd = Command::new("git");
-        cmd.arg("-C")
-            .arg(repo_path)
-            .arg("pull")
-            .arg("--rebase")
-            .arg("origin")
-            .arg(&self.default_branch);
+        // Fetch and pull latest changes. `cwd: Some(repo_path)` replaces
+        // the previous `git -C <path>` invocation.
+        let command =
+            build_git_command(&["pull", "--rebase", "origin", &self.default_branch]);
+        let output =
+            run_git_command(command, Some(repo_path)).context("Failed to execute git pull")?;
 
-        cmd.env("GIT_TERMINAL_PROMPT", "0");
-
-        let output = cmd.output().context("Failed to execute git pull")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
+        if output.return_code_interpretation.is_some() {
             // If branch doesn't exist, try to fetch it
-            if stderr.contains("couldn't find remote ref") {
+            if output.stderr.contains("couldn't find remote ref") {
                 warn!("Branch {} not found, trying 'master'", self.default_branch);
                 return self.update_repo_with_branch(repo_path, "master");
             }
 
-            error!("Git pull failed: {}", stderr);
-            return Err(anyhow!("Git pull failed: {}", stderr));
+            error!("Git pull failed: {}", output.stderr);
+            return Err(anyhow!("Git pull failed: {}", output.stderr));
         }
 
         // Get new commit hash
@@ -153,22 +171,13 @@ impl RepoManager {
 
     // Update repository with a specific branch
     fn update_repo_with_branch(&self, repo_path: &Path, branch: &str) -> Result<PathBuf> {
-        let mut cmd = Command::new("git");
-        cmd.arg("-C")
-            .arg(repo_path)
-            .arg("pull")
-            .arg("--rebase")
-            .arg("origin")
-            .arg(branch);
+        let command = build_git_command(&["pull", "--rebase", "origin", branch]);
+        let output =
+            run_git_command(command, Some(repo_path)).context("Failed to execute git pull")?;
 
-        cmd.env("GIT_TERMINAL_PROMPT", "0");
-
-        let output = cmd.output().context("Failed to execute git pull")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Git pull (branch {}) failed: {}", branch, stderr);
-            return Err(anyhow!("Git pull failed: {}", stderr));
+        if output.return_code_interpretation.is_some() {
+            error!("Git pull (branch {}) failed: {}", branch, output.stderr);
+            return Err(anyhow!("Git pull failed: {}", output.stderr));
         }
 
         Ok(repo_path.to_path_buf())
@@ -176,34 +185,24 @@ impl RepoManager {
 
     // Get current commit hash of a repository
     pub fn get_current_commit(&self, repo_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .arg("rev-parse")
-            .arg("HEAD")
-            .output()
-            .context("Failed to get current commit")?;
+        let command = build_git_command(&["rev-parse", "HEAD"]);
+        let output =
+            run_git_command(command, Some(repo_path)).context("Failed to get current commit")?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(anyhow!("Failed to get current commit hash"));
         }
 
-        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        Ok(hash)
+        Ok(output.stdout.trim().to_string())
     }
 
     // Check if repository has uncommitted changes
     pub fn has_uncommitted_changes(&self, repo_path: &Path) -> Result<bool> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .arg("status")
-            .arg("--porcelain")
-            .output()
-            .context("Failed to check git status")?;
+        let command = build_git_command(&["status", "--porcelain"]);
+        let output =
+            run_git_command(command, Some(repo_path)).context("Failed to check git status")?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(anyhow!("Failed to check git status"));
         }
 
@@ -226,22 +225,15 @@ impl RepoManager {
 
     // Get current branch name
     fn get_current_branch(&self, repo_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .arg("rev-parse")
-            .arg("--abbrev-ref")
-            .arg("HEAD")
-            .output()
-            .context("Failed to get current branch")?;
+        let command = build_git_command(&["rev-parse", "--abbrev-ref", "HEAD"]);
+        let output =
+            run_git_command(command, Some(repo_path)).context("Failed to get current branch")?;
 
-        if !output.status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(anyhow!("Failed to get current branch"));
         }
 
-        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        Ok(branch)
+        Ok(output.stdout.trim().to_string())
     }
 
     // Build authenticated URL with GitHub token if available
