@@ -654,14 +654,30 @@
   > two `String::from_utf8_lossy(&output.stdout).trim().to_string()`
   > sites collapsed to direct field access on the now-`String` fields.
   >
+  > **`src/{tree_state,code_review,db/config,bin/cli}.rs` migrated
+  > 2026-05-21 (PR pending).** Bundled four small-caller migrations
+  > into one PR (6 sites total) since the per-file pattern is uniform.
+  > - `tree_state.rs` (2 sites) — `git rev-parse HEAD` + `git rev-parse
+  >   --abbrev-ref HEAD` for fetching commit/branch info. Both wrapped
+  >   in a tiny local closure since the call sites use `.ok()` /
+  >   `.filter()` chains rather than explicit status checks.
+  > - `code_review.rs` (2 sites) — `git diff --name-status [branch]`
+  >   and `git diff --numstat [branch] -- <file>`. Branch + file args
+  >   shell-quoted; one `run_in(cwd, command)` helper for both.
+  > - `db/config.rs` (1 site) — `pg_dump --format=custom --file <path>
+  >   <db_url>` for the backup helper. The `DATABASE_URL` may contain a
+  >   password, so the URL is shell-quoted; the previous `Command::new`
+  >   argv path was inert against shell metacharacters.
+  > - `bin/cli.rs` (1 site) — `cargo check` after a CLI write batch,
+  >   with `SQLX_OFFLINE=true` + `RUSTFLAGS='-A warnings'` env vars
+  >   inlined as a shell prefix (same pattern as PRs #34/#36/#40).
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
   > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
-  > `process::Command` callers in `src/` are smaller and varied:
-  > `static_analysis.rs` (4), `code_review.rs` (3), `context/global.rs`
-  > (3), `tree_state.rs` (2), `db/config.rs` (2), `agent/tools.rs`
-  > (1, `tokio::process::Command`), `bin/cli.rs` (1). The executor
-  > pieces gated on RC-CRATES-C by lines 242 and 356 above are
-  > unblocked.
+  > `process::Command` callers in `src/` are: `static_analysis.rs` (4),
+  > `context/global.rs` (3), `agent/tools.rs` (1,
+  > `tokio::process::Command`). The executor pieces gated on
+  > RC-CRATES-C by lines 242 and 356 above are unblocked.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
