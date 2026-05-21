@@ -668,9 +668,9 @@ Add to `.gitignore` if you prefer not to track cache files:
     // Print detailed summary with cost estimates and budget tracking
     pub fn print_detailed_summary(
         &self,
-        budget_config: Option<&crate::token_budget::BudgetConfig>,
+        budget_config: Option<&crate::llm::usage::budget::BudgetConfig>,
     ) -> anyhow::Result<()> {
-        use crate::token_budget::TokenPricing;
+        use crate::llm::usage::budget::TokenPricing;
 
         println!("\n📦 Repository Cache Summary");
         println!("  Location: {}", self.cache_dir.display());

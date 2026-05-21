@@ -35,7 +35,6 @@ pub mod code_review;
 pub mod config;
 pub mod context_llm;
 pub mod context_rag;
-pub mod cost_tracker;
 pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
@@ -85,7 +84,6 @@ pub mod test_generator;
 pub mod tests_runner;
 pub mod todo;
 // RC-CLEANUP-D: `todo_scanner` moved to `crate::todo::legacy_scanner`.
-pub mod token_budget;
 pub mod tree_state;
 pub mod types;
 pub mod vector_index;
@@ -123,7 +121,7 @@ pub use code_review::{
 pub use config::Config;
 pub use context_llm::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
 pub use context_rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
-pub use cost_tracker::{
+pub use llm::usage::costs::{
     BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
     TokenUsage,
 };
@@ -244,7 +242,9 @@ pub use tests_runner::{TestResults, TestRunner};
 // before RC-CLEANUP-D). Top-level public API is unchanged for external
 // callers using `rustcode::{TodoItem, TodoPriority, TodoScanner, TodoSummary}`.
 pub use todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
-pub use token_budget::{BudgetConfig, ModelTokenStats, MonthlyTracker, TokenPricing, TokenStats};
+pub use llm::usage::budget::{
+    BudgetConfig, ModelTokenStats, MonthlyTracker, TokenPricing, TokenStats,
+};
 pub use tree_state::{
     CategoryChangeSummary, ChangeType, DiffSummary, FileCategory, FileChange, FileState, TreeDiff,
     TreeState, TreeStateManager, TreeSummaryStats,
@@ -272,7 +272,7 @@ pub mod prelude {
     pub use crate::config::Config;
     pub use crate::context::global::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
     pub use crate::context::rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
-    pub use crate::cost_tracker::{
+    pub use crate::llm::usage::costs::{
         BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
         TokenUsage,
     };

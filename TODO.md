@@ -611,9 +611,25 @@
   > preserved: `new`, `from_env`, `with_model`, `generate`. Default model
   > kept at `grok-4.1` (no behaviour change vs. shipping production).
   > Unused additions from the orphan (`complete`, `chat`) dropped per YAGNI.
+  >
+  > **Slice 2 done 2026-05-21 (PR pending).** Moved `src/token_budget.rs`
+  > → `src/llm/usage/budget.rs` and `src/cost_tracker.rs` →
+  > `src/llm/usage/costs.rs` via `git mv` (history preserved). Added
+  > `src/llm/usage/mod.rs` with `pub mod {budget, costs};` and registered
+  > `pub mod usage;` in `src/llm/mod.rs`. The two `pub mod token_budget;`
+  > / `pub mod cost_tracker;` lines in `lib.rs` are gone; the three
+  > `lib.rs` re-exports (`CostTracker` + friends at top level, `TokenPricing`
+  > + friends at top level, and the `prelude` re-export of `CostTracker`)
+  > now point at `llm::usage::{costs,budget}`. Three in-tree importers
+  > rewritten: `auto_scanner.rs`, `repo/file_cache.rs` (two refs), and
+  > `repo/cache.rs`. The crate-root `rustcode::CostTracker` /
+  > `rustcode::TokenPricing` re-exports are unchanged, so any external
+  > callers via the flat name still work. The TODO's optional follow-up
+  > to split `cache_creation_tokens` / `cache_read_tokens` separately in
+  > `CostTracker` is deferred to a later slice.
+  >
   > Remaining slices: `ollama_client` → `llm/ollama`, `llm_config` →
-  > `llm/config`, `token_budget` → `llm/usage/budget`, `cost_tracker` →
-  > `llm/usage/costs`, `model_router` → `llm/router`, plus the heavier
+  > `llm/config`, `model_router` → `llm/router`, plus the heavier
   > grok_client/grok_reasoning consolidation into `llm/client`.
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
