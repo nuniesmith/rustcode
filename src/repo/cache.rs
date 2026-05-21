@@ -575,7 +575,7 @@ impl RepoCacheSql {
 
     // Get cache statistics
     pub async fn stats(&self) -> Result<CacheStats> {
-        use crate::token_budget::TokenPricing;
+        use crate::llm::usage::budget::TokenPricing;
 
         // Overall stats
         let (total_entries, total_tokens, total_file_size, total_result_size) =

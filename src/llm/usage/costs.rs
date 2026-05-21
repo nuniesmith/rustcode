@@ -13,7 +13,7 @@
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::cost_tracker::{CostTracker, TokenUsage};
+// use rustcode::llm::usage::costs::{CostTracker, TokenUsage};
 //
 // #[tokio::main]
 // async fn main() -> anyhow::Result<()> {

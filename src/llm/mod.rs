@@ -5,6 +5,7 @@
 pub mod compat;
 pub mod grok;
 pub mod simple_client;
+pub mod usage;
 
 // Re-export main types
 pub use grok::{

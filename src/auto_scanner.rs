@@ -25,7 +25,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::cost_tracker::{CostTracker, StaticDecisionRecord};
+use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
 use crate::db::{Database, Repository};
 use crate::prompt_tier::{PromptRouter, TierKind};
