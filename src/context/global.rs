@@ -10,6 +10,7 @@
 use crate::error::{AuditError, Result};
 use crate::tests_runner::{TestResults, TestRunner};
 use crate::types::{Category, SystemMap};
+use runtime::{BashCommandInput, execute_bash};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -793,19 +794,27 @@ impl ContextBuilder {
 
     // Build diff context from git
     fn build_diff_context(&self) -> Result<DiffContext> {
-        use std::process::Command;
-
         let hours = 48;
 
-        // Get git log for last 48 hours
-        let since = format!("{}hours", hours);
-        let log_output = Command::new("git")
-            .args(["log", "--since", &since, "--oneline"])
-            .current_dir(&self.root)
-            .output()
+        let run = |command: String| -> Result<String> {
+            let output = execute_bash(BashCommandInput {
+                command,
+                timeout: None,
+                description: None,
+                run_in_background: Some(false),
+                dangerously_disable_sandbox: Some(true),
+                namespace_restrictions: None,
+                isolate_network: None,
+                filesystem_mode: None,
+                allowed_mounts: None,
+                cwd: Some(self.root.clone()),
+            })
             .map_err(AuditError::Io)?;
+            Ok(output.stdout)
+        };
 
-        let log_str = String::from_utf8_lossy(&log_output.stdout);
+        // Get git log for last 48 hours
+        let log_str = run(format!("git log --since {}hours --oneline", hours))?;
         let mut commits = Vec::new();
 
         for line in log_str.lines() {
@@ -819,14 +828,15 @@ impl ContextBuilder {
             }
         }
 
-        // Get diff stats
-        let diff_output = Command::new("git")
-            .args(["diff", "--stat", &format!("HEAD@{{{}hours ago}}", hours)])
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
-
-        let diff_str = String::from_utf8_lossy(&diff_output.stdout);
+        // Get diff stats. The brace-enclosed `HEAD@{...}` form survives
+        // `sh -lc` because the inner braces aren't shell metacharacters,
+        // but the whole spec gets single-quoted via `shell_quote`-equivalent
+        // wrapping below for safety.
+        let diff_spec = format!("HEAD@{{{}hours ago}}", hours);
+        let diff_str = run(format!(
+            "git diff --stat '{}'",
+            diff_spec.replace('\'', "'\\''")
+        ))?;
         let mut files_changed = Vec::new();
         let lines_added = 0;
         let lines_removed = 0;

@@ -15,6 +15,7 @@ use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
 use ::api::ToolDefinition;
+use runtime::{BashCommandInput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
@@ -180,22 +181,62 @@ impl FileSystemTools {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let output = tokio::process::Command::new(command)
-            .args(&args)
-            .current_dir(&self.root)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .await?;
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        if !output.status.success() {
+
+        // Build a `GIT_TERMINAL_PROMPT=0 <cmd> <arg> <arg>` shell command
+        // with each token shell-quoted. The agent-supplied `command` and
+        // args could contain anything, so quoting is mandatory.
+        let shell_command = {
+            let mut s = String::from("GIT_TERMINAL_PROMPT=0 ");
+            s.push_str(&shell_quote(command));
+            for arg in &args {
+                s.push(' ');
+                s.push_str(&shell_quote(arg));
+            }
+            s
+        };
+
+        // `execute_bash` is sync (builds its own current-thread tokio
+        // runtime internally), so route through `spawn_blocking` to
+        // avoid nesting runtimes. The previous code used proper
+        // `tokio::process::Command` async I/O; `spawn_blocking` runs
+        // on a dedicated blocking thread which is functionally
+        // equivalent for the agent's run-command use case.
+        let cwd = self.root.clone();
+        let output = tokio::task::spawn_blocking(move || {
+            execute_bash(BashCommandInput {
+                command: shell_command,
+                timeout: None,
+                description: None,
+                run_in_background: Some(false),
+                dangerously_disable_sandbox: Some(true),
+                namespace_restrictions: None,
+                isolate_network: None,
+                filesystem_mode: None,
+                allowed_mounts: None,
+                cwd: Some(cwd),
+            })
+        })
+        .await
+        .map_err(|e| std::io::Error::other(format!("blocking task panicked: {e}")))??;
+
+        if output.return_code_interpretation.is_some() {
+            // `return_code_interpretation` is `Some("exit_code:<n>")`
+            // on non-zero exits; parse the integer back so the
+            // ToolError surface stays unchanged for callers.
+            let status_code = output
+                .return_code_interpretation
+                .as_deref()
+                .and_then(|s| s.strip_prefix("exit_code:"))
+                .and_then(|s| s.parse::<i32>().ok())
+                .unwrap_or(-1);
             return Err(ToolError::CommandFailed {
                 command: command.to_string(),
-                status: output.status.code().unwrap_or(-1),
-                stderr: self.truncate(stderr),
+                status: status_code,
+                stderr: self.truncate(output.stderr),
             });
         }
-        Ok(self.truncate(format!("{}{}", stdout, stderr)))
+
+        Ok(self.truncate(format!("{}{}", output.stdout, output.stderr)))
     }
 
     fn truncate(&self, mut s: String) -> String {
