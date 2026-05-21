@@ -587,7 +587,7 @@
 > Identified during 2026-04-05 code review. ~82K LoC in a 48-module god crate.
 > Items ordered by risk/reward — do before the crate extractions in P2.
 
-- [ ] **RC-CLEANUP-A: consolidate LLM clients into `src/llm/`**
+- [~] **RC-CLEANUP-A: consolidate LLM clients into `src/llm/`**
   > Six separate Grok/xAI implementations exist right now (see RC-CRATES-B for the list).
   > Once RC-CRATES-B migrates each caller off raw reqwest, merge all into `src/llm/`:
   > - `src/llm/client.rs` — unified client wrapping `api::AnthropicClient` + `api::OpenAiCompatClient`
@@ -602,6 +602,19 @@
   >         `src/token_budget.rs`, `src/cost_tracker.rs`
   >
   > `lib.rs` drops from 48 pub mods to ~40.
+  >
+  > **Slice 1 done 2026-05-21 (PR pending).** Consolidated `simple_client`:
+  > the migrated top-level orphan `src/simple_client.rs` (an `api`-crate
+  > wrapper that was never declared in `lib.rs`) replaced the raw-reqwest
+  > `src/llm/simple_client.rs`, dropping ~50 lines of manual HTTP plumbing
+  > from the actually-used `crate::llm::GrokClient` path. Public surface
+  > preserved: `new`, `from_env`, `with_model`, `generate`. Default model
+  > kept at `grok-4.1` (no behaviour change vs. shipping production).
+  > Unused additions from the orphan (`complete`, `chat`) dropped per YAGNI.
+  > Remaining slices: `ollama_client` → `llm/ollama`, `llm_config` →
+  > `llm/config`, `token_budget` → `llm/usage/budget`, `cost_tracker` →
+  > `llm/usage/costs`, `model_router` → `llm/router`, plus the heavier
+  > grok_client/grok_reasoning consolidation into `llm/client`.
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
   > **Done 2026-05-18.** Pure restructure — no behaviour changes.
