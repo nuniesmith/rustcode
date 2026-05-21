@@ -1157,6 +1157,7 @@ mod tests {
             system: None,
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 

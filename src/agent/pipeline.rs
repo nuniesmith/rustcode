@@ -419,6 +419,7 @@ impl AgentPipeline {
             system: Some(system),
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 
@@ -530,6 +531,7 @@ impl AgentPipeline {
             system: Some(EXECUTOR_SYSTEM_PROMPT.to_string()),
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 
@@ -579,6 +581,7 @@ impl AgentPipeline {
                 system: Some(EXECUTOR_SYSTEM_PROMPT.to_string()),
                 tools: Some(tool_defs.clone()),
                 tool_choice: None,
+                temperature: None,
                 stream: false,
             };
 
@@ -721,6 +724,7 @@ impl AgentPipeline {
             system: Some(REVIEWER_SYSTEM_PROMPT.to_string()),
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 
@@ -791,6 +795,7 @@ impl AgentPipeline {
             system: Some(CONSOLIDATION_SYSTEM_PROMPT.to_string()),
             tools: None,
             tool_choice: None,
+            temperature: None,
             stream: false,
         };
 

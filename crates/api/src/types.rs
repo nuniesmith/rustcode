@@ -13,6 +13,8 @@ pub struct MessageRequest {
     pub tools: Option<Vec<ToolDefinition>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stream: bool,
 }
@@ -21,6 +23,12 @@ impl MessageRequest {
     #[must_use]
     pub fn with_streaming(mut self) -> Self {
         self.stream = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
         self
     }
 }
@@ -248,8 +256,9 @@ pub enum StreamEvent {
 #[cfg(test)]
 mod tests {
     use runtime::format_usd;
+    use serde_json::Value;
 
-    use super::{MessageResponse, Usage};
+    use super::{InputMessage, MessageRequest, MessageResponse, Usage};
 
     #[test]
     fn usage_total_tokens_includes_cache_tokens() {
@@ -286,5 +295,30 @@ mod tests {
         let cost = response.usage.estimated_cost_usd(&response.model);
         assert_eq!(format_usd(cost.total_cost_usd()), "$54.6750");
         assert_eq!(response.total_tokens(), 1_800_000);
+    }
+
+    #[test]
+    fn temperature_serializes_when_set_and_is_omitted_when_none() {
+        let mut request = MessageRequest {
+            model: "claude-sonnet-4-6".to_string(),
+            max_tokens: 32,
+            messages: vec![InputMessage::user_text("hi")],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            temperature: None,
+            stream: false,
+        };
+
+        // None → field absent from the serialized JSON
+        let json_none: Value = serde_json::to_value(&request).unwrap();
+        assert!(json_none.get("temperature").is_none(), "got: {json_none}");
+
+        // Builder method sets the field
+        request = request.with_temperature(0.0);
+        assert_eq!(request.temperature, Some(0.0));
+
+        let json_some: Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(json_some.get("temperature").and_then(Value::as_f64), Some(0.0));
     }
 }

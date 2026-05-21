@@ -657,6 +657,10 @@ fn build_chat_completion_request(request: &MessageRequest, config: OpenAiCompatC
         "stream": request.stream,
     });
 
+    if let Some(temperature) = request.temperature {
+        payload["temperature"] = json!(temperature);
+    }
+
     if request.stream && should_request_stream_usage(config) {
         payload["stream_options"] = json!({ "include_usage": true });
     }
@@ -987,6 +991,7 @@ mod tests {
                     input_schema: json!({"type": "object"}),
                 }]),
                 tool_choice: Some(ToolChoice::Auto),
+                temperature: None,
                 stream: false,
             },
             OpenAiCompatConfig::xai(),
@@ -1009,12 +1014,46 @@ mod tests {
                 system: None,
                 tools: None,
                 tool_choice: None,
+                temperature: None,
                 stream: true,
             },
             OpenAiCompatConfig::openai(),
         );
 
         assert_eq!(payload["stream_options"], json!({"include_usage": true}));
+    }
+
+    #[test]
+    fn temperature_is_included_in_payload_when_set() {
+        let payload = build_chat_completion_request(
+            &MessageRequest {
+                model: "grok-3".to_string(),
+                max_tokens: 16,
+                messages: vec![InputMessage::user_text("hi")],
+                system: None,
+                tools: None,
+                tool_choice: None,
+                temperature: Some(0.0),
+                stream: false,
+            },
+            OpenAiCompatConfig::xai(),
+        );
+        assert_eq!(payload["temperature"], json!(0.0));
+
+        let payload_none = build_chat_completion_request(
+            &MessageRequest {
+                model: "grok-3".to_string(),
+                max_tokens: 16,
+                messages: vec![InputMessage::user_text("hi")],
+                system: None,
+                tools: None,
+                tool_choice: None,
+                temperature: None,
+                stream: false,
+            },
+            OpenAiCompatConfig::xai(),
+        );
+        assert!(payload_none.get("temperature").is_none());
     }
 
     #[test]
@@ -1027,6 +1066,7 @@ mod tests {
                 system: None,
                 tools: None,
                 tool_choice: None,
+                temperature: None,
                 stream: true,
             },
             OpenAiCompatConfig::xai(),

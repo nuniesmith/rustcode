@@ -779,6 +779,7 @@ async fn handle_streaming(
                     system,
                     tools: None,
                     tool_choice: None,
+                    temperature: None,
                     stream: false,
                 };
 
@@ -1465,6 +1466,7 @@ async fn dispatch_claude(
         system: req.system_prompt.clone(),
         tools: None,
         tool_choice: None,
+        temperature: None,
         stream: false,
     };
 

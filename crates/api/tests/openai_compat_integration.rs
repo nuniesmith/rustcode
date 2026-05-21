@@ -459,6 +459,7 @@ fn sample_request(stream: bool) -> MessageRequest {
             }),
         }]),
         tool_choice: Some(ToolChoice::Auto),
+        temperature: None,
         stream,
     }
 }
