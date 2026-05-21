@@ -7,7 +7,7 @@
 // - Automatic fallback to `GrokClient` when Ollama is unreachable or unconfigured
 // - Retry with exponential back-off (same pattern as `grok_client.rs`)
 // - Token-count pass-through (Ollama `eval_count` / `prompt_eval_count`)
-// - Shared `CompletionRequest` / `CompletionResponse` types with `model_router`
+// - Shared `CompletionRequest` / `CompletionResponse` types with `llm::router`
 //
 // ## Environment variables
 // | Variable | Default | Description |
@@ -94,7 +94,7 @@ struct OllamaChatResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Public completion types (shared with `model_router` / `api/repos`)
+// Public completion types (shared with `llm::router` / `api/repos`)
 // ---------------------------------------------------------------------------
 
 // Outcome of a completion call, regardless of which backend served it.

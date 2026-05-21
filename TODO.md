@@ -646,8 +646,19 @@
   > → `rustcode::llm::router::*`). Updated the moved file's leading path
   > comment.
   >
-  > Remaining slices: `ollama_client` → `llm/ollama`, plus the heavier
-  > grok_client/grok_reasoning consolidation into `llm/client`.
+  > **Slice 5 done 2026-05-21 (PR pending).** Moved `src/ollama_client.rs`
+  > → `src/llm/ollama.rs` via `git mv`. Updated `src/llm/mod.rs` to add
+  > `pub mod ollama;`, dropped `pub mod ollama_client;` from `lib.rs`
+  > (no top-level re-export existed). Three in-tree importers rewritten:
+  > `src/api/repos.rs` (2 refs — `OllamaClient`), `src/api/proxy.rs`
+  > (1 ref — `StreamChunk`). Updated two stale `model_router` comments
+  > in the moved file to point at `llm::router`. The `OllamaClient` is
+  > still raw `reqwest::Client`; migrating to `api::OpenAiCompatClient`
+  > requires a new `ollama()` factory in the api crate (no `bearer_auth`
+  > on the no-auth Ollama path) and is left for a follow-up.
+  >
+  > Remaining slice: heavier `grok_client` / `grok_reasoning`
+  > consolidation into `llm/client` (~2,200 lines combined).
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
   > **Done 2026-05-18.** Pure restructure — no behaviour changes.

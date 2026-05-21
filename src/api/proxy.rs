@@ -130,7 +130,7 @@ use uuid::Uuid;
 
 use crate::api::repos::RepoAppState;
 use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
-use crate::ollama_client::StreamChunk;
+use crate::llm::ollama::StreamChunk;
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{

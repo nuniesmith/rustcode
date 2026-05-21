@@ -26,7 +26,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::cache::layer::{CacheConfig, CacheLayer};
 use crate::llm::router::{CompletionRequest, ModelRouter, ModelTarget};
-use crate::ollama_client::OllamaClient;
+use crate::llm::ollama::OllamaClient;
 use crate::repo::sync::{RegisteredRepo, RepoSyncService, SyncResult};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
@@ -614,7 +614,7 @@ impl RepoAppState {
     ) -> Self {
         // Build Ollama client, attaching Grok as its fallback if available.
         let ollama_client = {
-            let base = crate::ollama_client::OllamaClient::from_env();
+            let base = crate::llm::ollama::OllamaClient::from_env();
             if let Some(ref grok) = grok_client {
                 Arc::new(base.with_fallback(Arc::clone(grok)))
             } else {
