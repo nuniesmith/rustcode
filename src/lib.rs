@@ -49,7 +49,6 @@ pub mod grok_reasoning;
 pub mod indexing;
 pub mod llm;
 pub mod llm_audit;
-pub mod llm_config;
 pub mod memory;
 pub mod metrics;
 pub mod model_router;
@@ -159,7 +158,7 @@ pub use llm_audit::{
     FullAuditResult, LlmAuditor, MasterReview, Recommendation, RegularAuditResult, SecurityConcern,
     TechDebtArea,
 };
-pub use llm_config::{
+pub use llm::config::{
     CacheConfig, FileSelectionConfig, LLM_CONFIG_FILE, LimitsConfig, LlmConfig, ProviderConfig,
     claude_models,
 };
