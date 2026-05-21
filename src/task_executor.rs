@@ -23,6 +23,7 @@ use crate::task::{StepResult, TaskFile, TaskResult};
 use crate::tests_runner::{ProjectType, TestRunner};
 use chrono::Utc;
 use git2::{Repository, Signature};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
 use serde_json::to_writer_pretty;
 use std::fs;
 use std::io::BufWriter;
@@ -312,19 +313,7 @@ impl TaskExecutor {
         let repo_path_branch = repo_path.clone();
         let branch_clone = branch.clone();
         tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_branch)
-                .arg("checkout")
-                .arg("-b")
-                .arg(&branch_clone)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()
-                .map_err(|e| anyhow::anyhow!("failed to spawn git checkout: {}", e))?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git checkout -b failed"));
-            }
-            Ok(())
+            run_git(&repo_path_branch, &["checkout", "-b", &branch_clone])
         })
         .await
         .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
@@ -358,13 +347,7 @@ impl TaskExecutor {
             run_git(&repo_path_commit, &["add", "."])?;
             // commit may exit non-zero when nothing changed; that's not fatal —
             // we still want to push the branch (no-op push is harmless).
-            let _ = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_commit)
-                .arg("commit")
-                .arg("-m")
-                .arg(&commit_message)
-                .status();
+            run_git_allow_fail(&repo_path_commit, &["commit", "-m", &commit_message]);
             Ok(())
         })
         .await
@@ -403,19 +386,10 @@ impl TaskExecutor {
             1,
         );
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_push)
-                .arg("push")
-                .arg("-u")
-                .arg(&auth_push_url)
-                .arg(&branch_for_push)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git push failed"));
-            }
-            Ok(())
+            run_git(
+                &repo_path_push,
+                &["push", "-u", &auth_push_url, &branch_for_push],
+            )
         })
         .await
         .map_err(|e| anyhow::anyhow!("push join error: {}", e))
@@ -582,18 +556,7 @@ impl TaskExecutor {
         let repo_path_branch = repo_path.clone();
         let branch_clone = branch.clone();
         tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_branch)
-                .arg("checkout")
-                .arg("-b")
-                .arg(&branch_clone)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git checkout -b failed"));
-            }
-            Ok(())
+            run_git(&repo_path_branch, &["checkout", "-b", &branch_clone])
         })
         .await
         .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
@@ -645,13 +608,7 @@ impl TaskExecutor {
             run_git(&repo_path_commit, &["add", "."])?;
             // commit may exit non-zero with "nothing to commit"; that's fine —
             // we still want to push so the branch is visible upstream.
-            let _ = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_commit)
-                .arg("commit")
-                .arg("-m")
-                .arg(&commit_message)
-                .status();
+            run_git_allow_fail(&repo_path_commit, &["commit", "-m", &commit_message]);
             Ok(())
         })
         .await
@@ -694,19 +651,10 @@ impl TaskExecutor {
             1,
         );
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_push)
-                .arg("push")
-                .arg("-u")
-                .arg(&auth_push_url)
-                .arg(&branch_for_push)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git push failed"));
-            }
-            Ok(())
+            run_git(
+                &repo_path_push,
+                &["push", "-u", &auth_push_url, &branch_for_push],
+            )
         })
         .await
         .map_err(|e| anyhow::anyhow!("push join error: {}", e))
@@ -956,19 +904,7 @@ impl TaskExecutor {
         let repo_path_branch = repo_path.clone();
         let branch_clone = branch.clone();
         tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_branch)
-                .arg("checkout")
-                .arg("-b")
-                .arg(&branch_clone)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()
-                .map_err(|e| anyhow::anyhow!("failed to spawn git checkout: {}", e))?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git checkout -b failed"));
-            }
-            Ok(())
+            run_git(&repo_path_branch, &["checkout", "-b", &branch_clone])
         })
         .await
         .map_err(|e| anyhow::anyhow!("branch task join error: {}", e))
@@ -1011,13 +947,8 @@ impl TaskExecutor {
                 }
             }
             run_git(&repo_path_commit, &["add", "."])?;
-            let _ = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_commit)
-                .arg("commit")
-                .arg("-m")
-                .arg(format!("Task {}: agent run", task_id))
-                .status();
+            let commit_message = format!("Task {}: agent run", task_id);
+            run_git_allow_fail(&repo_path_commit, &["commit", "-m", &commit_message]);
             Ok(())
         })
         .await
@@ -1052,19 +983,10 @@ impl TaskExecutor {
             1,
         );
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&repo_path_push)
-                .arg("push")
-                .arg("-u")
-                .arg(&auth_push_url)
-                .arg(&branch_for_push)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("git push failed"));
-            }
-            Ok(())
+            run_git(
+                &repo_path_push,
+                &["push", "-u", &auth_push_url, &branch_for_push],
+            )
         })
         .await
         .map_err(|e| anyhow::anyhow!("push join error: {}", e))
@@ -1255,17 +1177,68 @@ fn parse_owner_repo(repo: &str) -> anyhow::Result<(&str, &str)> {
 }
 
 // Run a git subcommand in `cwd` and fail the function if it exits non-zero.
+// POSIX single-quote escape for embedding caller-supplied values
+// (paths, URLs, branch names, commit messages) in a shell command line.
+// `runtime::execute_bash` runs commands via `sh -lc`, so any value with
+// shell metacharacters needs quoting.
+fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+// Build a `GIT_TERMINAL_PROMPT=0 git <arg> <arg> ...` shell command with
+// all args shell-quoted.
+fn build_git_command(args: &[&str]) -> String {
+    let args_part = std::iter::once("git".to_string())
+        .chain(args.iter().map(|a| shell_quote(a)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("GIT_TERMINAL_PROMPT=0 {args_part}")
+}
+
+// Run `git <args>` inside `cwd` via `runtime::execute_bash`. The previous
+// implementation used `Command::new("git").arg("-C").arg(cwd)` + `.status()`;
+// this version routes through the runtime crate but keeps the same
+// "success or anyhow" surface so callers don't change. Sandboxing is
+// disabled — the agent task pipeline runs `git push`, `git checkout`, etc.
+// against real workspaces.
 fn run_git(cwd: &Path, args: &[&str]) -> anyhow::Result<()> {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .status()?;
-    if !status.success() {
-        return Err(anyhow::anyhow!("git {:?} exited {}", args, status));
+    let output = run_git_capture(cwd, args)?;
+    if output.return_code_interpretation.is_some() {
+        return Err(anyhow::anyhow!(
+            "git {:?} failed ({}): {}",
+            args,
+            output
+                .return_code_interpretation
+                .as_deref()
+                .unwrap_or("non-zero exit"),
+            output.stderr.trim(),
+        ));
     }
     Ok(())
+}
+
+// Like `run_git`, but does not error on non-zero exit. Used for
+// `git commit` where "nothing to commit" is expected and the caller
+// still wants to proceed to push.
+fn run_git_allow_fail(cwd: &Path, args: &[&str]) {
+    let _ = run_git_capture(cwd, args);
+}
+
+// Shared `execute_bash` invocation backing `run_git` + `run_git_allow_fail`.
+fn run_git_capture(cwd: &Path, args: &[&str]) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command: build_git_command(args),
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: Some(cwd.to_path_buf()),
+    })
 }
 
 // Detect project types under `repo_path` and run the matching test suite(s).

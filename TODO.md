@@ -589,11 +589,37 @@
   > `String::from_utf8_lossy(&output.stdout)` / `&output.stderr` sites
   > collapsed to direct field access.
   >
+  > **`src/task_executor.rs` migrated 2026-05-21 (PR pending).** All
+  > 10 `Command::new("git")` invocations in the agent task pipeline
+  > consolidated through the existing module-local `run_git(cwd, args)`
+  > helper, which now routes through `runtime::execute_bash`. Added a
+  > sibling `run_git_allow_fail(cwd, args)` to cover the three
+  > `git commit -m ...` sites where "nothing to commit" is expected
+  > and the caller still wants to push (previously open-coded as
+  > `let _ = Command::new(...)`). The three `checkout -b` and three
+  > `push -u <auth_url> <branch>` sites all collapse to one-line
+  > helper calls inside their existing `tokio::task::spawn_blocking`
+  > closures. `cwd` field on `BashCommandInput` replaces the previous
+  > `Command::new("git").arg("-C").arg(cwd)` pattern; the
+  > `GIT_TERMINAL_PROMPT=0` env var is inlined as a shell prefix the
+  > same way `src/git.rs` does it. The captured stderr now surfaces in
+  > the error message on non-zero exit (small improvement over the
+  > previous `"git checkout -b failed"` no-context message).
+  >
+  > Behavioural note: same as PR #34 — the previous `Command::status()`
+  > inherited stdio, so `git push`/`git checkout` progress streamed
+  > to the parent terminal. `execute_bash` captures it, so live progress
+  > is gone. Acceptable for the agent task pipeline (no human watching);
+  > stderr surfaces on error.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
-  > `ProviderClient`, `worker_boot`, plus the largest `Command::new`
-  > caller — `task_executor.rs` (10 sites, behaviorally sensitive agent
-  > task pipeline). The executor pieces gated on RC-CRATES-C by lines
-  > 242 and 356 above are unblocked once those land.
+  > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
+  > `process::Command` callers in `src/` are smaller and varied:
+  > `backup/mod.rs` (10 sites), `repo/manager.rs` (7), `static_analysis.rs`
+  > (4), `code_review.rs` (3), `context/global.rs` (3), `tree_state.rs`
+  > (2), `db/config.rs` (2), `agent/tools.rs` (1, `tokio::process::Command`),
+  > `bin/cli.rs` (1). The executor pieces gated on RC-CRATES-C by lines
+  > 242 and 356 above are unblocked by this slice.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
