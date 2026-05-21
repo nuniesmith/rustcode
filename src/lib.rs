@@ -52,7 +52,6 @@ pub mod llm_audit;
 pub mod memory;
 pub mod metrics;
 pub mod multi_tenant;
-pub mod ollama_client;
 pub mod parser;
 pub mod prompt_hashes;
 pub mod prompt_tier;
