@@ -255,7 +255,7 @@ fn prepare_sandbox_dirs(cwd: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::{BashCommandInput, execute_bash};
+    use super::{BashCommandInput, execute_bash, shell_quote};
     use crate::sandbox::FilesystemIsolationMode;
 
     #[test]
@@ -334,6 +334,80 @@ mod tests {
             .expect("pwd output should be a real path");
         assert_eq!(pwd, target);
     }
+
+    #[test]
+    fn shell_quote_wraps_in_single_quotes() {
+        assert_eq!(shell_quote("foo"), "'foo'");
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("with space"), "'with space'");
+        assert_eq!(shell_quote("path/with-dashes"), "'path/with-dashes'");
+    }
+
+    #[test]
+    fn shell_quote_escapes_embedded_single_quote() {
+        // The "close, escaped quote, reopen" trick: 'it'\''s'
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+        // Bare single quote → '' + \' + '' (an empty-string + escaped-quote +
+        // empty-string sandwich); harmless when passed to sh.
+        assert_eq!(shell_quote("'"), "''\\'''");
+    }
+
+    #[test]
+    fn shell_quoted_value_survives_sh_lc_round_trip() {
+        // The whole point of the helper: a value containing shell
+        // metacharacters round-trips through `sh -lc echo <quoted>`
+        // without being interpreted.
+        let dangerous = "$(echo pwned); rm -rf /; #";
+        let command = format!("printf '%s' {}", shell_quote(dangerous));
+        let output = execute_bash(BashCommandInput {
+            command,
+            timeout: Some(1_000),
+            description: None,
+            run_in_background: Some(false),
+            dangerously_disable_sandbox: Some(true),
+            namespace_restrictions: None,
+            isolate_network: None,
+            filesystem_mode: None,
+            allowed_mounts: None,
+            cwd: None,
+        })
+        .expect("bash command should execute");
+        // `sh -lc` may add shell-init noise (e.g. nvm) before the printf,
+        // so take the last non-empty line.
+        let last_line = output
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .next_back()
+            .expect("printf should produce output");
+        assert_eq!(last_line, dangerous);
+    }
+}
+
+// POSIX single-quote escape for embedding a caller-supplied value
+// (path, URL, branch name, env value, etc.) in a shell command line.
+//
+// `execute_bash` runs commands via `sh -lc`, so callers that build a
+// command string from dynamic inputs need to quote each input to keep
+// shell metacharacters from breaking parsing or — worse — letting a
+// path with `;` or `$(...)` smuggle in a second command.
+//
+// The wrapping single quotes prevent the shell from expanding anything
+// inside; the inner `'\''` sequence is the standard trick for escaping
+// a literal single quote (close-quote, escaped quote, reopen-quote).
+//
+// # Example
+//
+// ```
+// use runtime::shell_quote;
+// assert_eq!(shell_quote("foo"),      "'foo'");
+// assert_eq!(shell_quote("with space"), "'with space'");
+// assert_eq!(shell_quote("it's"),     "'it'\\''s'");
+// ```
+#[must_use]
+pub fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
 }
 
 // Maximum output bytes before truncation (16 KiB, matching upstream).

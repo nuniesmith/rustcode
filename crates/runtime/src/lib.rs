@@ -42,7 +42,7 @@ pub mod trust_resolver;
 mod usage;
 pub mod worker_boot;
 
-pub use bash::{BashCommandInput, BashCommandOutput, execute_bash};
+pub use bash::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 pub use bootstrap::{BootstrapPhase, BootstrapPlan};
 pub use compact::{
     CompactionConfig, CompactionResult, compact_session, estimate_session_tokens,

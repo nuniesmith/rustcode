@@ -10,17 +10,9 @@
 // `format_python`) pass file path lists shell-quoted.
 
 use crate::error::AuditError;
-use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
-
-// POSIX single-quote escape for embedding caller-supplied values in a
-// shell command line. `runtime::execute_bash` runs via `sh -lc`, so file
-// paths and other dynamic args need quoting.
-fn shell_quote(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
 
 // Run a shell command via `runtime::execute_bash` with sandboxing
 // disabled (matches the previous `Command::new(...)` paths) and the

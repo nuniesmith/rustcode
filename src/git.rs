@@ -11,18 +11,9 @@
 
 use crate::error::{AuditError, Result};
 use git2::Repository;
-use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use std::path::{Path, PathBuf};
 use tracing::info;
-
-// POSIX single-quote escape for embedding caller-supplied values
-// (paths, URLs, branches, env values) in a shell command line.
-// `runtime::execute_bash` runs commands via `sh -lc`, so anything that
-// could contain shell metacharacters needs quoting.
-fn shell_quote(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
-}
 
 // Build a `<KEY>=<val> <KEY>=<val> git <arg> <arg> ...` shell command.
 // All `env` values and `args` are shell-quoted; env keys are not (they

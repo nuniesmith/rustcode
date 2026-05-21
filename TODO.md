@@ -612,6 +612,18 @@
   > is gone. Acceptable for the agent task pipeline (no human watching);
   > stderr surfaces on error.
   >
+  > **`shell_quote` deduplicated 2026-05-21 (PR pending).** The
+  > byte-identical local `fn shell_quote` that PRs #32, #33, #34, #35,
+  > and #36 each added in `src/{tests_runner,auto_scanner,git,formatter,
+  > task_executor}.rs` is now `pub fn runtime::shell_quote`, re-exported
+  > via `crates/runtime/src/lib.rs`. The five duplicates removed; all
+  > five callers now import `runtime::shell_quote` alongside the other
+  > runtime types they already use. Added three lock-in tests in the
+  > runtime crate: basic single-quote wrapping, embedded-single-quote
+  > escape, and a `sh -lc` round-trip with a deliberately dangerous
+  > shell injection payload that verifies the quoting prevents
+  > metacharacter interpretation.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
   > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
   > `process::Command` callers in `src/` are smaller and varied:
