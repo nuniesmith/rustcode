@@ -420,6 +420,7 @@ impl AgentPipeline {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 
@@ -532,6 +533,7 @@ impl AgentPipeline {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 
@@ -582,6 +584,7 @@ impl AgentPipeline {
                 tools: Some(tool_defs.clone()),
                 tool_choice: None,
                 temperature: None,
+                response_format: None,
                 stream: false,
             };
 
@@ -725,6 +728,7 @@ impl AgentPipeline {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 
@@ -796,6 +800,7 @@ impl AgentPipeline {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 

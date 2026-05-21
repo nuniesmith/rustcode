@@ -289,6 +289,9 @@ impl AnthropicClient {
     ) -> Result<MessageResponse, ApiError> {
         let request = MessageRequest {
             stream: false,
+            // response_format is OpenAI-only; Anthropic surfaces structured
+            // output via tool use and rejects unknown top-level fields.
+            response_format: None,
             ..request.clone()
         };
 
@@ -341,8 +344,13 @@ impl AnthropicClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
+        // response_format is OpenAI-only; strip before sending to Anthropic.
+        let outbound = MessageRequest {
+            response_format: None,
+            ..request.clone()
+        };
         let response = self
-            .send_with_retry(&request.clone().with_streaming())
+            .send_with_retry(&outbound.clone().with_streaming())
             .await?;
         Ok(MessageStream {
             request_id: request_id_from_headers(response.headers()),
@@ -350,7 +358,7 @@ impl AnthropicClient {
             parser: SseParser::new(),
             pending: VecDeque::new(),
             done: false,
-            request: request.clone(),
+            request: outbound,
             prompt_cache: self.prompt_cache.clone(),
             latest_usage: None,
             usage_recorded: false,
@@ -1158,6 +1166,7 @@ mod tests {
             tools: None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream: false,
         };
 

@@ -527,6 +527,7 @@ async fn test_claude_switch_live_completion() {
         tools:       None,
         tool_choice: None,
         temperature: None,
+        response_format: None,
         stream:      false,
     };
 

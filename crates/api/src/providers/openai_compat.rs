@@ -661,6 +661,10 @@ fn build_chat_completion_request(request: &MessageRequest, config: OpenAiCompatC
         payload["temperature"] = json!(temperature);
     }
 
+    if let Some(format) = &request.response_format {
+        payload["response_format"] = json!(format);
+    }
+
     if request.stream && should_request_stream_usage(config) {
         payload["stream_options"] = json!({ "include_usage": true });
     }
@@ -992,6 +996,7 @@ mod tests {
                 }]),
                 tool_choice: Some(ToolChoice::Auto),
                 temperature: None,
+                response_format: None,
                 stream: false,
             },
             OpenAiCompatConfig::xai(),
@@ -1015,12 +1020,53 @@ mod tests {
                 tools: None,
                 tool_choice: None,
                 temperature: None,
+                response_format: None,
                 stream: true,
             },
             OpenAiCompatConfig::openai(),
         );
 
         assert_eq!(payload["stream_options"], json!({"include_usage": true}));
+    }
+
+    #[test]
+    fn response_format_is_translated_to_payload_when_set() {
+        use crate::types::ResponseFormat;
+        let payload = build_chat_completion_request(
+            &MessageRequest {
+                model: "grok-3".to_string(),
+                max_tokens: 16,
+                messages: vec![InputMessage::user_text("hi")],
+                system: None,
+                tools: None,
+                tool_choice: None,
+                temperature: None,
+                response_format: Some(ResponseFormat::JsonObject),
+                stream: false,
+            },
+            OpenAiCompatConfig::xai(),
+        );
+        assert_eq!(
+            payload["response_format"],
+            json!({"type": "json_object"}),
+            "expected JSON-mode response_format in payload"
+        );
+
+        let payload_none = build_chat_completion_request(
+            &MessageRequest {
+                model: "grok-3".to_string(),
+                max_tokens: 16,
+                messages: vec![InputMessage::user_text("hi")],
+                system: None,
+                tools: None,
+                tool_choice: None,
+                temperature: None,
+                response_format: None,
+                stream: false,
+            },
+            OpenAiCompatConfig::xai(),
+        );
+        assert!(payload_none.get("response_format").is_none());
     }
 
     #[test]
@@ -1034,6 +1080,7 @@ mod tests {
                 tools: None,
                 tool_choice: None,
                 temperature: Some(0.0),
+                response_format: None,
                 stream: false,
             },
             OpenAiCompatConfig::xai(),
@@ -1049,6 +1096,7 @@ mod tests {
                 tools: None,
                 tool_choice: None,
                 temperature: None,
+                response_format: None,
                 stream: false,
             },
             OpenAiCompatConfig::xai(),
@@ -1067,6 +1115,7 @@ mod tests {
                 tools: None,
                 tool_choice: None,
                 temperature: None,
+                response_format: None,
                 stream: true,
             },
             OpenAiCompatConfig::xai(),

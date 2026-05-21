@@ -62,6 +62,7 @@ impl GrokClient {
             tools:       None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream:      false,
         };
 
@@ -102,6 +103,7 @@ impl GrokClient {
             tools:       None,
             tool_choice: None,
             temperature: None,
+            response_format: None,
             stream:      false,
         };
 

@@ -3466,6 +3466,7 @@ impl ApiClient for ProviderRuntimeClient {
             tools: (!tools.is_empty()).then_some(tools),
             tool_choice: (!self.allowed_tools.is_empty()).then_some(ToolChoice::Auto),
             temperature: None,
+            response_format: None,
             stream: true,
         };
 
@@ -3550,6 +3551,7 @@ impl ApiClient for ProviderRuntimeClient {
                 .client
                 .send_message(&MessageRequest {
                     temperature: None,
+                    response_format: None,
                     stream: false,
                     ..message_request.clone()
                 })

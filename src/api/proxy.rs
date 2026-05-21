@@ -780,6 +780,7 @@ async fn handle_streaming(
                     tools: None,
                     tool_choice: None,
                     temperature: None,
+                    response_format: None,
                     stream: false,
                 };
 
@@ -1467,6 +1468,7 @@ async fn dispatch_claude(
         tools: None,
         tool_choice: None,
         temperature: None,
+        response_format: None,
         stream: false,
     };
 

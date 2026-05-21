@@ -256,6 +256,7 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             // Deterministic classification — restored after the
             // /api/chat → /v1/chat/completions migration in PR #23.
             temperature: Some(0.0),
+            response_format: None,
             stream: false,
         };
 

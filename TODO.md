@@ -477,15 +477,15 @@
   > types deleted along with the `GROK_API_URL` constant — the api
   > crate's `MessageResponse` carries the same information.
   >
-  > **Behavioural caveat:** the previous `call_grok(..., json_mode)`
-  > parameter set OpenAI's `response_format: {"type": "json_object"}`
-  > on requests. The api crate's `MessageRequest` doesn't expose that
-  > field, so the parameter is now ignored. All 4 of the previous
-  > `json_mode=true` call sites have system prompts that explicitly
-  > demand JSON output and Grok 3 / 4.1 reliably comply; the
-  > downstream `serde_json::from_str` calls already catch any drift.
-  > Adding `response_format` to the api crate is the proper fix but
-  > out of scope for this PR.
+  > **Behavioural caveat (resolved 2026-05-20):** the previous
+  > `call_grok(..., json_mode)` parameter set OpenAI's
+  > `response_format: {"type": "json_object"}` on requests, but the
+  > migrated path lost it. PR #25 added `ResponseFormat::{Text,JsonObject}`
+  > and `MessageRequest::response_format` to the api crate;
+  > `OpenAiCompatClient` translates the field into the OpenAI/xAI payload
+  > and `AnthropicClient` strips it (Anthropic surfaces structured output
+  > via tool use). `call_grok` now honors `json_mode` again by setting
+  > `response_format: json_mode.then_some(ResponseFormat::JsonObject)`.
   >
   > **`src/model_router.rs` migrated 2026-05-20.** `llm_classify` (the
   > prompt classifier — the TODO originally mis-described this as a
