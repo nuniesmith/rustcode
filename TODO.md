@@ -731,9 +731,25 @@
   > rewritten: `auto_scanner.rs`, `repo/file_cache.rs` (two refs), and
   > `repo/cache.rs`. The crate-root `rustcode::CostTracker` /
   > `rustcode::TokenPricing` re-exports are unchanged, so any external
-  > callers via the flat name still work. The TODO's optional follow-up
-  > to split `cache_creation_tokens` / `cache_read_tokens` separately in
-  > `CostTracker` is deferred to a later slice.
+  > callers via the flat name still work.
+  >
+  > **CostTracker cache-token split done 2026-05-21 (PR pending).**
+  > `TokenUsage` gained `cache_creation_input_tokens: u64` and
+  > `cache_read_input_tokens: u64` fields (the names mirror
+  > `api::Usage` and `runtime::TokenUsage` for consistency with the
+  > Anthropic wire shape). The legacy `cached_tokens` field stays as a
+  > backward-compat aggregate for non-Anthropic providers (Grok prompt
+  > cache) and for old rows in `llm_costs`. Schema migrated via two
+  > idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements;
+  > the `log_call` INSERT now binds all three cache counters and
+  > `get_stats_for_period` exposes the split via two new
+  > `CostStats.total_cache_*` fields. `calculate_cost` now prices
+  > cache writes at 1.25× the input rate and cache reads at 0.1× (the
+  > Anthropic pricing model); the legacy `cached_tokens` path keeps
+  > its previous Grok pricing. New `From<api::Usage>` impl gives a
+  > one-line conversion for any Anthropic response. Two new unit
+  > tests verify the conversion preserves the split and that
+  > `cache_creation` cost dwarfs `cache_read` cost.
   >
   > **Slice 3 done 2026-05-21 (PR pending).** Moved `src/llm_config.rs`
   > → `src/llm/config.rs` via `git mv`. Updated `src/llm/mod.rs` to add

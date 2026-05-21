@@ -25,6 +25,8 @@
 //         input_tokens: 100_000,
 //         output_tokens: 50_000,
 //         cached_tokens: 0,
+//         cache_creation_input_tokens: 0,
+//         cache_read_input_tokens: 0,
 //     };
 //     tracker.log_call("code_review", "grok-4-1-fast-reasoning", usage, false).await?;
 //
@@ -52,21 +54,73 @@ const GROK_COST_PER_MILLION_CACHED: f64 = 0.05;
 const DEFAULT_DAILY_BUDGET: f64 = 1.0;
 const DEFAULT_MONTHLY_BUDGET: f64 = 10.0;
 
-// Token usage for a single API call
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Token usage for a single API call.
+//
+// The two `cache_*_input_tokens` fields mirror the Anthropic API
+// `Usage` shape (and `runtime::TokenUsage`): cache *creation* tokens
+// are the input tokens written into a new cache entry, cache *read*
+// tokens are the input tokens served from an existing entry. Splitting
+// them lets cost reporting price them separately — cache writes cost
+// ~1.25× normal input and cache reads cost ~0.1× — and lets dashboards
+// show the cache-hit savings precisely.
+//
+// `cached_tokens` is kept as a legacy aggregate for providers (e.g.
+// Grok) that don't distinguish the two, and for backwards compatibility
+// with existing rows in the `llm_costs` table.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    #[serde(default)]
     pub cached_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
 }
 
-// Cost statistics for a time period
+impl TokenUsage {
+    // Total cache-related tokens across all three counters. Used by
+    // cost reporting where the three fields are summed; callers that
+    // need the split should read the fields directly.
+    #[must_use]
+    pub const fn total_cache_tokens(&self) -> u64 {
+        self.cached_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
+    }
+}
+
+// Lossless conversion from the api crate's Anthropic-shaped `Usage`.
+// `cached_tokens` is left at the default (0); the two split fields
+// carry the actual values returned by the Anthropic API.
+impl From<api::Usage> for TokenUsage {
+    fn from(usage: api::Usage) -> Self {
+        Self {
+            input_tokens: u64::from(usage.input_tokens),
+            output_tokens: u64::from(usage.output_tokens),
+            cached_tokens: 0,
+            cache_creation_input_tokens: u64::from(usage.cache_creation_input_tokens),
+            cache_read_input_tokens: u64::from(usage.cache_read_input_tokens),
+        }
+    }
+}
+
+// Cost statistics for a time period.
+//
+// `total_cached_tokens` is the legacy aggregate (pre-split rows + any
+// provider that doesn't distinguish cache write vs read).
+// `total_cache_creation_input_tokens` and `total_cache_read_input_tokens`
+// mirror the Anthropic-style split — dashboards can show cache *writes*
+// (capital expense) separately from cache *reads* (the savings).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostStats {
     pub total_queries: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
     pub total_cached_tokens: u64,
+    #[serde(default)]
+    pub total_cache_creation_input_tokens: u64,
+    #[serde(default)]
+    pub total_cache_read_input_tokens: u64,
     pub total_cost_usd: f64,
     pub cache_hits: u64,
     pub cache_hit_rate: f64,
@@ -232,6 +286,24 @@ impl CostTracker {
         .await
         .context("Failed to create llm_costs table")?;
 
+        // Additive migration for the cache-token split (2026-05-21).
+        // `ADD COLUMN IF NOT EXISTS` is idempotent and leaves the legacy
+        // `cached_tokens` column intact for pre-split rows.
+        sqlx::query(
+            "ALTER TABLE llm_costs ADD COLUMN IF NOT EXISTS \
+             cache_creation_input_tokens INTEGER DEFAULT 0",
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to add cache_creation_input_tokens column")?;
+        sqlx::query(
+            "ALTER TABLE llm_costs ADD COLUMN IF NOT EXISTS \
+             cache_read_input_tokens INTEGER DEFAULT 0",
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to add cache_read_input_tokens column")?;
+
         // Static analysis decisions table — tracks skip/tier decisions for savings reporting
         sqlx::query(
             r#"
@@ -309,9 +381,10 @@ impl CostTracker {
             r#"
             INSERT INTO llm_costs (
                 operation, model, input_tokens, output_tokens, cached_tokens,
+                cache_creation_input_tokens, cache_read_input_tokens,
                 cost_usd, cache_hit
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
             "#,
         )
@@ -320,6 +393,8 @@ impl CostTracker {
         .bind(usage.input_tokens as i64)
         .bind(usage.output_tokens as i64)
         .bind(usage.cached_tokens as i64)
+        .bind(usage.cache_creation_input_tokens as i64)
+        .bind(usage.cache_read_input_tokens as i64)
         .bind(cost)
         .bind(cache_hit)
         .fetch_one(&self.pool)
@@ -328,12 +403,14 @@ impl CostTracker {
         let id = row.0;
 
         info!(
-            "Logged API call: {} | Cost: ${:.4} | Tokens: {}in/{}out/{}cached | Cache: {}",
+            "Logged API call: {} | Cost: ${:.4} | Tokens: {}in/{}out/{}cached/{}cache_create/{}cache_read | Cache: {}",
             operation,
             cost,
             usage.input_tokens,
             usage.output_tokens,
             usage.cached_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
             cache_hit
         );
 
@@ -343,13 +420,26 @@ impl CostTracker {
         Ok(id)
     }
 
-    // Calculate cost for token usage
+    // Calculate cost for token usage.
+    //
+    // Cache pricing follows the Anthropic model:
+    //   - `cache_creation_input_tokens` are priced at 1.25× the input rate
+    //     (writing a new cache entry is slightly more expensive than a
+    //     plain input token).
+    //   - `cache_read_input_tokens` are priced at 0.1× the input rate
+    //     (the big saving — reading a cached entry is roughly free).
+    //   - The legacy `cached_tokens` aggregate uses the original Grok
+    //     "cached" rate so existing rows / non-Anthropic providers
+    //     continue to price as they always did.
     fn calculate_cost(&self, usage: &TokenUsage) -> f64 {
-        let input_cost = (usage.input_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_INPUT;
+        let input_per_token = GROK_COST_PER_MILLION_INPUT / 1_000_000.0;
+        let input_cost = (usage.input_tokens as f64) * input_per_token;
         let output_cost = (usage.output_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_OUTPUT;
         let cached_cost = (usage.cached_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_CACHED;
+        let cache_creation_cost = (usage.cache_creation_input_tokens as f64) * input_per_token * 1.25;
+        let cache_read_cost = (usage.cache_read_input_tokens as f64) * input_per_token * 0.10;
 
-        input_cost + output_cost + cached_cost
+        input_cost + output_cost + cached_cost + cache_creation_cost + cache_read_cost
     }
 
     // -------------------------------------------------------------------
@@ -535,14 +625,18 @@ impl CostTracker {
             total_input_tokens,
             total_output_tokens,
             total_cached_tokens,
+            total_cache_creation_input_tokens,
+            total_cache_read_input_tokens,
             total_cost_usd,
-        ) = sqlx::query_as::<_, (i64, i64, i64, i64, f64)>(
+        ) = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, f64)>(
             r#"
             SELECT
                 COUNT(*),
                 COALESCE(SUM(input_tokens), 0),
                 COALESCE(SUM(output_tokens), 0),
                 COALESCE(SUM(cached_tokens), 0),
+                COALESCE(SUM(cache_creation_input_tokens), 0),
+                COALESCE(SUM(cache_read_input_tokens), 0),
                 COALESCE(SUM(cost_usd), 0.0)
             FROM llm_costs
             WHERE timestamp >= $1::TIMESTAMPTZ AND timestamp <= $2::TIMESTAMPTZ
@@ -587,6 +681,8 @@ impl CostTracker {
             total_input_tokens: total_input_tokens as u64,
             total_output_tokens: total_output_tokens as u64,
             total_cached_tokens: total_cached_tokens as u64,
+            total_cache_creation_input_tokens: total_cache_creation_input_tokens as u64,
+            total_cache_read_input_tokens: total_cache_read_input_tokens as u64,
             total_cost_usd,
             cache_hits: cache_hits as u64,
             cache_hit_rate,
@@ -887,6 +983,61 @@ mod tests {
     use super::*;
     use sqlx::PgPool;
 
+    #[test]
+    fn token_usage_from_api_usage_preserves_cache_split() {
+        let api_usage = api::Usage {
+            input_tokens: 1_000,
+            output_tokens: 200,
+            cache_creation_input_tokens: 50,
+            cache_read_input_tokens: 800,
+        };
+        let usage: TokenUsage = api_usage.into();
+        assert_eq!(usage.input_tokens, 1_000);
+        assert_eq!(usage.output_tokens, 200);
+        assert_eq!(usage.cached_tokens, 0, "legacy field should default to 0");
+        assert_eq!(usage.cache_creation_input_tokens, 50);
+        assert_eq!(usage.cache_read_input_tokens, 800);
+        assert_eq!(usage.total_cache_tokens(), 850);
+    }
+
+    #[test]
+    fn calculate_cost_prices_cache_creation_higher_than_cache_read() {
+        // Sanity check on the relative pricing rather than absolute USD
+        // (the absolute numbers depend on `GROK_COST_PER_MILLION_INPUT`).
+        // Uses a lazy `PgPool` because `calculate_cost` doesn't touch it.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .expect("lazy pool should build");
+        let tracker = CostTracker {
+            pool,
+            daily_budget: 0.0,
+            monthly_budget: 0.0,
+        };
+        let creation_only = TokenUsage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            cache_creation_input_tokens: 1_000_000,
+            cache_read_input_tokens: 0,
+        };
+        let read_only = TokenUsage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 1_000_000,
+        };
+        let create_cost = tracker.calculate_cost(&creation_only);
+        let read_cost = tracker.calculate_cost(&read_only);
+        // Cache writes are ~12.5× more expensive than reads in our
+        // pricing model (1.25× vs 0.10× of the input rate).
+        assert!(
+            create_cost > read_cost * 10.0,
+            "expected cache_creation cost to dwarf cache_read; \
+             got create={create_cost} read={read_cost}"
+        );
+    }
+
     async fn create_test_pool() -> PgPool {
         crate::db::core::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgresql://rustcode:changeme@localhost:5432/rustcode_test".to_string()
@@ -904,6 +1055,8 @@ mod tests {
             input_tokens: 100_000,
             output_tokens: 50_000,
             cached_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         };
 
         let cost = tracker.calculate_cost(&usage);
@@ -921,6 +1074,8 @@ mod tests {
             input_tokens: 1000,
             output_tokens: 500,
             cached_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         };
 
         let id = tracker
@@ -942,6 +1097,8 @@ mod tests {
                 input_tokens: 10_000,
                 output_tokens: 5_000,
                 cached_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             };
             tracker.log_call("test", "grok", usage, false).await?;
         }
