@@ -25,7 +25,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::cache::layer::{CacheConfig, CacheLayer};
-use crate::model_router::{CompletionRequest, ModelRouter, ModelTarget};
+use crate::llm::router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::ollama_client::OllamaClient;
 use crate::repo::sync::{RegisteredRepo, RepoSyncService, SyncResult};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
@@ -336,7 +336,7 @@ async fn handle_chat(
     if req.force_remote.unwrap_or(false) {
         target = state
             .model_router
-            .route(&crate::model_router::TaskKind::ArchitecturalReason);
+            .route(&crate::llm::router::TaskKind::ArchitecturalReason);
     }
 
     // 2. Build repo context if a repo is specified

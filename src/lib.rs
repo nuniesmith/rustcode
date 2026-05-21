@@ -51,7 +51,6 @@ pub mod llm;
 pub mod llm_audit;
 pub mod memory;
 pub mod metrics;
-pub mod model_router;
 pub mod multi_tenant;
 pub mod ollama_client;
 pub mod parser;

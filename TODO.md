@@ -637,9 +637,17 @@
   > `src/grok_reasoning.rs`, `src/llm_audit.rs`. Crate-root re-exports
   > (`rustcode::LlmConfig`, etc.) keep flat names.
   >
-  > Remaining slices: `ollama_client` → `llm/ollama`, `model_router` →
-  > `llm/router`, plus the heavier grok_client/grok_reasoning
-  > consolidation into `llm/client`.
+  > **Slice 4 done 2026-05-21 (PR pending).** Moved `src/model_router.rs`
+  > → `src/llm/router.rs` via `git mv`. Updated `src/llm/mod.rs` to add
+  > `pub mod router;`, dropped `pub mod model_router;` from `lib.rs`
+  > (no top-level re-export existed). Four in-tree importers rewritten:
+  > `src/server.rs`, `src/api/proxy.rs`, `src/api/repos.rs` (2 refs), and
+  > `tests/test_grok_integration.rs` (3 refs — `rustcode::model_router::*`
+  > → `rustcode::llm::router::*`). Updated the moved file's leading path
+  > comment.
+  >
+  > Remaining slices: `ollama_client` → `llm/ollama`, plus the heavier
+  > grok_client/grok_reasoning consolidation into `llm/client`.
 
 - [x] **RC-CLEANUP-B: consolidate cache modules into `src/cache/`**
   > **Done 2026-05-18.** Pure restructure — no behaviour changes.

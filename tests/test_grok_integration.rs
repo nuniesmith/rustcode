@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use rustcode::ResponseCache;
 use rustcode::llm::simple_client::GrokClient;
-use rustcode::model_router::{ModelRouter, ModelRouterConfig, TaskKind};
+use rustcode::llm::router::{ModelRouter, ModelRouterConfig, TaskKind};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -185,7 +185,7 @@ async fn test_model_router_async_classification_matches_keyword_fallback() {
 // Grok provider, while `ScaffoldStub` routes **local**.
 #[test]
 fn test_model_router_routes_to_correct_provider() {
-    use rustcode::model_router::ModelTarget;
+    use rustcode::llm::router::ModelTarget;
 
     let config = ModelRouterConfig {
         remote_api_key: "dummy".to_string(),
@@ -222,7 +222,7 @@ fn test_model_router_routes_to_correct_provider() {
 // This is the two-tier routing assertion called out in RC-CRATES-G.
 #[test]
 fn test_model_router_two_tier_claude_routing_planner_vs_executor() {
-    use rustcode::model_router::{ClaudeTier, ModelTarget};
+    use rustcode::llm::router::{ClaudeTier, ModelTarget};
 
     let config = ModelRouterConfig {
         anthropic_enabled: true,
