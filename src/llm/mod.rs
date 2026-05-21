@@ -5,6 +5,7 @@
 pub mod compat;
 pub mod config;
 pub mod grok;
+pub mod router;
 pub mod simple_client;
 pub mod usage;
 

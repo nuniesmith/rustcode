@@ -11,7 +11,7 @@ use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::github::webhook::{WebhookHandler, WebhookPayload};
 use crate::llm::LlmClient;
-use crate::model_router::{ModelRouter, ModelRouterConfig};
+use crate::llm::router::{ModelRouter, ModelRouterConfig};
 use crate::queue::{QueueStats, get_queue_stats};
 use crate::repo::sync::RepoSyncService;
 use crate::research::worker::refresh_rag_index;

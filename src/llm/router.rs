@@ -1,4 +1,4 @@
-// src/model_router.rs
+// src/llm/router.rs
 // RustCode ModelRouter — routes tasks between local Ollama and remote Grok API
 //
 // Note on the Ollama classifier: `llm_classify` talks to Ollama's
