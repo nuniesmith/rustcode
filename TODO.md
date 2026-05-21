@@ -521,10 +521,30 @@
   > 3/5 migrations done. The remaining two (`grok_reasoning.rs`,
   > `ollama_client.rs`) both need additional api-crate capabilities first.
 
-- [ ] **RC-CRATES-C: replace scanner with `runtime` crate**
+- [~] **RC-CRATES-C: replace scanner with `runtime` crate**
   > `runtime::execute_bash`, `runtime::ProviderClient`, `runtime::worker_boot` are the key
   > integration points. Start by replacing `src/tests_runner.rs` subprocess logic with
   > `runtime::execute_bash` — it handles sandboxing, timeout, and output capture already.
+  >
+  > **`src/tests_runner.rs` migrated 2026-05-21 (PR pending).** All 6
+  > `std::process::Command` invocations across the Rust / Python / JS /
+  > Kotlin test paths and the Rust / Python coverage paths now go through
+  > `runtime::execute_bash`. Required a tiny additive API extension on
+  > the runtime crate: `BashCommandInput` gained a `cwd: Option<PathBuf>`
+  > field (serde-default, backward-compatible JSON shape) so the test
+  > runner can target an audited project's root without mutating the
+  > process-wide cwd. Each call site passes
+  > `dangerously_disable_sandbox: Some(true)` because the test toolchain
+  > needs real filesystem access. Path arguments shell-quoted via a
+  > local POSIX single-quote helper. New `BashCommandOutput.stdout`
+  > is already `String`, so the four `String::from_utf8_lossy(&output.stdout)`
+  > sites became cheap `.clone()`s.
+  >
+  > Remaining `runtime` integration points: `ProviderClient` and
+  > `worker_boot` are still untouched in `src/`. Next slice candidates
+  > are `src/auto_scanner.rs` (already heavy on `Command::new` for git
+  > / cargo invocations) and the executor pieces gated on RC-CRATES-C
+  > by lines 242 and 356 above.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.

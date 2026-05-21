@@ -1,11 +1,48 @@
 // Test runner module for discovering and executing tests across different project types
+//
+// RC-CRATES-C (2026-05-21): subprocess invocations migrated from raw
+// `std::process::Command` to `runtime::execute_bash`. Each call site now
+// passes `cwd: Some(self.root.clone())` to redirect the test runner at
+// the audited project (replacing the previous `.current_dir(&self.root)`
+// pattern) and `dangerously_disable_sandbox: Some(true)` because we need
+// the test toolchain to access the project's real files.
 
 use crate::error::{AuditError, Result};
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
 use walkdir::WalkDir;
+
+// POSIX single-quote escape for embedding a path/value in a shell
+// command line. `runtime::execute_bash` runs the command via `sh -lc`,
+// so any caller-supplied path (e.g. the pytest `--json-report-file=...`
+// destination) needs proper quoting to survive shell parsing even when
+// it contains spaces or other metacharacters.
+fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+// Build a `BashCommandInput` for in-repo tool invocations: no sandbox,
+// targets `self.root`, no timeout cap (the existing call sites didn't
+// impose one and some toolchains, e.g. `cargo tarpaulin`, can take a
+// while).
+fn run_in_project(root: &std::path::Path, command: String) -> Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: Some(root.to_path_buf()),
+    })
+    .map_err(AuditError::Io)
+}
 
 // ── cargo test --format json event types ────────────────────────────────────
 
@@ -199,19 +236,15 @@ impl TestRunner {
         // Run cargo test with JSON output.
         // `--format=json` requires the nightly test harness flag on stable, so we
         // pass `-Zunstable-options` to accommodate both channels gracefully.
-        let output = Command::new("cargo")
-            .arg("test")
-            .arg("--")
-            .arg("-Zunstable-options")
-            .arg("--format=json")
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
+        let output = run_in_project(
+            &self.root,
+            String::from("cargo test -- -Zunstable-options --format=json"),
+        )?;
 
         let duration = start.elapsed().as_secs_f64();
         // cargo test writes JSON events to stdout; human-readable summary to stderr.
-        let json_output = String::from_utf8_lossy(&output.stdout).to_string();
-        let text_output = String::from_utf8_lossy(&output.stderr).to_string();
+        let json_output = output.stdout.clone();
+        let text_output = output.stderr.clone();
 
         // Parse the JSON event stream for per-file breakdown.
         let (results_by_file, json_total, json_passed, json_failed, json_skipped) =
@@ -255,16 +288,16 @@ impl TestRunner {
         let report_path = self.root.join(".pytest-report.json");
 
         // Run pytest with JSON report
-        let output = Command::new("pytest")
-            .arg("--json-report")
-            .arg(format!("--json-report-file={}", report_path.display()))
-            .arg("-v")
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
+        let output = run_in_project(
+            &self.root,
+            format!(
+                "pytest --json-report --json-report-file={} -v",
+                shell_quote(&report_path.display().to_string())
+            ),
+        )?;
 
         let duration = start.elapsed().as_secs_f64();
-        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let output_str = output.stdout.clone();
 
         // Parse per-file results from the JSON report file (if it was written).
         let (results_by_file, json_total, json_passed, json_failed, json_skipped) =
@@ -302,16 +335,10 @@ impl TestRunner {
         let test_files = self.find_js_test_files()?;
 
         // Try npm test first, fall back to jest
-        let output = Command::new("npm")
-            .arg("test")
-            .arg("--")
-            .arg("--json")
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
+        let output = run_in_project(&self.root, String::from("npm test -- --json"))?;
 
         let duration = start.elapsed().as_secs_f64();
-        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let output_str = output.stdout.clone();
 
         // Parse test output
         let (total, passed, failed, skipped) = self.parse_jest_output(&output_str);
@@ -338,14 +365,10 @@ impl TestRunner {
         let test_files = self.find_kotlin_test_files()?;
 
         // Run gradle test
-        let output = Command::new("./gradlew")
-            .arg("test")
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
+        let output = run_in_project(&self.root, String::from("./gradlew test"))?;
 
         let duration = start.elapsed().as_secs_f64();
-        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let output_str = output.stdout.clone();
 
         // Parse gradle output
         let (total, passed, failed, skipped) = self.parse_gradle_output(&output_str);
@@ -699,15 +722,10 @@ impl TestRunner {
     // Get Rust code coverage using tarpaulin or llvm-cov
     fn get_rust_coverage(&self) -> Result<f64> {
         // Try cargo-tarpaulin first
-        let output = Command::new("cargo")
-            .arg("tarpaulin")
-            .arg("--out")
-            .arg("Stdout")
-            .current_dir(&self.root)
-            .output();
+        let output = run_in_project(&self.root, String::from("cargo tarpaulin --out Stdout"));
 
         if let Ok(output) = output {
-            let output_str = String::from_utf8_lossy(&output.stdout);
+            let output_str = output.stdout.clone();
             if let Some(coverage_line) = output_str.lines().find(|l| l.contains("coverage")) {
                 // Parse percentage
                 if let Some(pct_str) = coverage_line.split('%').next() {
@@ -727,14 +745,9 @@ impl TestRunner {
 
     // Get Python code coverage using pytest-cov
     fn get_python_coverage(&self) -> Result<f64> {
-        let output = Command::new("pytest")
-            .arg("--cov")
-            .arg("--cov-report=term")
-            .current_dir(&self.root)
-            .output()
-            .map_err(AuditError::Io)?;
+        let output = run_in_project(&self.root, String::from("pytest --cov --cov-report=term"))?;
 
-        let output_str = String::from_utf8_lossy(&output.stdout);
+        let output_str = output.stdout.clone();
 
         // Look for TOTAL line with coverage percentage
         for line in output_str.lines() {
