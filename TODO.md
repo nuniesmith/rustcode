@@ -575,11 +575,25 @@
   > context; on error the captured `return_code_interpretation` surfaces
   > in the returned `AuditError`.
   >
+  > **`src/formatter.rs` migrated 2026-05-21 (PR pending).** Eight
+  > subprocess sites — four `is_available()` version probes
+  > (`cargo fmt --version`, `ktlint --version`, `npx prettier --version`,
+  > `black --version`) and four format functions (`format_rust`,
+  > `format_kotlin`, `format_prettier`, `format_python`) — now go through
+  > `runtime::execute_bash`. The version probes use a tiny `run_succeeds`
+  > helper; the format functions build the command string with file path
+  > lists shell-quoted (any future path with spaces or shell
+  > metacharacters survives `sh -lc` parsing). `format_rust` swapped
+  > the previous `cmd.current_dir(cargo_dir)` pattern for `cwd:
+  > Some(cargo_dir)` on the `BashCommandInput`. The two pre-existing
+  > `String::from_utf8_lossy(&output.stdout)` / `&output.stderr` sites
+  > collapsed to direct field access.
+  >
   > Remaining `runtime` integration points still untouched in `src/`:
-  > `ProviderClient`, `worker_boot`, plus the larger `Command::new`
-  > callers — `task_executor.rs` (10 sites), `formatter.rs` (9). The
-  > executor pieces gated on RC-CRATES-C by lines 242 and 356 above
-  > are unblocked once those land.
+  > `ProviderClient`, `worker_boot`, plus the largest `Command::new`
+  > caller — `task_executor.rs` (10 sites, behaviorally sensitive agent
+  > task pipeline). The executor pieces gated on RC-CRATES-C by lines
+  > 242 and 356 above are unblocked once those land.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
