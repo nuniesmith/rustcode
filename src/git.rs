@@ -1,9 +1,66 @@
 // Git repository management for audit service
+//
+// RC-CRATES-C (2026-05-21): the five subprocess `git` invocations
+// (`clone_repo`, `clone_repo_with_token`, `clone_with_askpass`,
+// `push_with_askpass`, `push_branch_with_token`) now go through
+// `runtime::execute_bash`. Behavioural note: the previous code used
+// `Command::status()` which inherits stdio, so `git clone`'s progress
+// streamed to the parent terminal. `execute_bash` captures stdout/stderr,
+// so the progress no longer surfaces interactively — callers see the
+// captured text only on error. Acceptable for the audit/CLI context.
 
 use crate::error::{AuditError, Result};
 use git2::Repository;
+use runtime::{BashCommandInput, BashCommandOutput, execute_bash};
 use std::path::{Path, PathBuf};
 use tracing::info;
+
+// POSIX single-quote escape for embedding caller-supplied values
+// (paths, URLs, branches, env values) in a shell command line.
+// `runtime::execute_bash` runs commands via `sh -lc`, so anything that
+// could contain shell metacharacters needs quoting.
+fn shell_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+// Build a `<KEY>=<val> <KEY>=<val> git <arg> <arg> ...` shell command.
+// All `env` values and `args` are shell-quoted; env keys are not (they
+// must already be safe identifiers).
+fn build_git_command(env: &[(&str, &str)], args: &[&str]) -> String {
+    let env_part = env
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, shell_quote(v)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let args_part = std::iter::once("git".to_string())
+        .chain(args.iter().map(|a| shell_quote(a)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if env_part.is_empty() {
+        args_part
+    } else {
+        format!("{env_part} {args_part}")
+    }
+}
+
+// Run a constructed shell command via `runtime::execute_bash` with
+// sandboxing disabled (matches the previous `Command::new("git")` path
+// which had none) and the requested `cwd`.
+fn run_git_command(command: String, cwd: Option<&Path>) -> std::io::Result<BashCommandOutput> {
+    execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: cwd.map(Path::to_path_buf),
+    })
+}
 
 // Git repository manager
 pub struct GitManager {
@@ -38,8 +95,6 @@ impl GitManager {
     // Falls back to using the system `git` command which tends to be more robust
     // across credential helpers and user environments than libgit2 in some cases.
     pub fn clone_repo(&self, url: &str, name: Option<&str>) -> Result<PathBuf> {
-        use std::process::Command;
-
         let repo_name = name.unwrap_or_else(|| {
             url.split('/')
                 .next_back()
@@ -59,19 +114,22 @@ impl GitManager {
 
         // Use git CLI for cloning. This avoids lower-level libgit2 pitfalls and aligns with
         // typical developer environments.
-        let status = Command::new("git")
-            .arg("clone")
-            .arg("--depth=1")
-            .arg(url)
-            .arg(&target_path)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .status()
+        let target_str = target_path.display().to_string();
+        let command = build_git_command(
+            &[("GIT_TERMINAL_PROMPT", "0")],
+            &["clone", "--depth=1", url, &target_str],
+        );
+        let output = run_git_command(command, None)
             .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
 
-        if !status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(AuditError::other(format!(
-                "git clone failed for {} (exit {})",
-                url, status
+                "git clone failed for {} ({})",
+                url,
+                output
+                    .return_code_interpretation
+                    .as_deref()
+                    .unwrap_or("non-zero exit"),
             )));
         }
 
@@ -91,8 +149,6 @@ impl GitManager {
         name: Option<&str>,
         token: &str,
     ) -> Result<PathBuf> {
-        use std::process::Command;
-
         let repo_name = name.unwrap_or_else(|| {
             url.split('/')
                 .next_back()
@@ -121,19 +177,22 @@ impl GitManager {
 
         info!("Cloning (auth) repository to {}", target_path.display());
 
-        let status = Command::new("git")
-            .arg("clone")
-            .arg("--depth=1")
-            .arg(&auth_url)
-            .arg(&target_path)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .status()
+        let target_str = target_path.display().to_string();
+        let command = build_git_command(
+            &[("GIT_TERMINAL_PROMPT", "0")],
+            &["clone", "--depth=1", &auth_url, &target_str],
+        );
+        let output = run_git_command(command, None)
             .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
 
-        if !status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(AuditError::other(format!(
-                "git clone (auth) failed for {} (exit {})",
-                url, status
+                "git clone (auth) failed for {} ({})",
+                url,
+                output
+                    .return_code_interpretation
+                    .as_deref()
+                    .unwrap_or("non-zero exit"),
             )));
         }
 
@@ -202,23 +261,29 @@ impl GitManager {
         std::fs::set_permissions(&askpass_path, perms)?;
 
         // Run git clone with GIT_ASKPASS pointing to the helper.
-        let status = std::process::Command::new("git")
-            .arg("clone")
-            .arg("--depth=1")
-            .arg(remote_repo_url)
-            .arg(&target_path)
-            .env("GIT_ASKPASS", &askpass_path)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .status()
+        let askpass_str = askpass_path.display().to_string();
+        let target_str = target_path.display().to_string();
+        let command = build_git_command(
+            &[
+                ("GIT_ASKPASS", &askpass_str),
+                ("GIT_TERMINAL_PROMPT", "0"),
+            ],
+            &["clone", "--depth=1", remote_repo_url, &target_str],
+        );
+        let output = run_git_command(command, None)
             .map_err(|e| AuditError::other(format!("Failed to spawn git clone: {}", e)))?;
 
         // Remove helper script regardless of outcome
         let _ = std::fs::remove_file(&askpass_path);
 
-        if !status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(AuditError::other(format!(
-                "git clone (askpass) failed for {} (exit {})",
-                remote_repo_url, status
+                "git clone (askpass) failed for {} ({})",
+                remote_repo_url,
+                output
+                    .return_code_interpretation
+                    .as_deref()
+                    .unwrap_or("non-zero exit"),
             )));
         }
 
@@ -245,26 +310,30 @@ impl GitManager {
         perms.set_mode(0o700);
         std::fs::set_permissions(&askpass_path, perms)?;
 
-        // Use origin remote and let askpass supply credentials
-        let status = std::process::Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .arg("push")
-            .arg("-u")
-            .arg("origin")
-            .arg(branch)
-            .env("GIT_ASKPASS", &askpass_path)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .status()
+        // Use origin remote and let askpass supply credentials.
+        // `cwd: Some(repo_path)` replaces the previous `git -C <path>` invocation.
+        let askpass_str = askpass_path.display().to_string();
+        let command = build_git_command(
+            &[
+                ("GIT_ASKPASS", &askpass_str),
+                ("GIT_TERMINAL_PROMPT", "0"),
+            ],
+            &["push", "-u", "origin", branch],
+        );
+        let output = run_git_command(command, Some(repo_path))
             .map_err(|e| AuditError::other(format!("Failed to spawn git push: {}", e)))?;
 
         // Cleanup helper
         let _ = std::fs::remove_file(&askpass_path);
 
-        if !status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(AuditError::other(format!(
-                "git push (askpass) failed for branch {} (exit {})",
-                branch, status
+                "git push (askpass) failed for branch {} ({})",
+                branch,
+                output
+                    .return_code_interpretation
+                    .as_deref()
+                    .unwrap_or("non-zero exit"),
             )));
         }
 
@@ -378,8 +447,6 @@ impl GitManager {
         branch: &str,
         token: &str,
     ) -> Result<()> {
-        use std::process::Command;
-
         // Validate remote URL and construct an authenticated URL for the push.
         // We intentionally do not log `auth_url` since it contains sensitive credentials.
         if !remote_repo_url.starts_with("https://") {
@@ -392,22 +459,22 @@ impl GitManager {
         // Insert token into URL: https://<token>@github.com/owner/repo.git
         let auth_url = remote_repo_url.replacen("https://", &format!("https://{}@", token), 1);
 
-        // Execute: git -C <repo_path> push -u <auth_url> <branch>
-        let status = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .arg("push")
-            .arg("-u")
-            .arg(&auth_url)
-            .arg(branch)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .status()
+        // Execute: push -u <auth_url> <branch> in `repo_path` (replaces
+        // the previous `git -C <path>` invocation).
+        let command = build_git_command(
+            &[("GIT_TERMINAL_PROMPT", "0")],
+            &["push", "-u", &auth_url, branch],
+        );
+        let output = run_git_command(command, Some(repo_path))
             .map_err(|e| AuditError::other(format!("Failed to spawn git push: {}", e)))?;
 
-        if !status.success() {
+        if output.return_code_interpretation.is_some() {
             return Err(AuditError::other(format!(
-                "git push failed with status: {}",
-                status
+                "git push failed ({})",
+                output
+                    .return_code_interpretation
+                    .as_deref()
+                    .unwrap_or("non-zero exit"),
             )));
         }
 
