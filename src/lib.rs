@@ -37,7 +37,6 @@ pub mod context_rag;
 pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
-pub mod embeddings;
 // RC-CLEANUP-F: `enhanced_scanner` moved to `crate::scanner::enhanced`.
 pub mod error;
 pub mod formatter;
@@ -126,7 +125,7 @@ pub use db::{
 };
 pub use directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
 pub use doc_generator::{DocGenerator, FunctionDoc, ModuleDoc, ParameterDoc, ReadmeContent};
-pub use embeddings::{
+pub use rag::{
     Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
 };
 // Re-exported from the new location (`crate::scanner::enhanced`) so
@@ -276,7 +275,7 @@ pub mod prelude {
         search_notes, update_note_status, update_repository_analysis, update_task_status,
     };
     pub use crate::directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
-    pub use crate::embeddings::{
+    pub use rag::{
         Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
     };
     pub use crate::scanner::enhanced::EnhancedScanner;

@@ -24,7 +24,7 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::embeddings::EmbeddingGenerator;
+use rag::EmbeddingGenerator;
 use super::types::{
     MemoryEntry, MemoryKind, MemorySearchHit, NewMemory, cosine_similarity,
 };

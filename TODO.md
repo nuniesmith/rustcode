@@ -1074,13 +1074,22 @@
   > `src/{chunking,vector_index}.rs` ride along into `crates/rag` and all
   > pass.
   >
+  > **Slice 2 done 2026-05-23 (PR pending).** Moved `src/embeddings.rs`
+  > (427 LOC) into `crates/rag/src/embeddings.rs` via `git mv`. The
+  > `rag` Cargo.toml gains `fastembed` + `tokio` (workspace deps);
+  > `rag/src/lib.rs` adds `pub mod embeddings;` and re-exports the
+  > five public types (`Embedding`, `EmbeddingConfig`, `EmbeddingGenerator`,
+  > `EmbeddingModelType`, `EmbeddingStats`). The two `rustcode::lib.rs`
+  > re-exports (top-level and prelude) now route through `rag::` — the
+  > flat `rustcode::EmbeddingGenerator` name keeps working for the
+  > prelude consumers. Ten in-tree importers rewritten by script
+  > (`crate::embeddings::*` → `rag::*`): `research/worker.rs`,
+  > `search.rs`, `api/{jobs,handlers,mod}.rs`, `server.rs`,
+  > `indexing.rs`, `repo/sync.rs`, `memory/{mod,store}.rs`. The new
+  > `rag` crate now inherits the same `ort-sys` CDN sandbox restriction
+  > that gates rustcode compile; CI verifies both.
+  >
   > Remaining slices:
-  > - **Slice 2**: move `src/embeddings.rs` into the crate. Pulls in
-  >   `fastembed` → `ort-sys`, which is the same CDN-blocked dep that
-  >   gates rustcode compile in the sandbox. Should still work in CI.
-  >   Many downstream importers (`research/worker`, `api/jobs`,
-  >   `api/handlers`, `api/mod`, `repo/sync`, `memory/store`) will
-  >   rewrite to `use rag::embeddings::*`.
   > - **Slice 3**: extract a `Storage` trait that `src/db/chunks` and
   >   the embedding-store fns implement, then move `src/indexing.rs`
   >   and `src/search.rs` over. This is the gnarly one (DB trait

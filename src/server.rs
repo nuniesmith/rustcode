@@ -221,8 +221,8 @@ pub async fn run_server(config: Config) -> Result<()> {
         .map(|s| !s.eq_ignore_ascii_case("false"))
         .unwrap_or(true);
     let agent_memory: Option<Arc<crate::memory::AgentMemory>> = if memory_injection_enabled {
-        match crate::embeddings::EmbeddingGenerator::new(
-            crate::embeddings::EmbeddingConfig::default(),
+        match rag::EmbeddingGenerator::new(
+            rag::EmbeddingConfig::default(),
         ) {
             Ok(embedder) => {
                 let memory = crate::memory::AgentMemory::new(

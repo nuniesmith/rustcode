@@ -35,7 +35,7 @@
 // # }
 // ```
 
-use crate::embeddings::{Embedding, EmbeddingGenerator};
+use rag::{Embedding, EmbeddingGenerator};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -222,7 +222,7 @@ pub struct SemanticSearcher {
 impl SemanticSearcher {
     // Create a new semantic searcher
     pub async fn new(config: SearchConfig) -> Result<Self> {
-        let embedding_config = crate::embeddings::EmbeddingConfig::default();
+        let embedding_config = rag::EmbeddingConfig::default();
         let embedding_generator = EmbeddingGenerator::new(embedding_config)
             .context("Failed to create embedding generator")?;
 

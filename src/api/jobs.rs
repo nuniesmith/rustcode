@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use crate::embeddings::EmbeddingGenerator;
+use rag::EmbeddingGenerator;
 use crate::indexing::{DocumentIndexer, IndexingConfig};
 use sqlx::PgPool;
 
