@@ -1,0 +1,25 @@
+[package]
+name = "rag"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# RC-EXTRACT-A: semantic indexing pipeline (chunk → embed → store → retrieve).
+# This crate hosts the chunking and vector-store primitives. The embedding
+# generator (`fastembed` / ort-sys backed) and the storage layer remain in
+# rustcode for slice 2 / slice 3, and will move here once their callers and
+# DB-trait boundary are factored out.
+
+[dependencies]
+anyhow.workspace = true
+bincode.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

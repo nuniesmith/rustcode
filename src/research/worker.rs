@@ -7,7 +7,7 @@ use super::{ResearchRequest, WorkerResult, save_worker_result};
 use crate::db::get_all_embeddings;
 use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use crate::llm::GrokClient;
-use crate::vector_index::{IndexConfig, VectorIndex};
+use rag::vector_index::{IndexConfig, VectorIndex};
 use anyhow::Result;
 use futures::future::join_all;
 use sqlx::PgPool;

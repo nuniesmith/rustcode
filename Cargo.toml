@@ -34,6 +34,7 @@ members  = [
     "crates/compat-harness",
     "crates/mock-anthropic-service",
     "crates/plugins",
+    "crates/rag",
     "crates/runtime",
     "crates/rusty-claude-cli",
     "crates/telemetry",
@@ -206,6 +207,7 @@ required-features = ["integration"]
 
 # Internal crates
 api = { path = "crates/api" }
+rag = { path = "crates/rag" }
 
 # All deps inherit versions from [workspace.dependencies] above
 anyhow                             = { workspace = true }

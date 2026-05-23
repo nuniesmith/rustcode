@@ -28,7 +28,6 @@ pub mod audit;
 pub mod auto_scanner;
 pub mod backup;
 pub mod cache;
-pub mod chunking;
 pub mod cli;
 pub mod code_chunker;
 pub mod code_review;
@@ -81,7 +80,6 @@ pub mod todo;
 // RC-CLEANUP-D: `todo_scanner` moved to `crate::todo::legacy_scanner`.
 pub mod tree_state;
 pub mod types;
-pub mod vector_index;
 pub mod webhooks;
 
 pub use api::{
@@ -101,7 +99,7 @@ pub use cache::layer::{
 pub use cache::migrate::{
     CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult,
 };
-pub use chunking::{ChunkConfig, ChunkData, chunk_document};
+pub use rag::{ChunkConfig, ChunkData, chunk_document};
 pub use cli::{
     QueueCommands, ReportCommands, ScanCommands, TaskCommands, handle_queue_command,
     handle_report_command, handle_scan_command, handle_task_command,
@@ -245,7 +243,7 @@ pub use tree_state::{
     TreeState, TreeStateManager, TreeSummaryStats,
 };
 pub use types::*;
-pub use vector_index::{
+pub use rag::vector_index::{
     DistanceMetric, IndexConfig as VectorIndexConfig, SearchResult as VectorSearchResult,
     VectorIndex,
 };
@@ -260,7 +258,7 @@ pub mod prelude {
         ApiConfig, ApiResponse, ApiState, AuthConfig, RateLimitConfig, SearchRequest, SearchType,
         create_api_router, create_default_api_router,
     };
-    pub use crate::chunking::{ChunkConfig, ChunkData, chunk_document};
+    pub use rag::{ChunkConfig, ChunkData, chunk_document};
     pub use crate::code_chunker::{
         ChunkerConfig, ChunkingStats, CodeChunk, CodeChunker, DedupIndex, EntityType,
     };

@@ -1047,7 +1047,7 @@
 > just moves the mess into a new crate boundary.
 > Prerequisite: RC-CLEANUP-A, RC-CLEANUP-B, RC-CLEANUP-C done first.
 
-- [ ] **RC-EXTRACT-A: `crates/rag` — semantic indexing pipeline**
+- [~] **RC-EXTRACT-A: `crates/rag` — semantic indexing pipeline**
   > Candidates: `src/chunking.rs`, `src/code_chunker.rs`, `src/embeddings.rs`,
   > `src/vector_index.rs`, `src/indexing.rs`, `src/search.rs`
   >
@@ -1058,6 +1058,36 @@
   >
   > Once extracted: usable independently by `crates/runtime` (its `summary_compression`
   > does related chunking work) and testable without spinning up the full server.
+  >
+  > **Slice 1 done 2026-05-23 (PR pending).** Created `crates/rag/` with
+  > the two dependency-leaf modules: `chunking.rs` (739 LOC, no `crate::`
+  > deps) and `vector_index.rs` (712 LOC, no `crate::` deps). Cargo.toml
+  > pulls just `anyhow + bincode + rand + serde + serde_json + tracing`
+  > (no fastembed / ort-sys yet — that lives with the deferred slice).
+  > Workspace member added; rustcode depends on `rag = { path = "crates/rag" }`.
+  > Two in-tree importers rewritten: `src/indexing.rs` → `use rag::*`,
+  > `src/research/worker.rs` → `use rag::vector_index::*`. The three
+  > `lib.rs` re-exports (top-level `chunking::*`, top-level `vector_index::*`,
+  > prelude `chunking::*`) now go through `rag::*`, so crate-root names
+  > (`rustcode::ChunkConfig`, `rustcode::VectorIndex`, etc.) keep working
+  > for external consumers. The 17 unit tests previously in
+  > `src/{chunking,vector_index}.rs` ride along into `crates/rag` and all
+  > pass.
+  >
+  > Remaining slices:
+  > - **Slice 2**: move `src/embeddings.rs` into the crate. Pulls in
+  >   `fastembed` → `ort-sys`, which is the same CDN-blocked dep that
+  >   gates rustcode compile in the sandbox. Should still work in CI.
+  >   Many downstream importers (`research/worker`, `api/jobs`,
+  >   `api/handlers`, `api/mod`, `repo/sync`, `memory/store`) will
+  >   rewrite to `use rag::embeddings::*`.
+  > - **Slice 3**: extract a `Storage` trait that `src/db/chunks` and
+  >   the embedding-store fns implement, then move `src/indexing.rs`
+  >   and `src/search.rs` over. This is the gnarly one (DB trait
+  >   design + cascading updates).
+  > - **Slice 4 (optional)**: move `src/code_chunker.rs` once
+  >   `static_analysis::FileLanguage` is either lifted out or
+  >   duplicated.
 
 - [ ] **RC-EXTRACT-B: `crates/code-analysis` — zero-cost pre-filter pipeline**
   > Candidates: `src/static_analysis.rs`, `src/parser.rs`, `src/scoring.rs`,
