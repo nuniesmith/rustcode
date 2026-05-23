@@ -410,7 +410,13 @@
 ### RC-API: Security & Config
 - [ ] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
 - [ ] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
-- [ ] Add `ANTHROPIC_API_KEY`, `RC_PLANNER_MODEL`, `RC_EXECUTOR_MODEL` to `.env.example` and README config table
+- [x] Add `ANTHROPIC_API_KEY`, `RC_PLANNER_MODEL`, `RC_EXECUTOR_MODEL` to `.env.example` and README config table
+  > Already done. Verified 2026-05-23: `.env.example` has
+  > `ANTHROPIC_API_KEY=` (uncommented), `# RC_PLANNER_MODEL=claude-opus-4-7`
+  > and `# RC_EXECUTOR_MODEL=claude-sonnet-4-6` (commented overrides
+  > showing defaults). README.md config table rows 73–75 document all
+  > three with their roles (Recommended / Optional / Optional). No
+  > code change needed.
 
 ### OpenClaw Integration (CLAW-A/B)
 - [ ] Add `DISCORD_BOT_TOKEN` and `OPENCLAW_GATEWAY_TOKEN` to `.env` on deployment target
