@@ -672,12 +672,31 @@
   >   with `SQLX_OFFLINE=true` + `RUSTFLAGS='-A warnings'` env vars
   >   inlined as a shell prefix (same pattern as PRs #34/#36/#40).
   >
-  > Remaining `runtime` integration points still untouched in `src/`:
-  > `ProviderClient`, `worker_boot`. The remaining `Command::new` /
-  > `process::Command` callers in `src/` are: `static_analysis.rs` (4),
-  > `context/global.rs` (3), `agent/tools.rs` (1,
-  > `tokio::process::Command`). The executor pieces gated on
-  > RC-CRATES-C by lines 242 and 356 above are unblocked.
+  > **`src/{static_analysis,context/global,agent/tools}.rs` migrated
+  > 2026-05-21 (PR pending) — `Command::new` rollout in `src/` complete.**
+  > Five subprocess sites:
+  > - `static_analysis::run_clippy` (`cargo clippy --message-format=json
+  >   --all-targets --quiet`) — `async fn`, wrapped in
+  >   `tokio::task::spawn_blocking` since `execute_bash` is sync.
+  > - `static_analysis::check_file_staleness` (`git log -1 --format=%ct
+  >   -- <file>`) — sync, direct call.
+  > - `context::global::build_diff_context` — two `git log --since
+  >   <h>hours --oneline` and `git diff --stat 'HEAD@{<h>hours ago}'`
+  >   calls; the second site quotes the `HEAD@{...}` ref since the
+  >   spaces inside the brace would otherwise split on `sh -lc`.
+  > - `agent::tools::op_run_command` — the agent's user-controlled
+  >   "run arbitrary command" tool. Caller-supplied `command` + `args`
+  >   are shell-quoted into a single `GIT_TERMINAL_PROMPT=0 <cmd> <args>`
+  >   string. Wrapped in `spawn_blocking` like `run_clippy`. The
+  >   `ToolError::CommandFailed { status: i32 }` field is preserved by
+  >   parsing `return_code_interpretation = Some("exit_code:N")` back
+  >   to an int (fall back to -1 on timeout / unparseable strings).
+  >
+  > `Command::new` / `process::Command` callers in `src/`: **none**.
+  > Remaining `runtime` integration points: `ProviderClient`,
+  > `worker_boot` (entry-point wiring, not subprocess migration). The
+  > executor pieces gated on RC-CRATES-C by lines 242 and 356 above are
+  > fully unblocked.
 
 - [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.

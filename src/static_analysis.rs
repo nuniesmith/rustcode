@@ -35,6 +35,7 @@
 // ```
 
 use regex::Regex;
+use runtime::{BashCommandInput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -1362,21 +1363,46 @@ pub struct ClippyWarning {
 // This provides deterministic, zero-cost (no LLM) issue detection for Rust projects.
 // Returns structured warnings that can be used as a pre-filter.
 pub async fn run_clippy(project_path: &Path) -> ClippyResult {
-    use std::process::Command;
+    // `execute_bash` is sync (internally builds its own current-thread
+    // tokio runtime), so we route through `spawn_blocking` to avoid
+    // nesting runtimes. Previously this fn used a sync
+    // `std::process::Command::new("cargo").output()` directly, which
+    // also blocked the runtime — `spawn_blocking` is a small upgrade.
+    let project_path = project_path.to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        execute_bash(BashCommandInput {
+            command: String::from(
+                "cargo clippy --message-format=json --all-targets --quiet",
+            ),
+            timeout: None,
+            description: None,
+            run_in_background: Some(false),
+            dangerously_disable_sandbox: Some(true),
+            namespace_restrictions: None,
+            isolate_network: None,
+            filesystem_mode: None,
+            allowed_mounts: None,
+            cwd: Some(project_path),
+        })
+    })
+    .await;
 
-    let output = Command::new("cargo")
-        .args([
-            "clippy",
-            "--message-format=json",
-            "--all-targets",
-            "--quiet",
-        ])
-        .current_dir(project_path)
-        .output();
+    let output = match output {
+        Ok(Ok(out)) => Ok(out),
+        Ok(Err(e)) => Err(e),
+        Err(join_err) => {
+            return ClippyResult {
+                total_warnings: 0,
+                warnings_by_file: HashMap::new(),
+                success: false,
+                error: Some(format!("clippy join error: {}", join_err)),
+            };
+        }
+    };
 
     match output {
         Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = &output.stdout;
             let mut warnings_by_file: HashMap<String, Vec<ClippyWarning>> = HashMap::new();
             let mut total_warnings = 0usize;
 
@@ -1455,9 +1481,9 @@ pub async fn run_clippy(project_path: &Path) -> ClippyResult {
             ClippyResult {
                 total_warnings,
                 warnings_by_file,
-                success: output.status.success() || total_warnings > 0,
-                error: if !output.status.success() && total_warnings == 0 {
-                    Some(String::from_utf8_lossy(&output.stderr).to_string())
+                success: output.return_code_interpretation.is_none() || total_warnings > 0,
+                error: if output.return_code_interpretation.is_some() && total_warnings == 0 {
+                    Some(output.stderr.clone())
                 } else {
                     None
                 },
@@ -1478,16 +1504,24 @@ pub async fn run_clippy(project_path: &Path) -> ClippyResult {
 
 // Check how recently a file was modified in git
 pub fn check_file_staleness(repo_path: &Path, file_path: &str) -> Option<i64> {
-    use std::process::Command;
-
-    let output = Command::new("git")
-        .args(["log", "-1", "--format=%ct", "--", file_path])
-        .current_dir(repo_path)
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().parse::<i64>().ok()
+    let command = format!(
+        "git log -1 --format=%ct -- {}",
+        shell_quote(file_path),
+    );
+    let output = execute_bash(BashCommandInput {
+        command,
+        timeout: None,
+        description: None,
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(true),
+        namespace_restrictions: None,
+        isolate_network: None,
+        filesystem_mode: None,
+        allowed_mounts: None,
+        cwd: Some(repo_path.to_path_buf()),
+    })
+    .ok()?;
+    output.stdout.trim().parse::<i64>().ok()
 }
 
 // Check how many days since a file was last modified in git
