@@ -32,7 +32,7 @@
 // # }
 // ```
 
-use crate::chunking::{ChunkConfig, chunk_document};
+use rag::{ChunkConfig, chunk_document};
 use crate::db::{create_chunks, get_document, mark_document_indexed, store_embedding};
 use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use anyhow::{Context, Result};
