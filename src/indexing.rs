@@ -34,7 +34,7 @@
 
 use rag::{ChunkConfig, chunk_document};
 use crate::db::{create_chunks, get_document, mark_document_indexed, store_embedding};
-use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

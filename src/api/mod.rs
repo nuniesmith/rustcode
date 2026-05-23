@@ -25,7 +25,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use crate::indexing::IndexingConfig;
 use sqlx::PgPool;
 

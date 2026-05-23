@@ -6,7 +6,7 @@
 // thread `AgentMemory::search` into the planner / executor / reviewer
 // prompts so each new task starts grounded in what we already know.
 //
-// Embeddings come from the existing `crate::embeddings::EmbeddingGenerator`
+// Embeddings come from the existing `rag::EmbeddingGenerator`
 // (a shared `Arc` works fine — the underlying fastembed model is loaded
 // lazily on first use). Schema lives in `sql/023_agent_memory.sql`.
 
