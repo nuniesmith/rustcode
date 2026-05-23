@@ -1089,14 +1089,34 @@
   > `rag` crate now inherits the same `ort-sys` CDN sandbox restriction
   > that gates rustcode compile; CI verifies both.
   >
-  > Remaining slices:
+  > **Slice 4 done 2026-05-23 (PR pending).** Moved the bulk of
+  > `src/code_chunker.rs` (~2,149 LOC of chunking logic) into
+  > `crates/rag/src/code_chunker.rs`, with a 67-line shim left at
+  > `src/code_chunker.rs` that:
+  >   - `pub use rag::code_chunker::*;` to keep historical paths
+  >     (`crate::code_chunker::CodeChunk`, `rustcode::CodeChunker`,
+  >     etc.) and the existing `lib.rs` re-exports working unchanged.
+  >   - Hosts the three `CodeChunk → ChunkRecord` conversion helpers
+  >     (`chunk_to_record`, `chunk_to_location`, `chunks_to_records`),
+  >     which can't live in `rag` because they reference
+  >     `crate::db::chunks::ChunkRecord` — putting them in `rag` would
+  >     force a `rag → rustcode::db` circular dep. The existing comment
+  >     block already noted this constraint.
+  >
+  > Also lifted `FileLanguage` out of `src/static_analysis.rs` into
+  > the new `rag::file_language` module (so both `code_chunker` and
+  > `static_analysis` consume one source of truth). `src/static_analysis.rs`
+  > now does `pub use rag::FileLanguage;` so the historical path
+  > `crate::static_analysis::FileLanguage` keeps working for the one
+  > in-tree caller (`src/prompt_tier.rs`) and any external rustcode users.
+  > Added workspace deps to `rag`: `regex` + `sha2` (needed by the
+  > moved chunker logic).
+  >
+  > Remaining slice:
   > - **Slice 3**: extract a `Storage` trait that `src/db/chunks` and
   >   the embedding-store fns implement, then move `src/indexing.rs`
   >   and `src/search.rs` over. This is the gnarly one (DB trait
   >   design + cascading updates).
-  > - **Slice 4 (optional)**: move `src/code_chunker.rs` once
-  >   `static_analysis::FileLanguage` is either lifted out or
-  >   duplicated.
 
 - [ ] **RC-EXTRACT-B: `crates/code-analysis` — zero-cost pre-filter pipeline**
   > Candidates: `src/static_analysis.rs`, `src/parser.rs`, `src/scoring.rs`,

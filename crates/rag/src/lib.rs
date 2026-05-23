@@ -9,13 +9,16 @@
 // `rustcode::db`.
 
 pub mod chunking;
+pub mod code_chunker;
 pub mod embeddings;
+pub mod file_language;
 pub mod vector_index;
 
 pub use chunking::{ChunkConfig, ChunkData, chunk_document};
 pub use embeddings::{
     Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
 };
+pub use file_language::FileLanguage;
 pub use vector_index::{
     DistanceMetric, IndexConfig, SearchResult, VectorIndex,
 };
