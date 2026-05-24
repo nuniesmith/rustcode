@@ -21,10 +21,10 @@ pub use providers::{
 };
 pub use sse::{SseParser, parse_frame};
 pub use types::{
-    ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
-    InputContentBlock, InputMessage, MessageDelta, MessageDeltaEvent, MessageStartEvent,
-    MessageStopEvent, OutputContentBlock, ResponseFormat, ToolChoice, ToolDefinition,
-    ToolResultContentBlock,
+    CacheControl, ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent,
+    ContentBlockStopEvent, InputContentBlock, InputMessage, MessageDelta, MessageDeltaEvent,
+    MessageStartEvent, MessageStopEvent, OutputContentBlock, ResponseFormat, SystemBlock,
+    ToolChoice, ToolDefinition, ToolResultContentBlock,
 };
 
 pub use crate::types::{MessageRequest, MessageResponse, StreamEvent, Usage};

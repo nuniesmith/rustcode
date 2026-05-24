@@ -714,7 +714,7 @@ mod tests {
             model: "claude-3-7-sonnet-latest".to_string(),
             max_tokens: 64,
             messages: vec![InputMessage::user_text(text)],
-            system: Some("system".to_string()),
+            system: Some(vec!["system".into()]),
             tools: None,
             tool_choice: None,
             temperature: None,

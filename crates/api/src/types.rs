@@ -8,7 +8,7 @@ pub struct MessageRequest {
     pub max_tokens: u32,
     pub messages: Vec<InputMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub system: Option<String>,
+    pub system: Option<Vec<SystemBlock>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolDefinition>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,6 +39,23 @@ impl MessageRequest {
         self.response_format = Some(format);
         self
     }
+
+    /// Replace the system prompt with a single uncached text block.
+    #[must_use]
+    pub fn with_system_text(mut self, text: impl Into<String>) -> Self {
+        self.system = Some(vec![SystemBlock::text(text)]);
+        self
+    }
+
+    /// Replace the system prompt with a single text block marked
+    /// `cache_control: { type: "ephemeral" }`. The Anthropic API only
+    /// honours the marker when the block is ≥ 1024 tokens
+    /// (≥ 2048 for Haiku); shorter content is sent but not cached.
+    #[must_use]
+    pub fn with_cached_system_text(mut self, text: impl Into<String>) -> Self {
+        self.system = Some(vec![SystemBlock::cached_text(text)]);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,7 +69,10 @@ impl InputMessage {
     pub fn user_text(text: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
-            content: vec![InputContentBlock::Text { text: text.into() }],
+            content: vec![InputContentBlock::Text {
+                text: text.into(),
+                cache_control: None,
+            }],
         }
     }
 
@@ -80,6 +100,8 @@ impl InputMessage {
 pub enum InputContentBlock {
     Text {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     ToolUse {
         id: String,
@@ -92,6 +114,75 @@ pub enum InputContentBlock {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         is_error: bool,
     },
+}
+
+/// Anthropic prompt-cache marker. Attach to a `SystemBlock` or
+/// `InputContentBlock::Text` to opt that block into the prompt cache.
+///
+/// Anthropic currently defines a single variant, `ephemeral`, which keeps the
+/// cached prefix alive for ~5 minutes of inactivity. The block must be at
+/// least 1024 tokens (2048 for Haiku) for the marker to take effect; shorter
+/// blocks are still sent but bypass the cache.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+impl CacheControl {
+    #[must_use]
+    pub fn ephemeral() -> Self {
+        Self {
+            kind: "ephemeral".to_string(),
+        }
+    }
+}
+
+/// A single block inside the Anthropic `system` field. The wire format
+/// expects an array of `{ type: "text", text, cache_control? }` entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemBlock {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
+}
+
+impl SystemBlock {
+    /// Build an uncached `{ type: "text", text }` block.
+    #[must_use]
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            kind: "text".to_string(),
+            text: text.into(),
+            cache_control: None,
+        }
+    }
+
+    /// Build a `{ type: "text", text, cache_control: { type: "ephemeral" } }`
+    /// block. The marker is only honoured by Anthropic when the block is
+    /// large enough (≥ 1024 tokens for Sonnet/Opus, ≥ 2048 for Haiku).
+    #[must_use]
+    pub fn cached_text(text: impl Into<String>) -> Self {
+        Self {
+            kind: "text".to_string(),
+            text: text.into(),
+            cache_control: Some(CacheControl::ephemeral()),
+        }
+    }
+}
+
+impl From<String> for SystemBlock {
+    fn from(value: String) -> Self {
+        Self::text(value)
+    }
+}
+
+impl From<&str> for SystemBlock {
+    fn from(value: &str) -> Self {
+        Self::text(value.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -341,6 +432,68 @@ mod tests {
 
         let json_some: Value = serde_json::to_value(&request).unwrap();
         assert_eq!(json_some.get("temperature").and_then(Value::as_f64), Some(0.0));
+    }
+
+    #[test]
+    fn cached_system_text_serializes_with_cache_control_marker() {
+        use super::{InputContentBlock, SystemBlock};
+
+        let request = MessageRequest {
+            model: "claude-sonnet-4-6".to_string(),
+            max_tokens: 32,
+            messages: vec![InputMessage::user_text("hi")],
+            system: Some(vec![SystemBlock::cached_text("you are a helpful assistant")]),
+            tools: None,
+            tool_choice: None,
+            temperature: None,
+            response_format: None,
+            stream: false,
+        };
+
+        let body: Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            body["system"],
+            serde_json::json!([{
+                "type": "text",
+                "text": "you are a helpful assistant",
+                "cache_control": { "type": "ephemeral" }
+            }]),
+            "got: {body}"
+        );
+
+        // Uncached text blocks must omit cache_control entirely.
+        let plain = InputContentBlock::Text {
+            text: "hello".to_string(),
+            cache_control: None,
+        };
+        let plain_json = serde_json::to_value(&plain).unwrap();
+        assert!(
+            plain_json.get("cache_control").is_none(),
+            "got: {plain_json}"
+        );
+    }
+
+    #[test]
+    fn system_text_helper_round_trips_through_with_system_text() {
+        use super::SystemBlock;
+
+        let request = MessageRequest {
+            model: "claude-sonnet-4-6".to_string(),
+            max_tokens: 32,
+            messages: vec![InputMessage::user_text("hi")],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            temperature: None,
+            response_format: None,
+            stream: false,
+        }
+        .with_system_text("base instructions");
+
+        assert_eq!(
+            request.system.as_deref(),
+            Some([SystemBlock::text("base instructions")].as_slice())
+        );
     }
 
     #[test]

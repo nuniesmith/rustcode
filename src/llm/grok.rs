@@ -59,7 +59,7 @@ impl GrokAnalyzer {
             model: model.to_string(),
             max_tokens: 2048,
             messages: vec![InputMessage::user_text(user_prompt.to_string())],
-            system: Some(system_prompt.to_string()),
+            system: Some(vec![system_prompt.into()]),
             tools: None,
             tool_choice: None,
             temperature: None,

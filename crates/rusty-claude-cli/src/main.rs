@@ -4544,7 +4544,8 @@ impl ApiClient for AnthropicRuntimeClient {
             model: self.model.clone(),
             max_tokens: max_tokens_for_model(&self.model),
             messages: convert_messages(&request.messages),
-            system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
+            system: (!request.system_prompt.is_empty())
+                .then(|| vec![request.system_prompt.join("\n\n").into()]),
             tools: self
                 .enable_tools
                 .then(|| filter_tool_specs(&self.tool_registry, self.allowed_tools.as_ref())),
@@ -5498,7 +5499,10 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
                 .blocks
                 .iter()
                 .map(|block| match block {
-                    ContentBlock::Text { text } => InputContentBlock::Text { text: text.clone() },
+                    ContentBlock::Text { text } => InputContentBlock::Text {
+                        text: text.clone(),
+                        cache_control: None,
+                    },
                     ContentBlock::ToolUse { id, name, input } => InputContentBlock::ToolUse {
                         id: id.clone(),
                         name: name.clone(),
