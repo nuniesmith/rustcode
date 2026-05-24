@@ -135,7 +135,7 @@ use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{
     AnthropicClient, InputMessage, MessageRequest, MessageResponse,
-    OutputContentBlock as AnthropicContentBlock, PromptCache,
+    OutputContentBlock as AnthropicContentBlock, PromptCache, SystemBlock,
 };
 
 // ---------------------------------------------------------------------------
@@ -776,7 +776,7 @@ async fn handle_streaming(
                     model: model.clone(),
                     max_tokens,
                     messages: vec![InputMessage::user_text(prompt)],
-                    system,
+                    system: build_system_blocks(system.as_deref()),
                     tools: None,
                     tool_choice: None,
                     temperature: None,
@@ -1464,7 +1464,7 @@ async fn dispatch_claude(
         model: model.to_string(),
         max_tokens: req.max_tokens,
         messages: vec![InputMessage::user_text(user_prompt)],
-        system: req.system_prompt.clone(),
+        system: build_system_blocks(req.system_prompt.as_deref()),
         tools: None,
         tool_choice: None,
         temperature: None,
@@ -1503,6 +1503,32 @@ async fn dispatch_claude(
             DispatchOutcome::error(format!("Claude error: {}", e), model.to_string())
         }
     }
+}
+
+// Anthropic prompt-cache marker is only honoured when the cached block is at
+// least 1024 tokens (Sonnet/Opus). The proxy can't tokenise without an extra
+// dependency, so we use a 4-chars-per-token heuristic — the same approximation
+// the cost estimator already uses — and skip the marker on prompts that won't
+// clear the threshold.
+const PROMPT_CACHE_MIN_TOKENS: usize = 1024;
+const PROMPT_CACHE_CHAR_PER_TOKEN: usize = 4;
+const PROMPT_CACHE_MIN_CHARS: usize = PROMPT_CACHE_MIN_TOKENS * PROMPT_CACHE_CHAR_PER_TOKEN;
+
+// Build the Anthropic `system` field for a Claude dispatch. Returns `None`
+// when the caller had no system prompt. Otherwise emits a single `text`
+// block, marked `cache_control: { type: "ephemeral" }` once the prompt is
+// long enough to clear Anthropic's minimum cacheable size.
+fn build_system_blocks(system_prompt: Option<&str>) -> Option<Vec<SystemBlock>> {
+    let text = system_prompt?;
+    if text.is_empty() {
+        return None;
+    }
+    let block = if text.len() >= PROMPT_CACHE_MIN_CHARS {
+        SystemBlock::cached_text(text)
+    } else {
+        SystemBlock::text(text)
+    };
+    Some(vec![block])
 }
 
 // Concatenate all Text content blocks from a Claude response into a single string.
@@ -1739,5 +1765,33 @@ mod tests {
     #[test]
     fn unix_now_is_positive() {
         assert!(unix_now() > 0);
+    }
+
+    #[test]
+    fn build_system_blocks_returns_none_for_missing_or_empty_prompt() {
+        assert!(build_system_blocks(None).is_none());
+        assert!(build_system_blocks(Some("")).is_none());
+    }
+
+    #[test]
+    fn build_system_blocks_skips_cache_marker_below_threshold() {
+        let small = "small system prompt";
+        let blocks = build_system_blocks(Some(small)).expect("should emit a block");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, small);
+        assert!(blocks[0].cache_control.is_none());
+    }
+
+    #[test]
+    fn build_system_blocks_marks_long_prompt_as_ephemeral() {
+        // The 4-chars-per-token heuristic puts the threshold at 4096 chars.
+        let large = "x".repeat(PROMPT_CACHE_MIN_CHARS);
+        let blocks = build_system_blocks(Some(&large)).expect("should emit a block");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].cache_control.as_ref().map(|c| c.kind.as_str()),
+            Some("ephemeral"),
+            "expected ephemeral cache marker on long system prompt"
+        );
     }
 }

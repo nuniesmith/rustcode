@@ -420,7 +420,7 @@ impl AgentPipeline {
             model: self.planner_model.clone(),
             max_tokens: PLANNER_MAX_TOKENS,
             messages: vec![InputMessage::user_text(user)],
-            system: Some(system),
+            system: Some(vec![system.into()]),
             tools: None,
             tool_choice: None,
             temperature: None,
@@ -535,7 +535,7 @@ impl AgentPipeline {
             model: self.executor_model.clone(),
             max_tokens: EXECUTOR_MAX_TOKENS,
             messages: vec![InputMessage::user_text(user)],
-            system: Some(EXECUTOR_SYSTEM_PROMPT.to_string()),
+            system: Some(vec![EXECUTOR_SYSTEM_PROMPT.into()]),
             tools: None,
             tool_choice: None,
             temperature: None,
@@ -588,7 +588,7 @@ impl AgentPipeline {
                 model: self.executor_model.clone(),
                 max_tokens: EXECUTOR_MAX_TOKENS,
                 messages: messages.clone(),
-                system: Some(EXECUTOR_SYSTEM_PROMPT.to_string()),
+                system: Some(vec![EXECUTOR_SYSTEM_PROMPT.into()]),
                 tools: Some(tool_defs.clone()),
                 tool_choice: None,
                 temperature: None,
@@ -612,7 +612,10 @@ impl AgentPipeline {
                 match block {
                     OutputContentBlock::Text { text } => {
                         accumulated_text.push_str(text);
-                        assistant_blocks.push(InputContentBlock::Text { text: text.clone() });
+                        assistant_blocks.push(InputContentBlock::Text {
+                            text: text.clone(),
+                            cache_control: None,
+                        });
                     }
                     OutputContentBlock::ToolUse { id, name, input } => {
                         tool_uses.push((id.clone(), name.clone(), input.clone()));
@@ -733,7 +736,7 @@ impl AgentPipeline {
             model: self.planner_model.clone(),
             max_tokens: REVIEWER_MAX_TOKENS,
             messages: vec![InputMessage::user_text(user)],
-            system: Some(REVIEWER_SYSTEM_PROMPT.to_string()),
+            system: Some(vec![REVIEWER_SYSTEM_PROMPT.into()]),
             tools: None,
             tool_choice: None,
             temperature: None,
@@ -805,7 +808,7 @@ impl AgentPipeline {
             model: self.executor_model.clone(),
             max_tokens: CONSOLIDATION_MAX_TOKENS,
             messages: vec![InputMessage::user_text(user)],
-            system: Some(CONSOLIDATION_SYSTEM_PROMPT.to_string()),
+            system: Some(vec![CONSOLIDATION_SYSTEM_PROMPT.into()]),
             tools: None,
             tool_choice: None,
             temperature: None,

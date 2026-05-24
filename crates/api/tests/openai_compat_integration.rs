@@ -446,9 +446,10 @@ fn sample_request(stream: bool) -> MessageRequest {
             role: "user".to_string(),
             content: vec![InputContentBlock::Text {
                 text: "Say hello".to_string(),
+                cache_control: None,
             }],
         }],
-        system: Some("Use tools when needed".to_string()),
+        system: Some(vec!["Use tools when needed".into()]),
         tools: Some(vec![ToolDefinition {
             name: "weather".to_string(),
             description: Some("Fetches weather".to_string()),

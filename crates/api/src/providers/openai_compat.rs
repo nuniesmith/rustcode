@@ -9,7 +9,7 @@ use crate::types::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
     InputContentBlock, InputMessage, MessageDelta, MessageDeltaEvent, MessageRequest,
     MessageResponse, MessageStartEvent, MessageStopEvent, OutputContentBlock, StreamEvent,
-    ToolChoice, ToolDefinition, ToolResultContentBlock, Usage,
+    SystemBlock, ToolChoice, ToolDefinition, ToolResultContentBlock, Usage,
 };
 
 use super::{Provider, ProviderFuture};
@@ -638,12 +638,32 @@ struct ErrorBody {
     message: Option<String>,
 }
 
+/// Concatenate Anthropic-shaped `system` blocks back into a single string for
+/// OpenAI-compatible providers. Returns `None` when there are no blocks or
+/// every block has empty text — that keeps the `system` chat message out of
+/// the payload entirely, matching the previous `Option<String>` behaviour.
+/// `cache_control` markers are silently dropped: OpenAI/xAI have no equivalent.
+fn flatten_system_blocks(blocks: Option<&[SystemBlock]>) -> Option<String> {
+    let blocks = blocks?;
+    let joined: String = blocks
+        .iter()
+        .map(|block| block.text.as_str())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
 fn build_chat_completion_request(request: &MessageRequest, config: OpenAiCompatConfig) -> Value {
     let mut messages = Vec::new();
-    if let Some(system) = request.system.as_ref().filter(|value| !value.is_empty()) {
+    if let Some(system_text) = flatten_system_blocks(request.system.as_deref()) {
         messages.push(json!({
             "role": "system",
-            "content": system,
+            "content": system_text,
         }));
     }
     for message in &request.messages {
@@ -687,7 +707,7 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
             let mut tool_calls = Vec::new();
             for block in &message.content {
                 match block {
-                    InputContentBlock::Text { text: value } => text.push_str(value),
+                    InputContentBlock::Text { text: value, .. } => text.push_str(value),
                     InputContentBlock::ToolUse { id, name, input } => tool_calls.push(json!({
                         "id": id,
                         "type": "function",
@@ -713,7 +733,7 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
             .content
             .iter()
             .filter_map(|block| match block {
-                InputContentBlock::Text { text } => Some(json!({
+                InputContentBlock::Text { text, .. } => Some(json!({
                     "role": "user",
                     "content": text,
                 })),
@@ -956,9 +976,10 @@ impl StringExt for String {
 mod tests {
     use super::{
         OpenAiCompatClient, OpenAiCompatConfig, build_chat_completion_request,
-        chat_completions_endpoint, normalize_finish_reason, openai_tool_choice,
-        parse_tool_arguments,
+        chat_completions_endpoint, flatten_system_blocks, normalize_finish_reason,
+        openai_tool_choice, parse_tool_arguments,
     };
+    use crate::types::{CacheControl, SystemBlock};
     use crate::error::ApiError;
     use crate::types::{
         InputContentBlock, InputMessage, MessageRequest, ToolChoice, ToolDefinition,
@@ -978,6 +999,7 @@ mod tests {
                     content: vec![
                         InputContentBlock::Text {
                             text: "hello".to_string(),
+                            cache_control: None,
                         },
                         InputContentBlock::ToolResult {
                             tool_use_id: "tool_1".to_string(),
@@ -988,7 +1010,7 @@ mod tests {
                         },
                     ],
                 }],
-                system: Some("be helpful".to_string()),
+                system: Some(vec!["be helpful".into()]),
                 tools: Some(vec![ToolDefinition {
                     name: "weather".to_string(),
                     description: Some("Get weather".to_string()),
@@ -1190,5 +1212,30 @@ mod tests {
     fn normalizes_stop_reasons() {
         assert_eq!(normalize_finish_reason("stop"), "end_turn");
         assert_eq!(normalize_finish_reason("tool_calls"), "tool_use");
+    }
+
+    #[test]
+    fn flatten_system_blocks_joins_text_and_drops_cache_markers() {
+        // Multiple blocks are concatenated with a blank line; cache_control is
+        // dropped (OpenAI/xAI don't have an equivalent).
+        let blocks = vec![
+            SystemBlock {
+                kind: "text".to_string(),
+                text: "instructions".to_string(),
+                cache_control: Some(CacheControl::ephemeral()),
+            },
+            SystemBlock::text("addendum"),
+        ];
+        assert_eq!(
+            flatten_system_blocks(Some(&blocks)),
+            Some("instructions\n\naddendum".to_string())
+        );
+
+        // Empty input collapses to None so the system message is omitted.
+        assert_eq!(flatten_system_blocks(None), None);
+        assert_eq!(
+            flatten_system_blocks(Some(&[SystemBlock::text("")])),
+            None
+        );
     }
 }

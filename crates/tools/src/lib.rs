@@ -3462,7 +3462,8 @@ impl ApiClient for ProviderRuntimeClient {
             model: self.model.clone(),
             max_tokens: max_tokens_for_model(&self.model),
             messages: convert_messages(&request.messages),
-            system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
+            system: (!request.system_prompt.is_empty())
+                .then(|| vec![request.system_prompt.join("\n\n").into()]),
             tools: (!tools.is_empty()).then_some(tools),
             tool_choice: (!self.allowed_tools.is_empty()).then_some(ToolChoice::Auto),
             temperature: None,
@@ -3616,7 +3617,10 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
                 .blocks
                 .iter()
                 .map(|block| match block {
-                    ContentBlock::Text { text } => InputContentBlock::Text { text: text.clone() },
+                    ContentBlock::Text { text } => InputContentBlock::Text {
+                        text: text.clone(),
+                        cache_control: None,
+                    },
                     ContentBlock::ToolUse { id, name, input } => InputContentBlock::ToolUse {
                         id: id.clone(),
                         name: name.clone(),

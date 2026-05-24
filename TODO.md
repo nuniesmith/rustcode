@@ -47,6 +47,21 @@
   > `cache_read_input_tokens` (skip-serialized when `None`), populated from
   > `MessageResponse::usage`. `CachedProxyResponse` round-trips both fields so
   > cache hits also reflect actual savings.
+  >
+  > **Wire-protocol follow-up done 2026-05-24.** The 2026-05-17 work only
+  > attached the observability side (the `PromptCache` instance tracks cache
+  > token counts surfaced by Anthropic). The actual `cache_control` markers
+  > that *opt request blocks into* the cache were never emitted, so
+  > `cache_read_input_tokens` was permanently zero. Fixed in
+  > `crates/api/src/types.rs` (`SystemBlock`, `CacheControl`, `cache_control`
+  > field on `InputContentBlock::Text`; `system: Option<String>` widened to
+  > `Option<Vec<SystemBlock>>` to carry the marker) and
+  > `src/api/proxy.rs::dispatch_claude` (system prompt gets
+  > `cache_control: { type: "ephemeral" }` when it clears the 1024-token
+  > minimum, estimated via a 4-chars-per-token heuristic so we don't waste a
+  > cache slot on short prompts that wouldn't qualify). The
+  > `prompt-caching-scope-2026-01-05` beta header was already in the default
+  > `AnthropicRequestProfile`, so no header change was needed.
   > Outstanding: streaming path does not yet surface cache token counts (would
   > require plumbing usage observation through `StreamChunk`).
 

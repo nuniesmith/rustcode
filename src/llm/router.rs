@@ -250,7 +250,7 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             model: self.config.local_model.clone(),
             max_tokens: 16,
             messages: vec![InputMessage::user_text(classify_prompt)],
-            system: Some(CLASSIFY_SYSTEM.to_string()),
+            system: Some(vec![CLASSIFY_SYSTEM.into()]),
             tools: None,
             tool_choice: None,
             // Deterministic classification — restored after the

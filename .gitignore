@@ -94,6 +94,17 @@ criterion/
 # .sqlx/
 
 # ---------------------------------------------------------------------------
+# Claude Code / claw harness scratch
+# ---------------------------------------------------------------------------
+# Per-checkout agent traces and local permission overrides written by the
+# Claude Code harness. These are session-local — never push them.
+.clawd-agents/
+.claw/
+**/.claw/
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# ---------------------------------------------------------------------------
 # Docker
 # ---------------------------------------------------------------------------
 .dockerignore
