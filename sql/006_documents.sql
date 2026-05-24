@@ -14,7 +14,6 @@
 -- Documents Table
 -- ============================================================================
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS documents (
     id           TEXT    PRIMARY KEY,

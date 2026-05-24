@@ -25,8 +25,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::cache::layer::{CacheConfig, CacheLayer};
-use crate::llm::router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::llm::ollama::OllamaClient;
+use crate::llm::router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::repo::sync::{RegisteredRepo, RepoSyncService, SyncResult};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
@@ -523,6 +523,22 @@ async fn dispatch_completion(
                 }
             }
         }
+
+        // Claude routing is owned by `src/api/proxy.rs::dispatch_claude` — the
+        // legacy `/api/v1/chat` endpoint that lands here predates Claude
+        // support, so we degrade gracefully instead of panicking.
+        ModelTarget::Claude { model, tier } => {
+            warn!(
+                model = %model, tier = %tier,
+                "repos.rs::dispatch_completion: Claude target is not supported on the legacy /api/v1/chat path; use /v1/chat/completions instead"
+            );
+            let err_reply = format!(
+                "// ERROR: Claude routing is not available on this endpoint. \
+                 Use POST /v1/chat/completions with model=\"{}\" instead.",
+                model
+            );
+            (err_reply, model.clone(), false, None)
+        }
     }
 }
 
@@ -537,6 +553,7 @@ fn build_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&str>) ->
     let target_label = match target {
         ModelTarget::Local { model, .. } => format!("local:{}", model),
         ModelTarget::Remote { model, .. } => format!("remote:{}", model),
+        ModelTarget::Claude { model, tier } => format!("claude:{}:{}", tier, model),
     };
 
     let mut hasher = Sha256::new();

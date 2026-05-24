@@ -22,7 +22,6 @@
 --           CASCADE drops anything that depends on these views too.
 -- ============================================================================
 
-\connect rustcode
 
 DROP VIEW IF EXISTS document_repo_summary   CASCADE;
 DROP VIEW IF EXISTS recent_documents        CASCADE;

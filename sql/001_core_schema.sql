@@ -6,7 +6,6 @@
 -- Core Task Table
 -- ============================================================================
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY NOT NULL,

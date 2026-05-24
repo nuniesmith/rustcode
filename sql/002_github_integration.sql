@@ -8,7 +8,6 @@
 -- ============================================================================
 -- Repositories Table
 -- ============================================================================
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS github_repositories (
     id BIGINT PRIMARY KEY,

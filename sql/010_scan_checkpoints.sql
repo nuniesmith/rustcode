@@ -4,7 +4,6 @@
 --   - REAL → DOUBLE PRECISION for cumulative_cost
 --   - INTEGER for updated_at → BIGINT (Unix epoch seconds)
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS scan_checkpoints (
     repo_id                TEXT             NOT NULL,

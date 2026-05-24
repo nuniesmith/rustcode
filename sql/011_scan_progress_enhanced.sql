@@ -7,7 +7,6 @@
 --   - ADD COLUMN IF NOT EXISTS (Postgres 9.6+ supports this)
 
 -- Timestamp when the current scan started (unix epoch seconds), used for ETA calculation
-\connect rustcode
 
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS scan_started_at BIGINT;
 

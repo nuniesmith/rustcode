@@ -1,7 +1,6 @@
 -- Migration: 021_audit_runs.sql
 -- Full audit runs — persists per-repo audit jobs with live progress + final JSON report
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS audit_runs (
     id TEXT PRIMARY KEY NOT NULL,

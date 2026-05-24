@@ -6,7 +6,6 @@
 -- Add default git_url for existing repositories without one
 -- ============================================================================
 
-\connect rustcode
 
 UPDATE repositories
 SET url = 'https://github.com/unknown/repo.git'

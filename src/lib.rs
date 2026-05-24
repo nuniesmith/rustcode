@@ -32,8 +32,10 @@ pub mod cli;
 pub mod code_chunker;
 pub mod code_review;
 pub mod config;
-pub mod context_llm;
-pub mod context_rag;
+// RC-CLEANUP-E: `context_llm` and `context_rag` consolidated under `crate::context::*`
+// (`crate::context::global` and `crate::context::rag`). Top-level re-exports below
+// preserve `rustcode::{ContextBuilder, GlobalContextBundle, ...}` for external callers.
+pub mod context;
 pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
@@ -91,14 +93,11 @@ pub use api::{
 // RC-CLEANUP-B: cache modules consolidated under `crate::cache::*`.
 // Top-level re-exports preserved so external callers using
 // `rustcode::CacheLayer`, `rustcode::ResponseCache`, etc. keep working.
-pub use cache::{AuditCache, CacheEntry, CacheStats};
 pub use cache::layer::{
     CacheConfig as CacheLayerConfig, CacheKey, CacheLayer, CacheStats as CacheLayerStats,
 };
-pub use cache::migrate::{
-    CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult,
-};
-pub use rag::{ChunkConfig, ChunkData, chunk_document};
+pub use cache::migrate::{CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult};
+pub use cache::{AuditCache, CacheEntry, CacheStats};
 pub use cli::{
     QueueCommands, ReportCommands, ScanCommands, TaskCommands, handle_queue_command,
     handle_report_command, handle_scan_command, handle_task_command,
@@ -111,12 +110,8 @@ pub use code_review::{
     CodeReview, CodeReviewer, FileReview, IssueSeverity, ReviewIssue, ReviewStats,
 };
 pub use config::Config;
-pub use context_llm::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
-pub use context_rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
-pub use llm::usage::costs::{
-    BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
-    TokenUsage,
-};
+pub use context::global::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
+pub use context::rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
 pub use db::{
     DbError, DbResult, DbStats, Note, Repository, Task, add_repository, create_note, create_task,
     delete_note, get_next_task, get_note, get_repository, get_repository_by_path, get_stats,
@@ -125,22 +120,28 @@ pub use db::{
 };
 pub use directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
 pub use doc_generator::{DocGenerator, FunctionDoc, ModuleDoc, ParameterDoc, ReadmeContent};
-pub use rag::{
-    Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
+pub use llm::usage::costs::{
+    BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
+    TokenUsage,
 };
+pub use rag::{ChunkConfig, ChunkData, chunk_document};
+pub use rag::{Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats};
 // Re-exported from the new location (`crate::scanner::enhanced`) so
 // `rustcode::EnhancedScanner` remains a valid external import.
-pub use scanner::EnhancedScanner;
 pub use error::{AuditError, Result};
 pub use formatter::{BatchFormatResult, CodeFormatter, FormatMode, FormatResult, Formatter};
 pub use git::GitManager;
+pub use indexing::{
+    BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult, IndexingStage,
+};
+pub use llm::config::{
+    CacheConfig, FileSelectionConfig, LLM_CONFIG_FILE, LimitsConfig, LlmConfig, ProviderConfig,
+    claude_models,
+};
 pub use llm::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
 pub use llm::grok_reasoning::{
     BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult, FileBatch, FileForAnalysis,
     GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig, analyze_all_batches,
-};
-pub use indexing::{
-    BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult, IndexingStage,
 };
 pub use llm::{
     GrokAnalyzer, ProjectPhase, ProjectPlan, StandardizationIssue, StandardizationReport,
@@ -150,10 +151,6 @@ pub use llm_audit::{
     ArchitectureInsights, AuditMode, FileAnalysis, FileLlmAnalysis, FileRelationships,
     FullAuditResult, LlmAuditor, MasterReview, Recommendation, RegularAuditResult, SecurityConcern,
     TechDebtArea,
-};
-pub use llm::config::{
-    CacheConfig, FileSelectionConfig, LLM_CONFIG_FILE, LimitsConfig, LlmConfig, ProviderConfig,
-    claude_models,
 };
 pub use query_router::{Action, QueryIntent, QueryRouter, RoutingStats, UserContext};
 pub use query_templates::{QueryTemplate, TemplateCategory, TemplateRegistry};
@@ -168,34 +165,33 @@ pub use refactor_assistant::{
     RefactoringAnalysis, RefactoringExample, RefactoringPlan, RefactoringPriority,
     RefactoringSuggestion, RefactoringType, Risk, SmellSeverity,
 };
+pub use scanner::EnhancedScanner;
 // Top-level re-exports routed through the consolidated `crate::repo::*`.
 // External callers using `rustcode::{RepoAnalyzer, RepoCache, RepoCacheSql, ...}`
 // keep working.
 pub use repo::analysis::{
     FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
 };
-pub use repo::file_cache::{
-    CacheSetParams, CacheStats as RepoCacheStats, CacheStrategy, CacheType, RepoCache,
-    RepoCacheEntry,
-};
 pub use repo::cache::{
     CacheEntry as RepoCacheEntrySql, CacheStats as RepoCacheStatsSql, CacheTypeStats,
     EvictionPolicy, ModelStats, RepoCacheSql,
 };
+pub use repo::file_cache::{
+    CacheSetParams, CacheStats as RepoCacheStats, CacheStrategy, CacheType, RepoCache,
+    RepoCacheEntry,
+};
 
+pub use cache::responses::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use metrics::{
     Counter, Gauge, Histogram, HistogramSummary, MetricsRegistry, MetricsStats, RequestTimer,
     global_registry, track_cache_hit, track_cache_miss, track_indexing_job, track_request,
     track_search,
 };
 pub use multi_tenant::{QuotaType, Tenant, TenantManager, TenantQuota, TenantUsage, UsageMetric};
-pub use prompt_tier::{
-    PromptRouter, PromptRouterConfig, PromptRoutingStats, PromptTier, TierKind,
-};
+pub use prompt_tier::{PromptRouter, PromptRouterConfig, PromptRoutingStats, PromptTier, TierKind};
 pub use query_analytics::{
     AnalyticsConfig, AnalyticsStats, QueryAnalytics, QueryPattern, SearchAnalytics,
 };
-pub use cache::responses::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
     DetectedTodo, GitHubRepo, ScanResult, Scanner, TreeNode as ScannerTreeNode, build_dir_tree,
     fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree, save_file_analysis,
@@ -233,19 +229,19 @@ pub use tests_runner::{TestResults, TestRunner};
 // Re-exported from `crate::todo::legacy_scanner` (was `crate::todo_scanner`
 // before RC-CLEANUP-D). Top-level public API is unchanged for external
 // callers using `rustcode::{TodoItem, TodoPriority, TodoScanner, TodoSummary}`.
-pub use todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
 pub use llm::usage::budget::{
     BudgetConfig, ModelTokenStats, MonthlyTracker, TokenPricing, TokenStats,
 };
+pub use rag::vector_index::{
+    DistanceMetric, IndexConfig as VectorIndexConfig, SearchResult as VectorSearchResult,
+    VectorIndex,
+};
+pub use todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
 pub use tree_state::{
     CategoryChangeSummary, ChangeType, DiffSummary, FileCategory, FileChange, FileState, TreeDiff,
     TreeState, TreeStateManager, TreeSummaryStats,
 };
 pub use types::*;
-pub use rag::vector_index::{
-    DistanceMetric, IndexConfig as VectorIndexConfig, SearchResult as VectorSearchResult,
-    VectorIndex,
-};
 pub use webhooks::{
     DeliveryStatus, WebhookConfig, WebhookDelivery, WebhookEndpoint, WebhookEvent, WebhookManager,
     WebhookPayload,
@@ -257,17 +253,15 @@ pub mod prelude {
         ApiConfig, ApiResponse, ApiState, AuthConfig, RateLimitConfig, SearchRequest, SearchType,
         create_api_router, create_default_api_router,
     };
-    pub use rag::{ChunkConfig, ChunkData, chunk_document};
+    pub use crate::cache::responses::{
+        CacheStats as ResponseCacheStats, CachedResponse, ResponseCache,
+    };
     pub use crate::code_chunker::{
         ChunkerConfig, ChunkingStats, CodeChunk, CodeChunker, DedupIndex, EntityType,
     };
     pub use crate::config::Config;
     pub use crate::context::global::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
     pub use crate::context::rag::{Context, ContextBuilder, ContextFile, QueryBuilder};
-    pub use crate::llm::usage::costs::{
-        BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
-        TokenUsage,
-    };
     pub use crate::db::{
         DbError, DbResult, DbStats, Note, Repository, Task, add_repository, create_note,
         create_task, delete_note, get_next_task, get_note, get_repository, get_repository_by_path,
@@ -275,21 +269,21 @@ pub mod prelude {
         search_notes, update_note_status, update_repository_analysis, update_task_status,
     };
     pub use crate::directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
-    pub use rag::{
-        Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
-    };
-    pub use crate::scanner::enhanced::EnhancedScanner;
     pub use crate::error::{AuditError, Result};
     pub use crate::git::GitManager;
+    pub use crate::indexing::{
+        BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult,
+        IndexingStage,
+    };
     pub use crate::llm::grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
     pub use crate::llm::grok_reasoning::{
         BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult, FileBatch,
         FileForAnalysis, GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig,
         analyze_all_batches,
     };
-    pub use crate::indexing::{
-        BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult,
-        IndexingStage,
+    pub use crate::llm::usage::costs::{
+        BudgetStatus, CostStats, CostTracker, OperationCost, SavingsReport, StaticDecisionRecord,
+        TokenUsage,
     };
     pub use crate::llm::{
         GrokAnalyzer, ProjectPhase, ProjectPlan, StandardizationIssue, StandardizationReport,
@@ -309,9 +303,7 @@ pub mod prelude {
     pub use crate::repo::file_cache::{
         CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry,
     };
-    pub use crate::cache::responses::{
-        CacheStats as ResponseCacheStats, CachedResponse, ResponseCache,
-    };
+    pub use crate::scanner::enhanced::EnhancedScanner;
     pub use crate::scanner::{
         DetectedTodo, GitHubRepo, ScanResult, Scanner, TreeNode as ScannerTreeNode, build_dir_tree,
         fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree, save_file_analysis,
@@ -321,7 +313,12 @@ pub mod prelude {
         SearchConfig, SearchFilters, SearchQuery, SearchResult, SearchResultMetadata, SearchStats,
         SemanticSearcher,
     };
+    pub use rag::{ChunkConfig, ChunkData, chunk_document};
+    pub use rag::{
+        Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
+    };
 
+    pub use crate::audit::tasks::TaskGenerator;
     pub use crate::prompt_tier::{PromptRouter, PromptRouterConfig, PromptTier, TierKind};
     pub use crate::static_analysis::{
         AnalysisRecommendation, StaticAnalysisResult, StaticAnalyzer,
@@ -331,7 +328,6 @@ pub mod prelude {
         Priority, SimpleIssueDetector, TagCategory, TagSchema, TagValidation,
     };
     pub use crate::tags::TagScanner;
-    pub use crate::audit::tasks::TaskGenerator;
     pub use crate::tests_runner::{TestResults, TestRunner};
     pub use crate::todo::legacy_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
     pub use crate::tree_state::{

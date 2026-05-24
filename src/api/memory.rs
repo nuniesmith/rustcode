@@ -222,11 +222,7 @@ pub async fn handle_list(
         .map(MemoryEntryView::from)
         .collect();
 
-    (
-        StatusCode::OK,
-        Json(ListResponse { total, entries }),
-    )
-        .into_response()
+    (StatusCode::OK, Json(ListResponse { total, entries })).into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -385,5 +381,4 @@ mod tests {
         assert!(q.kind.is_none());
         assert!(q.limit.is_none());
     }
-}
 }

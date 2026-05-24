@@ -9,7 +9,6 @@
 --   - Trigger uses PL/pgSQL function (set_updated_at defined in migration 001)
 --   - CREATE TRIGGER IF NOT EXISTS not supported — use DROP + CREATE
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS registered_repos (
     id          TEXT    PRIMARY KEY,

@@ -66,10 +66,13 @@ impl AnthropicRequestProfile {
         Self {
             anthropic_version: DEFAULT_ANTHROPIC_VERSION.to_string(),
             client_identity,
-            betas: vec![
-                DEFAULT_AGENTIC_BETA.to_string(),
-                DEFAULT_PROMPT_CACHING_SCOPE_BETA.to_string(),
-            ],
+            // Default beta list is empty so we don't send opt-in flags the
+            // standard Anthropic API may reject. Callers that want prompt
+            // caching or agentic features should call `.with_beta(...)`
+            // explicitly (e.g. `with_beta(DEFAULT_PROMPT_CACHING_SCOPE_BETA)`).
+            // `DEFAULT_AGENTIC_BETA = "claude-code-20250219"` is an internal
+            // Claude Code flag and is *not* valid against `api.anthropic.com`.
+            betas: Vec::new(),
             extra_body: Map::new(),
         }
     }
@@ -115,12 +118,11 @@ impl AnthropicRequestProfile {
         for (key, value) in &self.extra_body {
             object.insert(key.clone(), value.clone());
         }
-        if !self.betas.is_empty() {
-            object.insert(
-                "betas".to_string(),
-                Value::Array(self.betas.iter().cloned().map(Value::String).collect()),
-            );
-        }
+        // NOTE: Beta flags are signalled to Anthropic via the `anthropic-beta`
+        // HTTP header (see `header_pairs`). The public `/v1/messages` API
+        // rejects an unknown top-level `betas` body field with HTTP 400:
+        //   "betas: Extra inputs are not permitted".
+        // We intentionally do NOT inject `betas` into the JSON body.
         Ok(body)
     }
 }
@@ -433,9 +435,16 @@ mod tests {
 
     #[test]
     fn request_profile_emits_headers_and_merges_body() {
+        // Build a profile that *opts in* to the three betas the old default
+        // used to bake in, plus an `extra_body` entry. We verify:
+        //   - betas are sent in the `anthropic-beta` HTTP header (canonical)
+        //   - extra_body fields land in the JSON body
+        //   - `betas` is NOT injected into the body (Anthropic rejects it)
         let profile = AnthropicRequestProfile::new(
             ClientIdentity::new("claude-code", "1.2.3").with_runtime("rust-cli"),
         )
+        .with_beta(DEFAULT_AGENTIC_BETA)
+        .with_beta(DEFAULT_PROMPT_CACHING_SCOPE_BETA)
         .with_beta("tools-2026-04-01")
         .with_extra_body("metadata", serde_json::json!({"source": "test"}));
 
@@ -462,13 +471,23 @@ mod tests {
             body["metadata"]["source"],
             Value::String("test".to_string())
         );
-        assert_eq!(
-            body["betas"],
-            serde_json::json!([
-                "claude-code-20250219",
-                "prompt-caching-scope-2026-01-05",
-                "tools-2026-04-01"
-            ])
+        assert!(
+            body.get("betas").is_none(),
+            "render_json_body must not inject `betas`; the public Anthropic API rejects it"
+        );
+    }
+
+    #[test]
+    fn request_profile_default_betas_are_empty() {
+        // The default profile must NOT pre-load any beta flags. The previous
+        // default included `claude-code-20250219`, which is an internal Claude
+        // Code flag and is rejected by the public api.anthropic.com endpoint.
+        let profile = AnthropicRequestProfile::default();
+        assert!(profile.betas.is_empty());
+        let headers = profile.header_pairs();
+        assert!(
+            !headers.iter().any(|(k, _)| k == "anthropic-beta"),
+            "default profile must not emit an `anthropic-beta` header"
         );
     }
 

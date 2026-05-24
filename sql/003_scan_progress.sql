@@ -6,7 +6,6 @@
 -- Add scan progress and status tracking columns to repositories table
 -- ============================================================================
 
-\connect rustcode
 
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS scan_status TEXT DEFAULT 'idle'
     CHECK(scan_status IN ('idle', 'scanning', 'error'));

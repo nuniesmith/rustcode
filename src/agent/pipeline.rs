@@ -30,7 +30,7 @@ use tracing::{debug, info, warn};
 
 use super::tools::{ToolBackend, ToolCallRecord, ToolCallStatus};
 use super::types::{
-    AgentTask, Plan, PipelineIteration, PipelineResult, PlanStep, ReviewOutcome,
+    AgentTask, PipelineIteration, PipelineResult, Plan, PlanStep, ReviewOutcome,
     StepExecutionResult, StepStatus,
 };
 
@@ -121,11 +121,7 @@ impl AgentPipeline {
     /// Memory injection is best-effort: a `search` failure logs a warning
     /// and the pipeline proceeds with the unmodified prompt.
     #[must_use]
-    pub fn with_memory(
-        mut self,
-        memory: Arc<crate::memory::AgentMemory>,
-        top_k: usize,
-    ) -> Self {
+    pub fn with_memory(mut self, memory: Arc<crate::memory::AgentMemory>, top_k: usize) -> Self {
         self.memory = Some(memory);
         self.memory_top_k = top_k.max(1);
         // Default on: opting in to memory injection also opts in to the
@@ -170,7 +166,7 @@ impl AgentPipeline {
         task: AgentTask,
         max_iterations: u32,
     ) -> Result<PipelineResult, AgentPipelineError> {
-        self.run_internal(task, max_iterations, None).await
+        self.run_internal(task, max_iterations, None, None).await
     }
 
     /// Same as `run`, but emits structured `PipelineEvent`s through the
@@ -239,7 +235,10 @@ impl AgentPipeline {
             );
             if let Some(tx) = events.as_ref() {
                 let _ = tx
-                    .send(PipelineEvent::IterationStarted { iteration: iter, max })
+                    .send(PipelineEvent::IterationStarted {
+                        iteration: iter,
+                        max,
+                    })
                     .await;
             }
 
@@ -269,7 +268,10 @@ impl AgentPipeline {
                 .await
                 .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
             debug!(
-                completed = step_results.iter().filter(|r| r.status.is_completed()).count(),
+                completed = step_results
+                    .iter()
+                    .filter(|r| r.status.is_completed())
+                    .count(),
                 total = step_results.len(),
                 "Executor finished steps"
             );
@@ -400,7 +402,9 @@ impl AgentPipeline {
             user.push_str(&format!("## Repo context\n{}\n\n", ctx));
         }
         if let Some((critique, suggestions)) = revision_input {
-            user.push_str("## Revision request\nThe previous plan was rejected. Address this critique:\n");
+            user.push_str(
+                "## Revision request\nThe previous plan was rejected. Address this critique:\n",
+            );
             user.push_str(critique);
             user.push_str("\n\nReviewer suggestions:\n");
             for s in suggestions {
@@ -522,7 +526,9 @@ impl AgentPipeline {
         repo_context: Option<&str>,
         memory_scope: Option<&str>,
     ) -> Result<StepExecutionResult, PhaseError> {
-        let memory_block = self.fetch_memory_block(&step.description, memory_scope).await;
+        let memory_block = self
+            .fetch_memory_block(&step.description, memory_scope)
+            .await;
         let body = build_executor_user_message(plan, step, prior_results, repo_context);
         let user = prepend_memory_block(&memory_block, &body);
         let request = MessageRequest {
@@ -566,7 +572,9 @@ impl AgentPipeline {
         memory_scope: Option<&str>,
         tools: &dyn ToolBackend,
     ) -> Result<StepExecutionResult, PhaseError> {
-        let memory_block = self.fetch_memory_block(&step.description, memory_scope).await;
+        let memory_block = self
+            .fetch_memory_block(&step.description, memory_scope)
+            .await;
         let body = build_executor_user_message(plan, step, prior_results, repo_context);
         let initial_user = prepend_memory_block(&memory_block, &body);
         let tool_defs = tools.tool_definitions();
@@ -617,7 +625,8 @@ impl AgentPipeline {
                     // Extended-thinking blocks are not supported in this
                     // flow; skip them. The proxy doesn't enable thinking
                     // by default, so this is rare in practice.
-                    OutputContentBlock::Thinking { .. } | OutputContentBlock::RedactedThinking { .. } => {}
+                    OutputContentBlock::Thinking { .. }
+                    | OutputContentBlock::RedactedThinking { .. } => {}
                 }
             }
 
@@ -810,8 +819,8 @@ impl AgentPipeline {
             .await
             .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
         let text = extract_text(&response);
-        let extracted = parse_consolidation(&text)
-            .map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
+        let extracted =
+            parse_consolidation(&text).map_err(|e| AgentPipelineError::Executor(e.to_string()))?;
 
         let mut recorded = Vec::with_capacity(extracted.len());
         for entry in extracted {
@@ -1014,7 +1023,10 @@ fn build_executor_user_message(
         step.description
     );
     if !step.success_criteria.is_empty() {
-        user.push_str(&format!("\n### Success criteria\n{}\n", step.success_criteria));
+        user.push_str(&format!(
+            "\n### Success criteria\n{}\n",
+            step.success_criteria
+        ));
     }
     if let Some(ctx) = repo_context {
         user.push_str(&format!("\n## Repo context\n{}\n", ctx));
@@ -1207,7 +1219,8 @@ mod tests {
 
     #[test]
     fn parse_review_accepts_revision() {
-        let json = r#"{"kind": "revise", "critique": "missed step 2", "suggestions": ["redo step 2"]}"#;
+        let json =
+            r#"{"kind": "revise", "critique": "missed step 2", "suggestions": ["redo step 2"]}"#;
         let outcome = parse_review(json).expect("should parse");
         assert!(!outcome.is_approved());
         if let ReviewOutcome::Revise { suggestions, .. } = outcome {

@@ -10,10 +10,11 @@ pub mod tools;
 pub mod types;
 
 pub use pipeline::{
-    AgentPipeline, AgentPipelineError, DEFAULT_MAX_ITERATIONS, PhaseError, PipelineEvent,
+    AgentPipeline, AgentPipelineError, DEFAULT_MAX_ITERATIONS, DEFAULT_MEMORY_TOP_K, PhaseError,
+    PipelineEvent,
 };
 pub use tools::{FileSystemTools, ToolBackend, ToolCallRecord, ToolCallStatus, ToolError};
 pub use types::{
-    AgentTask, Plan, PipelineIteration, PipelineResult, PlanStep, ReviewOutcome,
+    AgentTask, PipelineIteration, PipelineResult, Plan, PlanStep, ReviewOutcome,
     StepExecutionResult, StepStatus,
 };

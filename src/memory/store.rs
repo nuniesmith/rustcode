@@ -24,10 +24,8 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use super::types::{MemoryEntry, MemoryKind, MemorySearchHit, NewMemory, cosine_similarity};
 use rag::EmbeddingGenerator;
-use super::types::{
-    MemoryEntry, MemoryKind, MemorySearchHit, NewMemory, cosine_similarity,
-};
 
 /// Default ranking weight when a caller omits `importance` on a new entry.
 pub const DEFAULT_IMPORTANCE: f32 = 0.5;
@@ -77,6 +75,19 @@ pub struct AgentMemory {
     embedder: Arc<EmbeddingGenerator>,
 }
 
+// Manual Debug impl — `EmbeddingGenerator` (from `rag`) doesn't derive Debug
+// because it wraps an `Arc<RwLock<Option<TextEmbedding>>>`. Printing its
+// address isn't useful; show a placeholder so anything that holds
+// `AgentMemory` (e.g. `AgentPipeline`) can still derive Debug.
+impl std::fmt::Debug for AgentMemory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentMemory")
+            .field("pool", &self.pool)
+            .field("embedder", &"<EmbeddingGenerator>")
+            .finish()
+    }
+}
+
 impl AgentMemory {
     #[must_use]
     pub fn new(pool: PgPool, embedder: Arc<EmbeddingGenerator>) -> Self {
@@ -90,10 +101,7 @@ impl AgentMemory {
         if new.content.trim().is_empty() {
             anyhow::bail!("memory content must not be empty");
         }
-        let importance = new
-            .importance
-            .unwrap_or(DEFAULT_IMPORTANCE)
-            .clamp(0.0, 1.0);
+        let importance = new.importance.unwrap_or(DEFAULT_IMPORTANCE).clamp(0.0, 1.0);
 
         let embedding = self
             .embedder
@@ -101,8 +109,7 @@ impl AgentMemory {
             .await
             .context("failed to embed memory content")?
             .vector;
-        let embedding_json =
-            serde_json::to_string(&embedding).context("serialize embedding")?;
+        let embedding_json = serde_json::to_string(&embedding).context("serialize embedding")?;
 
         let id = Uuid::new_v4();
         let now = Utc::now();
@@ -213,11 +220,7 @@ impl AgentMemory {
     /// Return the first `limit` entries sorted by `created_at DESC`,
     /// optionally filtered by project. Used by the future memory dashboard
     /// (MEM-E) and useful for `agent_memory --list` debugging.
-    pub async fn list(
-        &self,
-        project_scope: Option<&str>,
-        limit: i64,
-    ) -> Result<Vec<MemoryEntry>> {
+    pub async fn list(&self, project_scope: Option<&str>, limit: i64) -> Result<Vec<MemoryEntry>> {
         let rows = match project_scope {
             Some(p) => {
                 sqlx::query_as::<_, AgentMemoryRow>(
@@ -252,7 +255,10 @@ impl AgentMemory {
         }
         .context("list agent_memory rows")?;
 
-        Ok(rows.into_iter().filter_map(AgentMemoryRow::into_entry).collect())
+        Ok(rows
+            .into_iter()
+            .filter_map(AgentMemoryRow::into_entry)
+            .collect())
     }
 
     /// Count entries in scope. Used by callers that want to surface a
@@ -312,10 +318,7 @@ impl AgentMemory {
         } else {
             0
         };
-        info!(
-            decayed, deleted, merged,
-            "agent memory: prune complete"
-        );
+        info!(decayed, deleted, merged, "agent memory: prune complete");
         Ok(PruneReport {
             decayed,
             deleted,
@@ -361,12 +364,11 @@ impl AgentMemory {
         // Find the distinct project scopes (including NULL → represented
         // as `Option::None`) so we can dedupe each scope independently.
         // Memories in different projects should never merge.
-        let scopes: Vec<Option<String>> = sqlx::query_scalar(
-            "SELECT DISTINCT project FROM agent_memory",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("prune: list project scopes")?;
+        let scopes: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT DISTINCT project FROM agent_memory")
+                .fetch_all(&self.pool)
+                .await
+                .context("prune: list project scopes")?;
 
         let mut total_merged: u64 = 0;
         for scope in scopes {
@@ -461,7 +463,10 @@ impl AgentMemory {
         }
         .context("fetch agent_memory candidates")?;
 
-        Ok(rows.into_iter().filter_map(AgentMemoryRow::into_entry).collect())
+        Ok(rows
+            .into_iter()
+            .filter_map(AgentMemoryRow::into_entry)
+            .collect())
     }
 }
 

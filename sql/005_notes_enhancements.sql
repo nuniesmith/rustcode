@@ -6,7 +6,6 @@
 -- Create notes table if it doesn't exist
 -- ============================================================================
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS notes (
     id         TEXT PRIMARY KEY NOT NULL,

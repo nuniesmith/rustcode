@@ -28,12 +28,12 @@
 // }
 // ```
 
-use crate::db::Database;
 use crate::cache::responses::ResponseCache;
+use crate::db::Database;
 use ::api::{
     InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};

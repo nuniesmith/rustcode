@@ -9,7 +9,6 @@
 --   - ADD COLUMN IF NOT EXISTS (safe to re-run in Postgres)
 --   - REFERENCES repositories(id) is a proper FK constraint
 
-\connect rustcode
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title       TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT;

@@ -2,7 +2,6 @@
 -- Adds a `pinned` boolean column to the `documents` table.
 -- Pinned documents are surfaced first in listings and cannot be auto-archived.
 
-\connect rustcode
 
 ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;

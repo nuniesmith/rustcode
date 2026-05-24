@@ -206,8 +206,11 @@ required-features = ["integration"]
 [dependencies]
 
 # Internal crates
-api = { path = "crates/api" }
-rag = { path = "crates/rag" }
+api      = { path = "crates/api" }
+plugins  = { path = "crates/plugins" }
+rag      = { path = "crates/rag" }
+runtime  = { path = "crates/runtime" }
+tools    = { path = "crates/tools" }
 
 # All deps inherit versions from [workspace.dependencies] above
 anyhow                             = { workspace = true }
@@ -279,7 +282,9 @@ tokio-test = { workspace = true }
 mockito    = { workspace = true }
 tempfile   = { workspace = true }
 criterion  = { workspace = true }
-runtime    = { path = "crates/runtime" }
+# `runtime` is a regular dependency (see [dependencies] above); historically it
+# lived here, but src/* imports `runtime::*` for the BashCommandInput sandbox so
+# it must be a non-dev dep.
 
 # ============================================================================
 # Build profiles

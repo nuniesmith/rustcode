@@ -4,9 +4,9 @@ use crate::api::auth::require_api_key;
 use crate::api::proxy::{ProxyState, proxy_router};
 use crate::api::repos::{RepoAppState, repo_router};
 use crate::audit::endpoint::{AuditState, audit_router};
-use crate::auto_scanner::{AutoScannerConfig, AutoScanner};
+use crate::auto_scanner::{AutoScanner, AutoScannerConfig};
 use crate::config::Config;
-use crate::db::{self, Database,Repository, init_db};
+use crate::db::{self, Database, Repository, init_db};
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::github::webhook::{WebhookHandler, WebhookPayload};
@@ -221,14 +221,10 @@ pub async fn run_server(config: Config) -> Result<()> {
         .map(|s| !s.eq_ignore_ascii_case("false"))
         .unwrap_or(true);
     let agent_memory: Option<Arc<crate::memory::AgentMemory>> = if memory_injection_enabled {
-        match rag::EmbeddingGenerator::new(
-            rag::EmbeddingConfig::default(),
-        ) {
+        match rag::EmbeddingGenerator::new(rag::EmbeddingConfig::default()) {
             Ok(embedder) => {
-                let memory = crate::memory::AgentMemory::new(
-                    state.db_pool.clone(),
-                    Arc::new(embedder),
-                );
+                let memory =
+                    crate::memory::AgentMemory::new(state.db_pool.clone(), Arc::new(embedder));
                 info!("AgentMemory enabled (RC_MEMORY_INJECTION not set to false)");
                 Some(Arc::new(memory))
             }
@@ -277,16 +273,12 @@ pub async fn run_server(config: Config) -> Result<()> {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(86_400);
-        info!(
-            interval_secs,
-            "Starting agent memory prune cron"
-        );
+        info!(interval_secs, "Starting agent memory prune cron");
         tokio::spawn(async move {
             // Skip the first tick so we don't slam the DB at boot before
             // the embedder is even warmed up. `tokio::time::interval` fires
             // immediately on the first `tick`; we burn that one.
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
             ticker.tick().await;
             loop {
                 ticker.tick().await;
@@ -380,7 +372,7 @@ pub async fn run_server(config: Config) -> Result<()> {
         // Repo management + chat API at /api/v1
         .nest("/api/v1", repo_router(repo_app_state.clone()))
         // OpenAI-compatible proxy at /v1  (for external apps e.g. futures trading bot)
-        .nest("/v1", proxy_router(ProxyState::new(repo_app_state)))
+        .nest("/v1", proxy_router(ProxyState::new(repo_app_state.clone())))
         // Auth middleware — no-op when RUSTCODE_PROXY_API_KEYS is unset (dev mode)
         .layer(middleware::from_fn(require_api_key));
 
@@ -461,10 +453,8 @@ pub async fn run_server(config: Config) -> Result<()> {
         // Build an AgentPipeline from the shared AnthropicClient when Claude
         // is configured. When the pipeline is present, accepted task files
         // go through plan→execute→review before any commit / push.
-        let agent_pipeline: Option<Arc<crate::agent::AgentPipeline>> = repo_app_state
-            .anthropic_client
-            .as_ref()
-            .map(|client| {
+        let agent_pipeline: Option<Arc<crate::agent::AgentPipeline>> =
+            repo_app_state.anthropic_client.as_ref().map(|client| {
                 let mut p = crate::agent::AgentPipeline::new(
                     Arc::clone(client),
                     Arc::clone(client),
@@ -472,10 +462,7 @@ pub async fn run_server(config: Config) -> Result<()> {
                     config.model.executor_model.clone(),
                 );
                 if let Some(memory) = repo_app_state.agent_memory.as_ref() {
-                    p = p.with_memory(
-                        Arc::clone(memory),
-                        crate::agent::DEFAULT_MEMORY_TOP_K,
-                    );
+                    p = p.with_memory(Arc::clone(memory), crate::agent::DEFAULT_MEMORY_TOP_K);
                     // `with_memory` enables session consolidation by default.
                     // Opt out via `RC_MEMORY_CONSOLIDATION=false` for the
                     // no-learning baseline.

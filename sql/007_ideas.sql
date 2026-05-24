@@ -12,7 +12,6 @@
 -- Ideas Table
 -- ============================================================================
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS ideas (
     id             TEXT    PRIMARY KEY,

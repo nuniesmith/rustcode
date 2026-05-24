@@ -1,0 +1,85 @@
+# =============================================================================
+# rustcode — local dev stack
+#
+#   docker compose up --build         # build image and start everything
+#   docker compose up -d              # start in background after first build
+#   docker compose logs -f rustcode   # tail server logs
+#   docker compose down               # stop (keeps the postgres volume)
+#   docker compose down -v            # stop + wipe the postgres volume
+#
+# The `rustcode` service reads its config from `.env` in the project root.
+# Override individual values inline (e.g. `PORT=4000 docker compose up`).
+# =============================================================================
+
+name: rustcode
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: rustcode-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rustcode}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-rustcode}
+    # Expose 5432 on the host so you can also connect from `psql` directly.
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - rustcode_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rustcode} -d ${POSTGRES_DB:-rustcode}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - rustcode-net
+
+  rustcode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rustcode:latest
+    container_name: rustcode
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    # Anything set here wins over `.env` — we override DATABASE_URL so the
+    # container talks to the `postgres` service (not `localhost`).
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3500
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rustcode}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-rustcode}
+      RUSTASSISTANT_AUTO_MIGRATE: "true"
+      REPOS_DIR: /app/repos
+      RUST_LOG: ${RUST_LOG:-info,rustcode=debug,sqlx=warn}
+    ports:
+      - "${RUSTCODE_HOST_PORT:-3500}:3500"
+    volumes:
+      # Persist indexed repos and per-repo `.rustcode/` caches across restarts.
+      - rustcode_repos:/app/repos
+      # Drop task JSON files in ./tasks on the host; the watcher picks them up.
+      - ./tasks:/app/tasks
+      # Misc app data (token costs, local SQLite snapshots if any).
+      - rustcode_data:/app/data
+    networks:
+      - rustcode-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3500/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  rustcode_pgdata:
+  rustcode_repos:
+  rustcode_data:
+
+networks:
+  rustcode-net:
+    driver: bridge

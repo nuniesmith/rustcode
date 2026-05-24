@@ -17,6 +17,7 @@ publish.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 fastembed.workspace = true
+hex.workspace = true
 rand.workspace = true
 regex.workspace = true
 serde.workspace = true

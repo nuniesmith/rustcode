@@ -10,7 +10,6 @@
 -- Queue Items Table
 -- ============================================================================
 
-\connect rustcode
 
 CREATE TABLE IF NOT EXISTS queue_items (
     id             TEXT    PRIMARY KEY,

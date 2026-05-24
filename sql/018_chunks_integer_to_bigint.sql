@@ -9,7 +9,6 @@
 -- code_chunks
 -- ============================================================================
 
-\connect rustcode
 
 ALTER TABLE IF EXISTS code_chunks
     ALTER COLUMN word_count       TYPE BIGINT USING word_count::BIGINT,

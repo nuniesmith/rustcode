@@ -12,7 +12,6 @@
 --  The ADD COLUMN IF NOT EXISTS guards make it safe either way.)
 -- ============================================================================
 
-\connect rustcode
 
 ALTER TABLE scan_events ADD COLUMN IF NOT EXISTS details  TEXT;
 ALTER TABLE scan_events ADD COLUMN IF NOT EXISTS level    TEXT NOT NULL DEFAULT 'info';

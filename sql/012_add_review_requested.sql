@@ -5,6 +5,5 @@
 --   - ADD COLUMN IF NOT EXISTS (safe to re-run)
 --   - BOOLEAN DEFAULT FALSE instead of INTEGER DEFAULT 0
 
-\connect rustcode
 
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS review_requested BOOLEAN NOT NULL DEFAULT FALSE;

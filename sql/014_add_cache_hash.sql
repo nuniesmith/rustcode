@@ -4,7 +4,6 @@
 -- Changes from SQLite version:
 --   - ADD COLUMN IF NOT EXISTS (safe to re-run in Postgres)
 
-\connect rustcode
 
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS cache_hash TEXT;
 

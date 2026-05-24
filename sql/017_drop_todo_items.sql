@@ -14,7 +14,6 @@
 --   • `queue_items.id` is preserved as `tasks.source_id` so the link is kept.
 --   • The `tasks` table has its own FK to `repositories(id)`.
 
-\connect rustcode
 
 DROP TABLE IF EXISTS todo_items;
 
