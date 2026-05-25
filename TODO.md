@@ -447,7 +447,34 @@
 - [ ] Test auth: request without `Authorization` header → 401
 
 ### RC-API: Security & Config
-- [ ] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
+- [~] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
+  > **Split into three PRs.** The TODO bullet understated the work: no
+  > per-repo config struct existed, `AutoScanner` uses a hardcoded
+  > `SKIP_SUFFIXES` (not the configurable global), and `StaticAnalyzer`
+  > doesn't filter by extension at all.
+  >
+  > **PR A (2026-05-25) — data model + persistence + API.** Done.
+  > `RegisteredRepo` gains `skip_extensions: Option<Vec<String>>` with
+  > replace-semantics (per-repo *replaces* global, lets a repo opt back
+  > in to globally-skipped extensions). Migration 024 adds `TEXT[] NULL`
+  > column. `RegisterRepoRequest`/`get_repo` carry the field.
+  > `RegisteredRepo::effective_skip_extensions(global_default)` returns
+  > the override or the global as a slice without allocation. Unit
+  > tests cover the None/Some(list)/Some(empty) three-way contract and
+  > the in-memory register-then-get round trip.
+  >
+  > **PR B (next) — wire into `AutoScanner`.** Refactor `should_skip_path`
+  > / `should_analyze_file` from static `Self::*` methods to instance
+  > methods threading a per-repo overlay through the four current
+  > callsites (auto_scanner.rs:743, 805, 836, 872 and the
+  > `analyze_changed_files_with_progress` walk at :987). Look up the
+  > registered repo by scan target path.
+  >
+  > **PR C (after B) — wire into audit runner.** `AuditRunnerConfig` and
+  > `FullAuditConfig` currently take `skip_extensions` from the global
+  > scanner config; need a `for_repo(&RegisteredRepo, &ScannerConfig)`
+  > overlay constructor that consults `effective_skip_extensions`. Then
+  > update audit call sites that scan a registered repo.
 - [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
   > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
   > emits a structured `event = "proxy.dispatch"` log line at the end of
