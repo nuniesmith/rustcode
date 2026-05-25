@@ -463,12 +463,25 @@
   > tests cover the None/Some(list)/Some(empty) three-way contract and
   > the in-memory register-then-get round trip.
   >
-  > **PR B (next) — wire into `AutoScanner`.** Refactor `should_skip_path`
-  > / `should_analyze_file` from static `Self::*` methods to instance
-  > methods threading a per-repo overlay through the four current
-  > callsites (auto_scanner.rs:743, 805, 836, 872 and the
-  > `analyze_changed_files_with_progress` walk at :987). Look up the
-  > registered repo by scan target path.
+  > **PR B (2026-05-25) — wire into `AutoScanner`.** Done.
+  > `should_skip_path_with` / `should_analyze_file_with` are new
+  > variants accepting `Option<&[String]>`; the existing static
+  > methods delegate with `None` so the legacy behaviour is
+  > byte-for-byte unchanged (locked by
+  > `should_skip_path_with_none_matches_static_method`). Stacked on
+  > PR A's branch — the SQL helper references the `skip_extensions`
+  > column from migration 024. The scanner resolves the override
+  > once per scan via `fetch_skip_extensions_override` (one indexed
+  > SELECT against `registered_repos` by `local_path`; treats the
+  > lookup as advisory — never blocks a scan if the DB query
+  > fails). The override is threaded through `get_changed_files`,
+  > `get_files_from_recent_commits`, and
+  > `analyze_changed_files_with_progress` to all five historical
+  > `should_skip_path` / `should_analyze_file` call sites.
+  > `SKIP_DIRS` is never overridable (always-skipped paths like
+  > `node_modules/`, `target/`, `.git/`). The match accepts
+  > extensions with or without a leading dot so per-repo (`"png"`)
+  > and `SKIP_SUFFIXES` (`".png"`) representations both work.
   >
   > **PR C (after B) — wire into audit runner.** `AuditRunnerConfig` and
   > `FullAuditConfig` currently take `skip_extensions` from the global
