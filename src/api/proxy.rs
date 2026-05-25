@@ -588,6 +588,21 @@ async fn handle_chat_completions(
         {
             Ok(Some(hit)) => {
                 debug!(cache_key = %cache_key, "Proxy cache hit");
+                log_dispatch_event(&DispatchLogContext {
+                    task_kind: &hit.task_kind,
+                    target_kind: target_kind_label(&target),
+                    model_used: &hit.model_used,
+                    prompt_tokens: hit.prompt_tokens,
+                    completion_tokens: hit.completion_tokens,
+                    cache_creation_input_tokens: hit.cache_creation_input_tokens.unwrap_or(0),
+                    cache_read_input_tokens: hit.cache_read_input_tokens.unwrap_or(0),
+                    rag_chunks_used: hit.rag_chunks_used,
+                    repo_context_injected: hit.repo_context_injected,
+                    repo_id: req.x_repo_id.as_deref(),
+                    cached: true,
+                    streaming: false,
+                    used_fallback: hit.used_fallback,
+                });
                 return build_oai_response(
                     hit.content,
                     hit.model_used,
@@ -629,13 +644,14 @@ async fn handle_chat_completions(
     } = outcome;
 
     let (prompt_tok, completion_tok) = split_tokens(tokens_used, &full_prompt, &reply);
+    let task_kind_str = format!("{:?}", task_kind);
 
     // ── 11. Cache (fire-and-forget) ───────────────────────────────────────────
     let cached_val = CachedProxyResponse {
         content: reply.clone(),
         model_used: model_used.clone(),
         used_fallback,
-        task_kind: format!("{:?}", task_kind),
+        task_kind: task_kind_str.clone(),
         rag_chunks_used,
         repo_context_injected,
         prompt_tokens: prompt_tok,
@@ -656,12 +672,28 @@ async fn handle_chat_completions(
         });
     }
 
-    // ── 12. Build OpenAI-compatible response ──────────────────────────────────
+    // ── 12. Emit structured dispatch log + build OpenAI-compatible response ──
+    log_dispatch_event(&DispatchLogContext {
+        task_kind: &task_kind_str,
+        target_kind: target_kind_label(&target),
+        model_used: &model_used,
+        prompt_tokens: prompt_tok,
+        completion_tokens: completion_tok,
+        cache_creation_input_tokens: cache_creation_input_tokens.unwrap_or(0),
+        cache_read_input_tokens: cache_read_input_tokens.unwrap_or(0),
+        rag_chunks_used,
+        repo_context_injected,
+        repo_id: req.x_repo_id.as_deref(),
+        cached: false,
+        streaming: false,
+        used_fallback,
+    });
+
     build_oai_response(
         reply,
         model_used,
         used_fallback,
-        format!("{:?}", task_kind),
+        task_kind_str,
         rag_chunks_used,
         repo_context_injected,
         prompt_tok,
@@ -906,6 +938,12 @@ async fn handle_streaming(
     let id_clone = completion_id.clone();
     let cache_key_clone = cache_key.clone();
     let task_kind_str = format!("{:?}", task_kind);
+    // Separate copies for the two closures below. The `.map` closure is
+    // FnMut and only borrows on each call; the `.chain` `async move` block
+    // consumes its copy when it builds `CachedProxyResponse`.
+    let task_kind_for_map = task_kind_str.clone();
+    let target_kind_for_map = target_kind_label(&target);
+    let repo_id_for_map = req.x_repo_id.clone();
     let cache = Arc::clone(&state.repo_state.cache);
 
     // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
@@ -986,6 +1024,22 @@ async fn handle_streaming(
                             cache_read_input_tokens,
                         ));
                     }
+
+                    log_dispatch_event(&DispatchLogContext {
+                        task_kind: &task_kind_for_map,
+                        target_kind: target_kind_for_map,
+                        model_used: &model_used,
+                        prompt_tokens: pt,
+                        completion_tokens: ct,
+                        cache_creation_input_tokens: cache_creation_input_tokens.unwrap_or(0),
+                        cache_read_input_tokens: cache_read_input_tokens.unwrap_or(0),
+                        rag_chunks_used,
+                        repo_context_injected,
+                        repo_id: repo_id_for_map.as_deref(),
+                        cached: false,
+                        streaming: true,
+                        used_fallback,
+                    });
 
                     let final_chunk = OaiChunkResponse {
                         id,
@@ -1625,6 +1679,67 @@ const PROMPT_CACHE_MIN_TOKENS: usize = 1024;
 const PROMPT_CACHE_CHAR_PER_TOKEN: usize = 4;
 const PROMPT_CACHE_MIN_CHARS: usize = PROMPT_CACHE_MIN_TOKENS * PROMPT_CACHE_CHAR_PER_TOKEN;
 
+// Short label for a `ModelTarget` variant. Used as the `target` field on
+// structured dispatch logs so we can filter by backend without parsing the
+// model slug. "claude" covers both Planner (Opus) and Sonnet tiers; the
+// `tier` field already lives on the Claude-specific log entries.
+const fn target_kind_label(target: &ModelTarget) -> &'static str {
+    match target {
+        ModelTarget::Local { .. } => "local",
+        ModelTarget::Remote { .. } => "remote",
+        ModelTarget::Claude { .. } => "claude",
+    }
+}
+
+/// Carrier for the fields a "proxy dispatch" log line emits. Keeps the three
+/// call sites (non-stream cache hit, non-stream dispatch, streaming Done) in
+/// sync — drifting field names across paths would make the log unusable for
+/// downstream metrics.
+///
+/// `task_kind` is a pre-formatted string rather than `&TaskKind` so the
+/// streaming closure (which captures variables across multiple FnMut calls)
+/// can reuse the same `format!("{:?}", task_kind)` it already needs for
+/// `CachedProxyResponse::task_kind`. `TaskKind::Display` delegates to
+/// `Debug`, so the wire format is identical either way.
+struct DispatchLogContext<'a> {
+    task_kind: &'a str,
+    target_kind: &'static str,
+    model_used: &'a str,
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    cache_creation_input_tokens: u32,
+    cache_read_input_tokens: u32,
+    rag_chunks_used: usize,
+    repo_context_injected: bool,
+    repo_id: Option<&'a str>,
+    cached: bool,
+    streaming: bool,
+    used_fallback: bool,
+}
+
+// Emit the canonical "proxy.dispatch" structured event. The fields are a
+// stable surface for log-based routing-quality analysis (see the RC-API
+// "routing heuristic tuning" TODO).
+fn log_dispatch_event(ctx: &DispatchLogContext<'_>) {
+    info!(
+        event = "proxy.dispatch",
+        task_kind = ctx.task_kind,
+        target = ctx.target_kind,
+        model = %ctx.model_used,
+        prompt_tokens = ctx.prompt_tokens,
+        completion_tokens = ctx.completion_tokens,
+        cache_creation_input_tokens = ctx.cache_creation_input_tokens,
+        cache_read_input_tokens = ctx.cache_read_input_tokens,
+        rag_chunks_used = ctx.rag_chunks_used,
+        repo_context_injected = ctx.repo_context_injected,
+        repo_id = ctx.repo_id.unwrap_or(""),
+        cached = ctx.cached,
+        streaming = ctx.streaming,
+        used_fallback = ctx.used_fallback,
+        "Proxy dispatch completed"
+    );
+}
+
 // Build the Anthropic `system` field for a Claude dispatch. Returns `None`
 // when the caller had no system prompt. Otherwise emits a single `text`
 // block, marked `cache_control: { type: "ephemeral" }` once the prompt is
@@ -2086,5 +2201,28 @@ mod tests {
             serde_json::to_value(&chunk).expect("chunk should serialize");
         assert!(json.get("cache_creation_input_tokens").is_none());
         assert!(json.get("cache_read_input_tokens").is_none());
+    }
+
+    #[test]
+    fn target_kind_label_emits_stable_strings_per_variant() {
+        // These labels are part of the structured dispatch-log surface
+        // (`target = "local" | "remote" | "claude"`). Downstream log queries
+        // pin against them, so the strings must stay stable; renaming any
+        // requires a coordinated log-pipeline change.
+        let local = ModelTarget::Local {
+            model: "qwen2.5-coder:7b".to_string(),
+            base_url: "http://localhost:11434".to_string(),
+        };
+        let remote = ModelTarget::Remote {
+            model: "grok-3".to_string(),
+            api_key: "test".to_string(),
+        };
+        let claude = ModelTarget::Claude {
+            model: "claude-sonnet-4-6".to_string(),
+            tier: ClaudeTier::Executor,
+        };
+        assert_eq!(target_kind_label(&local), "local");
+        assert_eq!(target_kind_label(&remote), "remote");
+        assert_eq!(target_kind_label(&claude), "claude");
     }
 }
