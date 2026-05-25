@@ -437,14 +437,34 @@
 ## P1 — API & Configuration
 
 ### RC-LLM: Routing & Proxy Validation
-- [ ] Verify `rc-app` starts and serves `/v1/chat/completions` with only `ANTHROPIC_API_KEY` set (no Ollama) on live stack — replaces the old `XAI_API_KEY`-only smoke test
-- [ ] Verify `ModelRouter` routes `TaskKind::ScaffoldStub` → Sonnet and `TaskKind::ArchitecturalReason` → Opus after CLAUDE-B lands
-- [ ] Verify fallback: if `ANTHROPIC_API_KEY` absent but `XAI_API_KEY` present, router falls back to Grok gracefully
-- [ ] Test `curl` end-to-end: auth header, `model=auto` classifies correctly, multi-turn context preservation
-- [ ] Test `x_repo_id` injection: register a repo, send domain-specific question, confirm `rag_chunks_used > 0`
-- [ ] Test prompt cache: send identical request twice, confirm `cache_read_input_tokens > 0` in second response `x_ra_metadata`
-- [ ] Test cache: send identical request twice, confirm `cached: true` on second response
-- [ ] Test auth: request without `Authorization` header → 401
+- [~] Verify `rc-app` starts and serves `/v1/chat/completions` with only `ANTHROPIC_API_KEY` set (no Ollama) on live stack — replaces the old `XAI_API_KEY`-only smoke test
+- [~] Verify `ModelRouter` routes `TaskKind::ScaffoldStub` → Sonnet and `TaskKind::ArchitecturalReason` → Opus after CLAUDE-B lands
+- [~] Verify fallback: if `ANTHROPIC_API_KEY` absent but `XAI_API_KEY` present, router falls back to Grok gracefully
+- [~] Test `curl` end-to-end: auth header, `model=auto` classifies correctly, multi-turn context preservation
+- [~] Test `x_repo_id` injection: register a repo, send domain-specific question, confirm `rag_chunks_used > 0`
+- [~] Test prompt cache: send identical request twice, confirm `cache_read_input_tokens > 0` in second response `x_ra_metadata`
+- [~] Test cache: send identical request twice, confirm `cached: true` on second response
+- [~] Test auth: request without `Authorization` header → 401
+  > **Script done 2026-05-25.** All 8 verification items are bundled
+  > in `scripts/smoke_test.sh` as named probes (`health`,
+  > `claude_default`, `scaffold_task`, `arch_task`, `grok_fallback`,
+  > `multi_turn`, `repo_rag`, `prompt_cache`, `response_cache`,
+  > `auth_401`). Each probe prints `PASS` / `FAIL` / `SKIP` with a
+  > one-line reason; the script exits with the count of failures.
+  > `SKIP` is used for probes whose precondition we can't introspect
+  > from the client (e.g. `grok_fallback` skips on a Claude-enabled
+  > stack rather than failing; `auth_401` skips if `RUSTCODE_PROXY_API_KEYS`
+  > is unset server-side and auth is disabled). `ONLY=` and `SKIP=`
+  > env vars let you run a subset.
+  >
+  > Usage:
+  > ```
+  > RUSTCODE_URL=https://your-stack RUSTCODE_API_KEY=... \
+  >     ./scripts/smoke_test.sh
+  > ```
+  > Outstanding: the items stay `[~]` until they've been *executed*
+  > against the live deployed stack and the run captured. Flip them
+  > to `[x]` once you've run it post-deploy.
 
 ### RC-API: Security & Config
 - [~] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
