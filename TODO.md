@@ -106,21 +106,29 @@
   > format, non-empty steps, etc.
   > Naming-collision cleanup (`src/tasks.rs` vs `src/task/`) is tracked separately under
   > RC-CLEANUP-D.
-- [~] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
-  > **Partial 2026-05-17.** `TaskExecutor::execute_real` clones, branches, writes one
-  > placeholder file per step, commits, runs the per-language test runner against the
-  > working tree, pushes, and opens the PR. The placeholder files are still literal
-  > "Step: ..." text; **LLM-driven step execution is the remaining gap** and will
-  > likely be done by wiring `AnthropicClient` tool-use with `write_file` / `edit_file`
-  > / `run_command` tools once `AGENT-A` lands.
+- [x] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
+  > **Done 2026-05-25.** `TaskExecutor::execute_with_agent_tools`
+  > (`src/task_executor.rs:480`) drives the agent pipeline
+  > (`src/agent/pipeline.rs`, 1,320 lines) through plan → execute → review,
+  > wiring Anthropic tool-use to `FileSystemTools::{write_file, edit_file,
+  > read_file, run_command}` (`src/agent/tools.rs`). Clone, branch,
+  > per-language test, commit, push, PR-open, label all live in the same
+  > path. The placeholder-text path on `execute_real` is the no-agent
+  > fallback — kept intentionally; surfaced in survey 2026-05-25.
+  > Landed across `41833cd` (TASK-A/B/C/E + partial D/F) and `fde3657`
+  > (auto-merge poller closing TASK-D + TASK-F).
 - [x] **TASK-C:** Per-language test runner: `cargo check` / `cargo test` for Rust; `pytest -x` for Python; `npm run build` for TS
   > **Done.** `task_executor::run_tests_for_workspace` calls `TestRunner::detect_project_types`
   > then `run_tests_for_type` for each detected type. Aggregated pass/fail flag drives
   > the abort decision before push; the human-readable summary is attached to the last
   > `StepResult::test_output` and the PR body.
-- [~] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
-  > **Partial 2026-05-17.** PR creation + label application now live in `execute_real`.
-  > `GitHubClient::add_labels` was added and is invoked after PR open.
+- [x] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
+  > **Done 2026-05-25.** `GitHubClient::create_pull_request`
+  > (`src/github/client.rs:589`) + `add_labels` (`src/github/client.rs:636`)
+  > are invoked from all three executor paths (`materialize_and_push`,
+  > `run_agent_tool_phases`, `execute_real`). Branch is created locally
+  > via `git checkout -b` then pushed with a token-injected remote URL.
+  > Auto-merge is covered by the bullet below — together they close TASK-D.
 - [x] **TASK-D:** Auto-merge logic: if all CI checks pass and `auto_merge: true`, merge the PR
   > **Done 2026-05-18.**
   > - `src/task/automerge.rs::poll_and_merge` polls the PR's combined
@@ -168,13 +176,12 @@
 - [x] **TASK-E:** Task result file — write `tasks/results/{id}.json` with outcome, PR URL, test results, any errors
   > **Done.** `write_result_file` is now the single sink; both `execute_dry_run` and
   > `execute_real` go through it on every code path (success and failure).
-- [~] **TASK-F:** Failed task handling — if any step fails or tests fail, tag PR `needs-review` and write error details to result file; never auto-merge
-  > **Partial 2026-05-17.** Failure now always produces a result file with `status = "failed"`
-  > and the error message. Auto-merge isn't wired yet (see TASK-D) so there's no risk of
-  > merging on failure. **Remaining:** if a PR was already opened before tests failed (e.g.
-  > we push first, then a separate CI run reports failure), apply a `needs-review` label —
-  > today we abort before push when tests fail, so the only way to get here is via the
-  > auto-merge poller, which lands with the rest of TASK-D.
+  <!-- TASK-F was duplicated here in an earlier revision; the canonical
+       bullet is the [x] entry a few lines above, which covers both the
+       pre-push (tests fail before push) and post-push (auto-merge poller
+       sees CI failure) halves. Survey 2026-05-25 confirmed both paths
+       are live in `automerge.rs` + `task_executor.rs`. -->
+
 
 ---
 
