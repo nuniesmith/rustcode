@@ -641,10 +641,44 @@ async fn handle_chat_completions(
         tokens_used,
         cache_creation_input_tokens,
         cache_read_input_tokens,
+        error: dispatch_error,
     } = outcome;
 
     let (prompt_tok, completion_tok) = split_tokens(tokens_used, &full_prompt, &reply);
     let task_kind_str = format!("{:?}", task_kind);
+    let target_kind = target_kind_label(&target);
+
+    // ── 11. Backend-error fast path ───────────────────────────────────────────
+    // When the dispatch helper returned an error, the `reply` body carries
+    // the error text so the client still sees it; we skip the cache write
+    // (poisoning the cache with error responses would replay failures on
+    // every duplicate request for the TTL) and emit a `proxy.dispatch_error`
+    // event instead of the success event.
+    if let Some(error_message) = dispatch_error.as_deref() {
+        log_dispatch_error_event(&DispatchErrorLogContext {
+            task_kind: &task_kind_str,
+            target_kind,
+            model_used: &model_used,
+            error_message,
+            repo_id: req.x_repo_id.as_deref(),
+            streaming: false,
+        });
+        return build_oai_response(
+            reply,
+            model_used,
+            used_fallback,
+            task_kind_str,
+            rag_chunks_used,
+            repo_context_injected,
+            prompt_tok,
+            completion_tok,
+            false,
+            cache_key,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+        )
+        .into_response();
+    }
 
     // ── 11. Cache (fire-and-forget) ───────────────────────────────────────────
     let cached_val = CachedProxyResponse {
@@ -675,7 +709,7 @@ async fn handle_chat_completions(
     // ── 12. Emit structured dispatch log + build OpenAI-compatible response ──
     log_dispatch_event(&DispatchLogContext {
         task_kind: &task_kind_str,
-        target_kind: target_kind_label(&target),
+        target_kind,
         model_used: &model_used,
         prompt_tokens: prompt_tok,
         completion_tokens: completion_tok,
@@ -944,6 +978,11 @@ async fn handle_streaming(
     let task_kind_for_map = task_kind_str.clone();
     let target_kind_for_map = target_kind_label(&target);
     let repo_id_for_map = req.x_repo_id.clone();
+    // Model slug used for dispatch_error logging when the stream errors
+    // before we observe the resolved model (e.g. before Claude's
+    // MessageStart event). When the stream succeeds, the model is read
+    // off the terminal StreamChunk::Done instead.
+    let model_for_map = target_model_label(&target).to_string();
     let cache = Arc::clone(&state.repo_state.cache);
 
     // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
@@ -967,6 +1006,19 @@ async fn handle_streaming(
 
             match chunk {
                 StreamChunk::Error(e) => {
+                    log_dispatch_error_event(&DispatchErrorLogContext {
+                        task_kind: &task_kind_for_map,
+                        target_kind: target_kind_for_map,
+                        // The backend model slug isn't reliably knowable
+                        // here — the stream errored before we observed a
+                        // MessageStart for Claude or got Done metadata for
+                        // Ollama/Grok. Use the original target's model
+                        // string from the dispatcher's perspective.
+                        model_used: &model_for_map,
+                        error_message: &e,
+                        repo_id: repo_id_for_map.as_deref(),
+                        streaming: true,
+                    });
                     // Emit an error frame that OpenAI clients recognise.
                     let err_payload = serde_json::json!({
                         "error": { "message": e, "type": "stream_error" }
@@ -1472,6 +1524,12 @@ struct DispatchOutcome {
     cache_creation_input_tokens: Option<u32>,
     // Anthropic prompt-cache read tokens (only set for Claude responses).
     cache_read_input_tokens: Option<u32>,
+    // Backend error message when the dispatch failed. The error is *also*
+    // surfaced as the `reply` body (so clients still get a textual
+    // response), but having it as an explicit field lets callers
+    // distinguish errors from successes without string-matching on `reply`.
+    // Populated only by `DispatchOutcome::error`.
+    error: Option<String>,
 }
 
 impl DispatchOutcome {
@@ -1483,17 +1541,19 @@ impl DispatchOutcome {
             tokens_used: tokens,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            error: None,
         }
     }
 
     fn error(msg: String, model: String) -> Self {
         Self {
-            reply: msg,
+            reply: msg.clone(),
             model_used: model,
             used_fallback: false,
             tokens_used: None,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            error: Some(msg),
         }
     }
 }
@@ -1530,6 +1590,7 @@ async fn dispatch(
                         tokens_used: tokens,
                         cache_creation_input_tokens: None,
                         cache_read_input_tokens: None,
+                        error: None,
                     }
                 }
                 Err(e) => {
@@ -1661,6 +1722,7 @@ async fn dispatch_claude(
                 tokens_used: tokens,
                 cache_creation_input_tokens: cache_creation,
                 cache_read_input_tokens: cache_read,
+                error: None,
             }
         }
         Err(e) => {
@@ -1688,6 +1750,17 @@ const fn target_kind_label(target: &ModelTarget) -> &'static str {
         ModelTarget::Local { .. } => "local",
         ModelTarget::Remote { .. } => "remote",
         ModelTarget::Claude { .. } => "claude",
+    }
+}
+
+// Extract the model slug from a `ModelTarget` regardless of variant. Used
+// for the `model` field on structured dispatch_error events emitted before
+// the backend has confirmed its resolved model slug.
+fn target_model_label(target: &ModelTarget) -> &str {
+    match target {
+        ModelTarget::Local { model, .. }
+        | ModelTarget::Remote { model, .. }
+        | ModelTarget::Claude { model, .. } => model,
     }
 }
 
@@ -1737,6 +1810,39 @@ fn log_dispatch_event(ctx: &DispatchLogContext<'_>) {
         streaming = ctx.streaming,
         used_fallback = ctx.used_fallback,
         "Proxy dispatch completed"
+    );
+}
+
+/// Carrier for the fields a `proxy.dispatch_error` log line emits. Shape
+/// intentionally mirrors `DispatchLogContext` for the fields they share
+/// (task_kind, target, model, repo_id, streaming) so downstream queries
+/// that group by `task_kind` + `target` work the same on both event types
+/// — the error variant just swaps the success-side token fields for an
+/// `error_message`.
+struct DispatchErrorLogContext<'a> {
+    task_kind: &'a str,
+    target_kind: &'static str,
+    model_used: &'a str,
+    error_message: &'a str,
+    repo_id: Option<&'a str>,
+    streaming: bool,
+}
+
+// Emit the canonical "proxy.dispatch_error" structured event. Pairs with
+// log_dispatch_event so a downstream metrics roll-up can compute
+// dispatch_error_rate = count(proxy.dispatch_error) /
+// (count(proxy.dispatch) + count(proxy.dispatch_error)) grouped by
+// task_kind/target.
+fn log_dispatch_error_event(ctx: &DispatchErrorLogContext<'_>) {
+    warn!(
+        event = "proxy.dispatch_error",
+        task_kind = ctx.task_kind,
+        target = ctx.target_kind,
+        model = %ctx.model_used,
+        error = ctx.error_message,
+        repo_id = ctx.repo_id.unwrap_or(""),
+        streaming = ctx.streaming,
+        "Proxy dispatch failed"
     );
 }
 
@@ -2224,5 +2330,35 @@ mod tests {
         assert_eq!(target_kind_label(&local), "local");
         assert_eq!(target_kind_label(&remote), "remote");
         assert_eq!(target_kind_label(&claude), "claude");
+        // target_model_label pulls the model slug out of any variant — used
+        // when the stream errors before the backend confirms its resolved
+        // model on a MessageStart event.
+        assert_eq!(target_model_label(&local), "qwen2.5-coder:7b");
+        assert_eq!(target_model_label(&remote), "grok-3");
+        assert_eq!(target_model_label(&claude), "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn dispatch_outcome_error_constructor_sets_error_and_reply() {
+        // Two facts the rest of the proxy depends on:
+        // 1. `reply` carries the error text so the client still sees a
+        //    human-readable response in OaiChatResponse.message.content.
+        // 2. `error` carries the same text, signalling to
+        //    handle_chat_completions that this was a backend failure
+        //    (skip the cache write, emit proxy.dispatch_error instead of
+        //    proxy.dispatch).
+        let outcome =
+            DispatchOutcome::error("connection refused".to_string(), "grok-3".to_string());
+        assert_eq!(outcome.reply, "connection refused");
+        assert_eq!(outcome.error.as_deref(), Some("connection refused"));
+        assert_eq!(outcome.model_used, "grok-3");
+        assert!(!outcome.used_fallback);
+        assert!(outcome.tokens_used.is_none());
+
+        // Sanity: the success constructor leaves `error` as None so the
+        // "fast path" branch in handle_chat_completions falls through to
+        // the normal cache write + success log.
+        let ok = DispatchOutcome::ok("hello".to_string(), "grok-3".to_string(), Some(42));
+        assert!(ok.error.is_none());
     }
 }
