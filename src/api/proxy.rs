@@ -339,6 +339,15 @@ struct OaiChunkResponse {
     // Only present on the final chunk (finish_reason = "stop").
     #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<OaiUsage>,
+    // Anthropic prompt-cache write tokens. Only emitted on the final chunk of
+    // a Claude-served stream — every other path leaves it `None` so the field
+    // is skipped from the serialized JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_creation_input_tokens: Option<u32>,
+    // Anthropic prompt-cache read tokens. Only emitted on the final chunk of
+    // a Claude-served stream — every other path leaves it `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_read_input_tokens: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -738,6 +747,8 @@ async fn handle_streaming(
                                 used_fallback: false,
                                 prompt_tokens: Some(resp.prompt_tokens as u32),
                                 completion_tokens: Some(resp.completion_tokens as u32),
+                                cache_creation_input_tokens: None,
+                                cache_read_input_tokens: None,
                             })
                             .await;
                     }
@@ -787,9 +798,17 @@ async fn handle_streaming(
                 match client.send_message(&message_req).await {
                     Ok(resp) => {
                         let text = extract_text(&resp);
+                        let cache_creation = (resp.usage.cache_creation_input_tokens > 0)
+                            .then_some(resp.usage.cache_creation_input_tokens);
+                        let cache_read = (resp.usage.cache_read_input_tokens > 0)
+                            .then_some(resp.usage.cache_read_input_tokens);
                         info!(
                             model = %resp.model,
                             tier = %tier,
+                            input_tokens = resp.usage.input_tokens,
+                            output_tokens = resp.usage.output_tokens,
+                            cache_creation_input_tokens = resp.usage.cache_creation_input_tokens,
+                            cache_read_input_tokens = resp.usage.cache_read_input_tokens,
                             "Proxy stream: Claude dispatch succeeded"
                         );
                         let _ = tx.send(StreamChunk::Delta(text)).await;
@@ -799,6 +818,8 @@ async fn handle_streaming(
                                 used_fallback: false,
                                 prompt_tokens: Some(resp.usage.input_tokens),
                                 completion_tokens: Some(resp.usage.output_tokens),
+                                cache_creation_input_tokens: cache_creation,
+                                cache_read_input_tokens: cache_read,
                             })
                             .await;
                     }
@@ -824,7 +845,12 @@ async fn handle_streaming(
 
     // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
     // so the FnMut closure can share it with the cache-write spawned at the end.
-    type FinalMeta = Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32)>>>;
+    // The tuple carries: (model_used, used_fallback, prompt_tokens,
+    // completion_tokens, cache_creation_input_tokens, cache_read_input_tokens).
+    // The two cache token fields are only populated for the Claude arm.
+    type FinalMeta = Arc<
+        tokio::sync::Mutex<Option<(String, bool, u32, u32, Option<u32>, Option<u32>)>>,
+    >;
     let accumulated = Arc::new(tokio::sync::Mutex::new(String::new()));
     let final_meta: FinalMeta = Arc::new(tokio::sync::Mutex::new(None));
 
@@ -866,6 +892,8 @@ async fn handle_streaming(
                             finish_reason: None,
                         }],
                         usage: None,
+                        cache_creation_input_tokens: None,
+                        cache_read_input_tokens: None,
                     };
                     let data =
                         serde_json::to_string(&chunk_resp).unwrap_or_else(|_| "{}".to_string());
@@ -877,12 +905,21 @@ async fn handle_streaming(
                     used_fallback,
                     prompt_tokens,
                     completion_tokens,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 } => {
                     // Store final metadata so we can cache after the stream ends.
                     let pt = prompt_tokens.unwrap_or(0);
                     let ct = completion_tokens.unwrap_or(0);
                     if let Ok(mut m) = meta_clone.try_lock() {
-                        *m = Some((model_used.clone(), used_fallback, pt, ct));
+                        *m = Some((
+                            model_used.clone(),
+                            used_fallback,
+                            pt,
+                            ct,
+                            cache_creation_input_tokens,
+                            cache_read_input_tokens,
+                        ));
                     }
 
                     let final_chunk = OaiChunkResponse {
@@ -903,6 +940,8 @@ async fn handle_streaming(
                             completion_tokens: ct,
                             total_tokens: pt + ct,
                         }),
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
                     };
                     let data =
                         serde_json::to_string(&final_chunk).unwrap_or_else(|_| "{}".to_string());
@@ -914,7 +953,15 @@ async fn handle_streaming(
         .chain(stream::once(async move {
             // Best-effort cache write once the stream is complete.
             let acc = accumulated.lock().await;
-            if let Some((model_used, used_fallback, pt, ct)) = final_meta.lock().await.clone() {
+            if let Some((
+                model_used,
+                used_fallback,
+                pt,
+                ct,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+            )) = final_meta.lock().await.clone()
+            {
                 let cached_val = CachedProxyResponse {
                     content: acc.clone(),
                     model_used: model_used.clone(),
@@ -924,11 +971,8 @@ async fn handle_streaming(
                     repo_context_injected,
                     prompt_tokens: pt,
                     completion_tokens: ct,
-                    // Streaming path doesn't yet surface Anthropic cache token
-                    // counts — the streaming MessageStream usage observation would
-                    // need to be plumbed through StreamChunk to fill these in.
-                    cache_creation_input_tokens: None,
-                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 };
                 let key = cache_key_clone;
                 tokio::spawn(async move {
@@ -959,6 +1003,8 @@ async fn handle_streaming(
             finish_reason: None,
         }],
         usage: None,
+        cache_creation_input_tokens: None,
+        cache_read_input_tokens: None,
     };
     let first_data = serde_json::to_string(&first_chunk).unwrap_or_else(|_| "{}".to_string());
     let first_event = stream::once(async move {
@@ -1793,5 +1839,67 @@ mod tests {
             Some("ephemeral"),
             "expected ephemeral cache marker on long system prompt"
         );
+    }
+
+    #[test]
+    fn streaming_final_chunk_serializes_cache_token_fields_when_set() {
+        // Final-chunk shape on a Claude-served stream: usage carries the
+        // standard OpenAI token counts and the proxy adds the two
+        // Anthropic-specific cache counters so SSE clients can read them off
+        // the wire the same way the non-streaming path exposes them via
+        // x_ra_metadata.
+        let chunk = OaiChunkResponse {
+            id: "chatcmpl-rc-final".to_string(),
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "claude-sonnet-4-6".to_string(),
+            choices: vec![OaiChunkChoice {
+                index: 0,
+                delta: OaiDelta {
+                    role: None,
+                    content: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: Some(OaiUsage {
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+            }),
+            cache_creation_input_tokens: Some(1234),
+            cache_read_input_tokens: Some(5678),
+        };
+        let json: serde_json::Value =
+            serde_json::to_value(&chunk).expect("chunk should serialize");
+        assert_eq!(json["cache_creation_input_tokens"], serde_json::json!(1234));
+        assert_eq!(json["cache_read_input_tokens"], serde_json::json!(5678));
+    }
+
+    #[test]
+    fn streaming_chunk_omits_cache_token_fields_when_unset() {
+        // The two cache fields are `#[serde(skip_serializing_if = "Option::is_none")]`,
+        // so non-Claude paths (and Claude chunks before Done) emit the standard
+        // OpenAI shape without the extension fields.
+        let chunk = OaiChunkResponse {
+            id: "chatcmpl-rc-mid".to_string(),
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "streaming".to_string(),
+            choices: vec![OaiChunkChoice {
+                index: 0,
+                delta: OaiDelta {
+                    role: None,
+                    content: Some("hello".to_string()),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+        };
+        let json: serde_json::Value =
+            serde_json::to_value(&chunk).expect("chunk should serialize");
+        assert!(json.get("cache_creation_input_tokens").is_none());
+        assert!(json.get("cache_read_input_tokens").is_none());
     }
 }

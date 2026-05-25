@@ -62,8 +62,21 @@
   > cache slot on short prompts that wouldn't qualify). The
   > `prompt-caching-scope-2026-01-05` beta header was already in the default
   > `AnthropicRequestProfile`, so no header change was needed.
-  > Outstanding: streaming path does not yet surface cache token counts (would
-  > require plumbing usage observation through `StreamChunk`).
+  >
+  > **Streaming-path cache tokens done 2026-05-25.** `StreamChunk::Done`
+  > grew `cache_creation_input_tokens: Option<u32>` and
+  > `cache_read_input_tokens: Option<u32>` fields. The proxy's Claude
+  > streaming arm populates them from `resp.usage`; the Ollama and Grok
+  > arms emit `None`. The proxy's accumulator passes both through to the
+  > `CachedProxyResponse` write so streamed responses now hit the local
+  > cache with the same metadata the non-streaming path stores. Both
+  > fields also ride out on the final SSE chunk as
+  > `cache_creation_input_tokens` / `cache_read_input_tokens` extension
+  > fields (skipped when `None` to keep non-Claude streams
+  > OpenAI-shape-compatible), matching the non-streaming path's
+  > `x_ra_metadata` exposure. The native-SSE follow-up (driving
+  > `AnthropicClient::stream_message` instead of the single-delta
+  > `send_message` synth) is still outstanding — see CLAUDE-A's note.
 
 ---
 
