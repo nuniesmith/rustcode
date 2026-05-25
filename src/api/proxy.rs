@@ -134,8 +134,8 @@ use crate::llm::ollama::StreamChunk;
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{
-    AnthropicClient, InputMessage, MessageRequest, MessageResponse,
-    OutputContentBlock as AnthropicContentBlock, PromptCache, SystemBlock,
+    AnthropicClient, ContentBlockDelta, InputMessage, MessageRequest, MessageResponse,
+    OutputContentBlock as AnthropicContentBlock, PromptCache, StreamEvent, SystemBlock, Usage,
 };
 
 // ---------------------------------------------------------------------------
@@ -761,10 +761,19 @@ async fn handle_streaming(
             rx
         }
         ModelTarget::Claude { model, tier } => {
-            // Synthesise a single-delta stream from a blocking Claude call.
-            // Native SSE streaming via AnthropicClient::stream_message lives behind
-            // a follow-up task (currently this matches the Grok path's behaviour).
-            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(4);
+            // Real Anthropic SSE: pump `AnthropicClient::stream_message` and
+            // translate each `StreamEvent` into a `StreamChunk`. We forward
+            // only `TextDelta`s (the other delta variants — InputJson,
+            // Thinking, Signature — are skipped to match the non-streaming
+            // path's `extract_text` text-only contract). Final usage is read
+            // off the last `MessageDelta` event and emitted on
+            // `MessageStop`.
+            //
+            // Channel buffer is wider than the synthesised path's 4 because
+            // a real stream produces dozens of small deltas; back-pressuring
+            // the SSE pump on every token would block the upstream reqwest
+            // chunk reader.
+            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(64);
             let model = model.clone();
             let tier = *tier;
             let anthropic_client = state.repo_state.anthropic_client.clone();
@@ -792,39 +801,95 @@ async fn handle_streaming(
                     tool_choice: None,
                     temperature: None,
                     response_format: None,
+                    // stream_message flips this on internally; the explicit
+                    // false here matches the historical request shape so the
+                    // prompt-cache request fingerprint is comparable to the
+                    // non-streaming dispatch's.
                     stream: false,
                 };
 
-                match client.send_message(&message_req).await {
-                    Ok(resp) => {
-                        let text = extract_text(&resp);
-                        let cache_creation = (resp.usage.cache_creation_input_tokens > 0)
-                            .then_some(resp.usage.cache_creation_input_tokens);
-                        let cache_read = (resp.usage.cache_read_input_tokens > 0)
-                            .then_some(resp.usage.cache_read_input_tokens);
-                        info!(
-                            model = %resp.model,
-                            tier = %tier,
-                            input_tokens = resp.usage.input_tokens,
-                            output_tokens = resp.usage.output_tokens,
-                            cache_creation_input_tokens = resp.usage.cache_creation_input_tokens,
-                            cache_read_input_tokens = resp.usage.cache_read_input_tokens,
-                            "Proxy stream: Claude dispatch succeeded"
-                        );
-                        let _ = tx.send(StreamChunk::Delta(text)).await;
-                        let _ = tx
-                            .send(StreamChunk::Done {
-                                model_used: resp.model,
-                                used_fallback: false,
-                                prompt_tokens: Some(resp.usage.input_tokens),
-                                completion_tokens: Some(resp.usage.output_tokens),
-                                cache_creation_input_tokens: cache_creation,
-                                cache_read_input_tokens: cache_read,
-                            })
-                            .await;
-                    }
+                let mut stream = match client.stream_message(&message_req).await {
+                    Ok(stream) => stream,
                     Err(e) => {
+                        warn!(error = %e, "Proxy stream: Claude stream_message failed");
                         let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                        return;
+                    }
+                };
+
+                // Per-stream accumulators. `model_used` is updated when the
+                // `MessageStart` event arrives (Anthropic echoes the resolved
+                // model slug — important for `auto` / aliased model routing).
+                // `latest_usage` tracks the most recent `MessageDelta::usage`
+                // so the final `Done` reflects the terminal token counts
+                // including cache creation / read totals.
+                let mut model_used = model.clone();
+                let mut latest_usage: Option<Usage> = None;
+                let mut done_sent = false;
+
+                loop {
+                    match stream.next_event().await {
+                        Ok(Some(event)) => match event {
+                            StreamEvent::MessageStart(start) => {
+                                if !start.message.model.is_empty() {
+                                    model_used = start.message.model;
+                                }
+                                // The initial usage carries the prompt-token
+                                // count; later MessageDeltas update it with
+                                // cumulative output + cache totals.
+                                latest_usage = Some(start.message.usage);
+                            }
+                            StreamEvent::ContentBlockDelta(delta) => {
+                                if let ContentBlockDelta::TextDelta { text } = delta.delta {
+                                    if tx.send(StreamChunk::Delta(text)).await.is_err() {
+                                        // Receiver dropped (client disconnected).
+                                        // Stop pumping; no Done is needed.
+                                        return;
+                                    }
+                                }
+                                // Other delta kinds (InputJson, Thinking,
+                                // Signature) are silently dropped: matches
+                                // the non-streaming `extract_text` contract.
+                            }
+                            StreamEvent::MessageDelta(delta) => {
+                                latest_usage = Some(delta.usage);
+                            }
+                            StreamEvent::MessageStop(_) => {
+                                send_claude_done(
+                                    &tx,
+                                    model_used.clone(),
+                                    latest_usage.as_ref(),
+                                    tier,
+                                )
+                                .await;
+                                done_sent = true;
+                                // Don't break — keep draining so the
+                                // underlying MessageStream gets a chance to
+                                // settle its prompt-cache record. The next
+                                // iteration sees Ok(None) and exits.
+                            }
+                            _ => {} // ContentBlockStart / ContentBlockStop
+                        },
+                        Ok(None) => {
+                            // Stream exhausted without an explicit
+                            // MessageStop — emit Done with whatever usage
+                            // we have so the cache write still fires.
+                            if !done_sent {
+                                send_claude_done(
+                                    &tx,
+                                    model_used.clone(),
+                                    latest_usage.as_ref(),
+                                    tier,
+                                )
+                                .await;
+                            }
+                            return;
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Proxy stream: Claude stream error mid-flight");
+                            let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                            return;
+                        }
                     }
                 }
             });
@@ -1577,6 +1642,49 @@ fn build_system_blocks(system_prompt: Option<&str>) -> Option<Vec<SystemBlock>> 
     Some(vec![block])
 }
 
+// Build and send the terminal `StreamChunk::Done` for a Claude stream.
+// Centralises the usage → cache-token translation so the `MessageStop` and
+// "stream exhausted without MessageStop" paths agree. Errors on the send
+// (receiver dropped) are intentionally swallowed: the client is already
+// gone, no further work would change the outcome.
+async fn send_claude_done(
+    tx: &tokio::sync::mpsc::Sender<StreamChunk>,
+    model_used: String,
+    usage: Option<&Usage>,
+    tier: ClaudeTier,
+) {
+    let (input_tokens, output_tokens, cache_creation, cache_read) = usage.map_or(
+        (None, None, None, None),
+        |u| {
+            (
+                Some(u.input_tokens),
+                Some(u.output_tokens),
+                (u.cache_creation_input_tokens > 0).then_some(u.cache_creation_input_tokens),
+                (u.cache_read_input_tokens > 0).then_some(u.cache_read_input_tokens),
+            )
+        },
+    );
+    info!(
+        model = %model_used,
+        tier = %tier,
+        input_tokens = input_tokens.unwrap_or(0),
+        output_tokens = output_tokens.unwrap_or(0),
+        cache_creation_input_tokens = cache_creation.unwrap_or(0),
+        cache_read_input_tokens = cache_read.unwrap_or(0),
+        "Proxy stream: Claude stream finished"
+    );
+    let _ = tx
+        .send(StreamChunk::Done {
+            model_used,
+            used_fallback: false,
+            prompt_tokens: input_tokens,
+            completion_tokens: output_tokens,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+        })
+        .await;
+}
+
 // Concatenate all Text content blocks from a Claude response into a single string.
 fn extract_text(resp: &MessageResponse) -> String {
     let mut buf = String::new();
@@ -1873,6 +1981,83 @@ mod tests {
             serde_json::to_value(&chunk).expect("chunk should serialize");
         assert_eq!(json["cache_creation_input_tokens"], serde_json::json!(1234));
         assert_eq!(json["cache_read_input_tokens"], serde_json::json!(5678));
+    }
+
+    #[tokio::test]
+    async fn send_claude_done_emits_cache_tokens_only_when_nonzero() {
+        // Helper used by the native-SSE Claude arm to terminate the stream.
+        // When the final `Usage` carries cache_creation/cache_read tokens,
+        // those flow into `StreamChunk::Done` (so downstream `OaiChunkResponse`
+        // can expose them on the wire). When both are zero, the
+        // `then_some` guards keep them out of the chunk — keeps the cache
+        // write metadata honest about whether Anthropic actually counted a
+        // cache hit.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StreamChunk>(2);
+        let usage = Usage {
+            input_tokens: 1_500,
+            cache_creation_input_tokens: 1_200,
+            cache_read_input_tokens: 0,
+            output_tokens: 320,
+        };
+        send_claude_done(
+            &tx,
+            "claude-sonnet-4-6".to_string(),
+            Some(&usage),
+            ClaudeTier::Executor,
+        )
+        .await;
+        let chunk = rx.recv().await.expect("Done chunk should be sent");
+        match chunk {
+            StreamChunk::Done {
+                model_used,
+                used_fallback,
+                prompt_tokens,
+                completion_tokens,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+            } => {
+                assert_eq!(model_used, "claude-sonnet-4-6");
+                assert!(!used_fallback);
+                assert_eq!(prompt_tokens, Some(1_500));
+                assert_eq!(completion_tokens, Some(320));
+                assert_eq!(cache_creation_input_tokens, Some(1_200));
+                // Cache-read tokens are zero ⇒ the helper drops the field
+                // (None) rather than emitting an explicit 0.
+                assert_eq!(cache_read_input_tokens, None);
+            }
+            other => panic!("expected StreamChunk::Done, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_claude_done_handles_missing_usage_gracefully() {
+        // Stream exhausted before any MessageDelta arrived. The helper
+        // should still emit Done so the cache-write tail runs — token
+        // fields are simply absent.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StreamChunk>(2);
+        send_claude_done(
+            &tx,
+            "claude-opus-4-7".to_string(),
+            None,
+            ClaudeTier::Planner,
+        )
+        .await;
+        let chunk = rx.recv().await.expect("Done chunk should be sent");
+        match chunk {
+            StreamChunk::Done {
+                prompt_tokens,
+                completion_tokens,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+                ..
+            } => {
+                assert_eq!(prompt_tokens, None);
+                assert_eq!(completion_tokens, None);
+                assert_eq!(cache_creation_input_tokens, None);
+                assert_eq!(cache_read_input_tokens, None);
+            }
+            other => panic!("expected StreamChunk::Done, got {other:?}"),
+        }
     }
 
     #[test]
