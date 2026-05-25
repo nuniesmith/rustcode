@@ -451,12 +451,26 @@
 - [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
   > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
   > emits a structured `event = "proxy.dispatch"` log line at the end of
-  > every request (cache hit, dispatch, and streaming `Done` paths) with
-  > `task_kind`, `target` (`local`/`remote`/`claude`), `model`, prompt /
-  > completion / cache token counts, `rag_chunks_used`,
+  > every successful request (cache hit, dispatch, and streaming `Done`
+  > paths) with `task_kind`, `target` (`local`/`remote`/`claude`),
+  > `model`, prompt / completion / cache token counts, `rag_chunks_used`,
   > `repo_context_injected`, `repo_id`, `cached`, `streaming`, and
   > `used_fallback`. Field names are stable surface for downstream
   > metrics — see `target_kind_label_emits_stable_strings_per_variant`.
+  >
+  > **Error-path symmetry done 2026-05-25.** `DispatchOutcome` now carries
+  > an explicit `error: Option<String>` field (populated only by
+  > `DispatchOutcome::error`), and `handle_chat_completions` branches on
+  > it: on a backend failure it emits a matching `event =
+  > "proxy.dispatch_error"` warn-level event (task_kind, target, model,
+  > error, repo_id, streaming) and skips the cache write — poisoning the
+  > cache with error responses would replay failures on every duplicate
+  > request for the TTL. The streaming SSE pump emits the same event on
+  > `StreamChunk::Error`. Downstream queries can compute
+  > `dispatch_error_rate = count(proxy.dispatch_error) /
+  > (count(proxy.dispatch) + count(proxy.dispatch_error))` grouped by
+  > `task_kind`/`target`.
+  >
   > Outstanding: aggregate the log stream once deployed (probably via
   > Loki/Promtail or a tail-and-roll-up Postgres job) and adjust the
   > classifier prompt based on observed misclassifications.
