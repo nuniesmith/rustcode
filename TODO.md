@@ -448,7 +448,18 @@
 
 ### RC-API: Security & Config
 - [ ] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
-- [ ] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
+- [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
+  > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
+  > emits a structured `event = "proxy.dispatch"` log line at the end of
+  > every request (cache hit, dispatch, and streaming `Done` paths) with
+  > `task_kind`, `target` (`local`/`remote`/`claude`), `model`, prompt /
+  > completion / cache token counts, `rag_chunks_used`,
+  > `repo_context_injected`, `repo_id`, `cached`, `streaming`, and
+  > `used_fallback`. Field names are stable surface for downstream
+  > metrics — see `target_kind_label_emits_stable_strings_per_variant`.
+  > Outstanding: aggregate the log stream once deployed (probably via
+  > Loki/Promtail or a tail-and-roll-up Postgres job) and adjust the
+  > classifier prompt based on observed misclassifications.
 - [x] Add `ANTHROPIC_API_KEY`, `RC_PLANNER_MODEL`, `RC_EXECUTOR_MODEL` to `.env.example` and README config table
   > Already done. Verified 2026-05-23: `.env.example` has
   > `ANTHROPIC_API_KEY=` (uncommented), `# RC_PLANNER_MODEL=claude-opus-4-7`
