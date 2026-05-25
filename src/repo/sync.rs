@@ -90,6 +90,46 @@ impl RegisteredRepo {
     }
 }
 
+/// Look up the per-repo `skip_extensions` override for a given path by
+/// matching `registered_repos.local_path` exactly.
+///
+/// Returns:
+/// * `Ok(None)` — no `registered_repos` row exists for the path, or the
+///   row's `skip_extensions` column is NULL. Both mean "use the
+///   caller's global default" (the scanner falls back to `SKIP_SUFFIXES`,
+///   the audit runner falls back to `AuditRunnerConfig.skip_extensions`).
+/// * `Ok(Some(list))` — an API-registered repo has an explicit
+///   override. Forwarded verbatim, including the empty-list case
+///   (which means "skip nothing by extension on this repo" per PR A's
+///   contract).
+///
+/// Canonical lookup used by every "scan a registered repo" surface:
+/// the audit runner consults it (PR C; see
+/// `audit::endpoint::handle_audit_post`) and PR B's auto-scanner has
+/// a structurally identical query in
+/// `AutoScanner::fetch_skip_extensions_override` (deliberately kept
+/// separate so PR B can land independently of PR C; a follow-up can
+/// dedupe once both have merged). Callers treat failures as advisory
+/// — never block the scan/audit on a lookup error.
+pub async fn fetch_repo_skip_extensions(
+    pool: &PgPool,
+    repo_path: &Path,
+) -> anyhow::Result<Option<Vec<String>>> {
+    let path_str = repo_path.to_string_lossy().to_string();
+    let row = sqlx::query(
+        "SELECT skip_extensions FROM registered_repos \
+         WHERE local_path = $1 AND active = TRUE \
+         LIMIT 1",
+    )
+    .bind(&path_str)
+    .fetch_optional(pool)
+    .await?;
+    match row {
+        Some(r) => Ok(r.try_get::<Option<Vec<String>>, _>("skip_extensions")?),
+        None => Ok(None),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Manifest (written to .rustcode/manifest.json)
 // ---------------------------------------------------------------------------

@@ -483,11 +483,25 @@
   > extensions with or without a leading dot so per-repo (`"png"`)
   > and `SKIP_SUFFIXES` (`".png"`) representations both work.
   >
-  > **PR C (after B) — wire into audit runner.** `AuditRunnerConfig` and
-  > `FullAuditConfig` currently take `skip_extensions` from the global
-  > scanner config; need a `for_repo(&RegisteredRepo, &ScannerConfig)`
-  > overlay constructor that consults `effective_skip_extensions`. Then
-  > update audit call sites that scan a registered repo.
+  > **PR C (2026-05-25) — wire into audit runner.** Done. Stacked on
+  > PR B. `AuditRunnerConfig::with_repo_skip_extensions_override` and
+  > `FullAuditConfig::with_repo_skip_extensions_override` are
+  > builder-style overlays that replace `skip_extensions` (replace,
+  > not augment — matches PR A's contract). `AuditState` gains a
+  > `db_pool: Option<PgPool>` populated from `Database::pool()` in
+  > `from_env`; `handle_audit_post` consults
+  > `repo::sync::fetch_repo_skip_extensions` per-audit before
+  > spawning the runner. Both the LLM-assisted (`with_grok`) and
+  > static-only paths honour the overlay — the static-only branch
+  > now uses `AuditRunner::new(overlaid_config)` instead of
+  > `with_defaults()` so the override survives.
+  >
+  > Note: PR B's `AutoScanner::fetch_skip_extensions_override` and
+  > PR C's free `repo::sync::fetch_repo_skip_extensions` are
+  > structurally identical (~10-line SQL helper). Kept separate so
+  > PR B could land independently. A follow-up dedupe (have
+  > `AutoScanner` delegate to the free function) is trivial once
+  > both have merged.
 - [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
   > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
   > emits a structured `event = "proxy.dispatch"` log line at the end of

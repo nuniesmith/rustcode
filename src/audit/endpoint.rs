@@ -52,6 +52,12 @@ pub struct AuditState {
     pub output_dir: std::path::PathBuf,
     // Runner config — applies to every audit triggered via the API.
     pub runner_config: AuditRunnerConfig,
+    // Optional Postgres pool for per-repo override lookups. When `Some`,
+    // the audit handler consults `registered_repos.skip_extensions`
+    // before each run and overlays it on `runner_config`. `None`
+    // disables the lookup — every audit uses the global config
+    // verbatim, matching the pre-PR-C behaviour.
+    pub db_pool: Option<sqlx::PgPool>,
 }
 
 impl AuditState {
@@ -63,6 +69,12 @@ impl AuditState {
     // | `REDIS_URL`         | `redis://127.0.0.1:6379`|
     // | `AUDIT_OUTPUT_DIR`  | `docs/audit`            |
     pub async fn from_env(db: crate::db::Database) -> Self {
+        // Capture the pool *before* `db` is moved into the GrokClient
+        // (the `Ok(key)` branch consumes it). Clones are cheap — PgPool
+        // is internally `Arc`-shared — so the audit handler and the
+        // Grok client both get a live handle.
+        let db_pool = Some(db.pool().clone());
+
         let grok = match std::env::var("XAI_API_KEY") {
             Ok(key) if !key.is_empty() => {
                 info!("AuditState: GrokClient enabled");
@@ -98,6 +110,7 @@ impl AuditState {
             cache: Arc::new(RwLock::new(cache)),
             output_dir,
             runner_config: AuditRunnerConfig::default(),
+            db_pool,
         }
     }
 }
@@ -243,17 +256,43 @@ pub async fn handle_audit_post(
     let grok = state.grok.clone();
     let runner_config = state.runner_config.clone();
     let run_id_bg = run_id.clone();
+    let db_pool = state.db_pool.clone();
 
     tokio::spawn(async move {
         let repo_path = std::path::PathBuf::from(&req.repo);
+
+        // Per-repo override lookup, parallel to PR B's scanner path. The
+        // lookup is advisory — log-and-fall-back to the global config if
+        // it errors so a transient DB issue can't block an audit. None
+        // (no registered_repos row, or NULL skip_extensions) leaves the
+        // global config untouched; Some(list) (including empty)
+        // *replaces* skip_extensions per PR A's contract.
+        let repo_override: Option<Vec<String>> = if let Some(pool) = db_pool.as_ref() {
+            match crate::repo::sync::fetch_repo_skip_extensions(pool, &repo_path).await {
+                Ok(o) => o,
+                Err(e) => {
+                    warn!(
+                        path = %req.repo,
+                        error = %e,
+                        "Failed to fetch per-repo skip_extensions for audit; using global default"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let runner_config = runner_config.with_repo_skip_extensions_override(repo_override);
+
         let result = if let Some(grok_client) = grok {
             let runner = AuditRunner::with_grok(runner_config, grok_client);
             runner.run(req).await
         } else {
-            // No LLM key — fall back to static-analysis-only path.
-            AuditRunner::with_defaults()
-                .run_static_only(&repo_path)
-                .await
+            // No LLM key — fall back to static-analysis-only path. The
+            // per-repo override is honoured here too: build a runner
+            // explicitly from the overlaid config rather than calling
+            // `with_defaults` (which would discard the override).
+            AuditRunner::new(runner_config).run_static_only(&repo_path).await
         };
 
         match result {
@@ -447,6 +486,9 @@ mod tests {
                 uuid::Uuid::new_v4()
             )),
             runner_config: AuditRunnerConfig::default(),
+            // Tests don't touch the per-repo lookup path; None disables
+            // it and the audit runs with the global config verbatim.
+            db_pool: None,
         })
     }
 

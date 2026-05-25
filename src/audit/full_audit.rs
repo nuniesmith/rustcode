@@ -549,6 +549,23 @@ impl Default for FullAuditConfig {
 }
 
 impl FullAuditConfig {
+    /// Apply a per-repo `skip_extensions` override. Mirrors
+    /// `AuditRunnerConfig::with_repo_skip_extensions_override`: when
+    /// `Some(list)`, replaces this config's `skip_extensions` in full;
+    /// when `None`, leaves the config unchanged. See the runner-side
+    /// docs for the full replace-not-additive contract.
+    pub fn with_repo_skip_extensions_override(
+        mut self,
+        repo_override: Option<Vec<String>>,
+    ) -> Self {
+        if let Some(list) = repo_override {
+            self.skip_extensions = list;
+        }
+        self
+    }
+}
+
+impl FullAuditConfig {
     // Serialise to JSON string for storage in `audit_runs.config_json`.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
