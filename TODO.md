@@ -25,9 +25,20 @@
   > carries an `Option<Arc<AnthropicClient>>` built once at startup, preserving the
   > attached `PromptCache` across requests. `route_from_model_field` now picks the
   > right Claude tier from `claude-*` slugs. `ANTHROPIC_API_KEY` was added to
-  > `.env.example` and `ModelConfig` in `src/config.rs`. Streaming dispatch
-  > synthesises a single-delta stream from `send_message` (native SSE via
-  > `AnthropicClient::stream_message` left as follow-up).
+  > `.env.example` and `ModelConfig` in `src/config.rs`.
+  >
+  > **Native SSE follow-up done 2026-05-25.** The Claude arm of
+  > `handle_streaming` now pumps `AnthropicClient::stream_message` directly
+  > instead of synthesising a single delta from a blocking `send_message`.
+  > Each `StreamEvent::ContentBlockDelta::TextDelta` forwards as a
+  > `StreamChunk::Delta`; `MessageStart`/`MessageDelta` accumulate model + usage;
+  > `MessageStop` (or stream exhaustion) emits `StreamChunk::Done` via the new
+  > `send_claude_done` helper, which keeps cache token counts honest by only
+  > emitting `cache_creation_input_tokens` / `cache_read_input_tokens` when
+  > Anthropic actually reported a nonzero count. Non-text deltas (InputJson,
+  > Thinking, Signature) are dropped to match the non-streaming
+  > `extract_text` contract. Channel buffer widened from 4 to 64 to absorb
+  > real-stream burstiness without back-pressuring the reqwest chunk pump.
 
 - [x] **CLAUDE-B: two-tier routing — Opus 4.7 (planner) vs Sonnet 4.6 (executor)**
   > **Done 2026-05-17.** `ClaudeTier { Planner, Executor }` and `TaskKind::tier()`
