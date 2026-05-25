@@ -98,6 +98,13 @@ pub struct RegisterRepoRequest {
     pub branch: Option<String>,
     // If true, immediately run a sync after registration.
     pub sync_on_register: Option<bool>,
+    // Optional per-repo override for the scanner's file-extension skip
+    // list. `None` (omitted) means "use global SCANNER_SKIP_EXTENSIONS";
+    // a present list *replaces* the global default for this repo. Strings
+    // are extensions without the leading dot (e.g. `["png", "min.js"]`)
+    // to match the global representation. See migration 024 and
+    // RegisteredRepo::effective_skip_extensions.
+    pub skip_extensions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -179,6 +186,13 @@ async fn register_repo(
     if let Some(branch) = req.branch {
         repo.branch = branch;
     }
+    // Only set the override when the caller supplied a list (including
+    // an empty one — empty means "opt out of all extension skipping").
+    // An omitted field leaves `skip_extensions: None` so the scanner
+    // falls back to the global default.
+    if let Some(extensions) = req.skip_extensions {
+        repo.skip_extensions = Some(extensions);
+    }
 
     let mut service = state.sync_service.write().await;
     let id = match service.register(repo).await {
@@ -222,6 +236,9 @@ async fn get_repo(State(state): State<RepoAppState>, Path(id): Path<String>) -> 
             "last_synced": repo.last_synced,
             "remote_url": repo.remote_url,
             "cache_dir": repo.cache_dir(),
+            // null when the repo inherits the global SCANNER_SKIP_EXTENSIONS;
+            // an array (possibly empty) when the repo overrides it.
+            "skip_extensions": repo.skip_extensions,
         }))
         .into_response(),
         None => ApiError::not_found(format!("Repo '{}' not found", id)).into_response(),
