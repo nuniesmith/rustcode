@@ -1,12 +1,12 @@
 {
   "name": "code_review",
   "version": "0.1.0",
-  "description": "LLM-powered code review tool — sends a file to Grok 4.20 and returns structured findings",
+  "description": "LLM-powered code review tool — sends a file to the configured LLM and returns structured findings",
   "defaultEnabled": true,
   "tools": [
     {
       "name": "code_review",
-      "description": "Review a source file with Grok 4.20 multi-agent. Returns quality, security, and improvement notes.",
+      "description": "Review a source file with the configured LLM. Returns quality, security, and improvement notes.",
       "command": "rustcode",
       "args": ["tool", "code-review"],
       "requiredPermission": "read-only",
@@ -21,7 +21,7 @@
           },
           "model": {
             "type": "string",
-            "description": "xAI model override (default: grok-4.20-multi-agent-0309)"
+            "description": "LLM model override; defaults to the runtime's configured review model"
           },
           "focus": {
             "type": "string",
