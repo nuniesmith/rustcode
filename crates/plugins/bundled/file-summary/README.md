@@ -1,6 +1,6 @@
 # file-summary Plugin
 
-Generate structured LLM summaries for source files using Grok 4.20.
+Generate structured LLM summaries for source files using the runtime's configured LLM.
 
 ## Overview
 
@@ -55,11 +55,11 @@ The `file-summary` plugin analyzes a single source file and generates a comprehe
 
 ## Integration
 
-This plugin is bundled with rustcode and available when the `--server` mode is enabled. It integrates with the Grok xAI API for LLM analysis.
+This plugin is bundled with rustcode and available when the `--server` mode is enabled. It dispatches through the runtime's LLM router, so the active provider depends on rustcode's configuration.
 
 ### Prerequisites
 
-- `XAI_API_KEY` environment variable must be set
+- The configured LLM provider's API key must be set in the environment. The current implementation routes through xAI, so `XAI_API_KEY` is required; once the impl is migrated to the Anthropic backend the key will be `ANTHROPIC_API_KEY` instead.
 - Target file must be readable by the rustcode process
 
 ### Performance
