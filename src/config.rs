@@ -222,6 +222,19 @@ impl Config {
                 .unwrap_or(3.00),
         };
 
+        // `RC_PLUGIN_CONFIG_HOME` points at the plugin manager root
+        // (typically `infrastructure/config/rustcode/plugins/`). When
+        // set, `TaskExecutor` builds a `plugins::HookRunner` from the
+        // registry and fires `PreToolUse` / `PostToolUse` hooks around
+        // every agent tool call. Unset → no hooks, original behaviour.
+        let task_executor = TaskExecutorOptions {
+            plugin_config_home: std::env::var("RC_PLUGIN_CONFIG_HOME")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from),
+            ..TaskExecutorOptions::default()
+        };
+
         Ok(Self {
             server,
             llm,
@@ -233,7 +246,7 @@ impl Config {
             database,
             model,
             auto_scan,
-            task_executor: TaskExecutorOptions::default(),
+            task_executor,
             task_watcher: TaskWatcherConfig::default(),
         })
     }
@@ -797,6 +810,17 @@ mod tests {
         assert_eq!(config.auto_scan.interval_minutes, 60);
         assert_eq!(config.auto_scan.max_concurrent, 2);
         assert!((config.auto_scan.cost_budget - 3.00).abs() < f64::EPSILON);
+    }
+
+    /// Plugin hooks must be opt-in. A fresh `Config::default()` has no
+    /// `plugin_config_home`, so the task executor falls back to the
+    /// no-hooks path. `RC_PLUGIN_CONFIG_HOME` is the only way to turn
+    /// hooks on; `from_env` is what wires that env var into the field
+    /// (see `Config::from_env`).
+    #[test]
+    fn test_default_task_executor_has_no_plugin_hooks() {
+        let config = Config::default();
+        assert!(config.task_executor.plugin_config_home.is_none());
     }
 
     #[test]
