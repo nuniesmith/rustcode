@@ -36,6 +36,11 @@ pub struct Config {
     // Task watcher configuration (not serialized — populated at startup).
     #[serde(skip, default)]
     pub task_watcher: TaskWatcherConfig,
+    // MCP tool-bridge listener configuration. Opt-in via
+    // `RC_MCP_SERVER_ENABLED`. `#[serde(default)]` keeps older
+    // serialized configs forward-compatible.
+    #[serde(default)]
+    pub mcp_server: McpServerConfig,
 }
 
 impl Config {
@@ -222,6 +227,27 @@ impl Config {
                 .unwrap_or(3.00),
         };
 
+        // RC-CRATES-E placeholder listener. When `RC_MCP_SERVER_ENABLED`
+        // is truthy, `run_server` spawns a second Axum listener on the
+        // configured host:port (default `127.0.0.1:3501`). Today only
+        // a `/healthz` endpoint is mounted; tool-bridge endpoints over
+        // `runtime::McpToolRegistry` are deferred to a follow-up PR
+        // once the wire-format design is agreed.
+        let mcp_server = McpServerConfig {
+            enabled: std::env::var("RC_MCP_SERVER_ENABLED")
+                .ok()
+                .and_then(|s| s.parse::<bool>().ok())
+                .unwrap_or(false),
+            host: std::env::var("RC_MCP_HOST")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "127.0.0.1".to_string()),
+            port: std::env::var("RC_MCP_PORT")
+                .ok()
+                .and_then(|s| s.parse::<u16>().ok())
+                .unwrap_or(3501),
+        };
+
         Ok(Self {
             server,
             llm,
@@ -235,6 +261,7 @@ impl Config {
             auto_scan,
             task_executor: TaskExecutorOptions::default(),
             task_watcher: TaskWatcherConfig::default(),
+            mcp_server,
         })
     }
 
@@ -280,6 +307,29 @@ impl Default for Config {
             auto_scan: AutoScanConfig::default(),
             task_executor: TaskExecutorOptions::default(),
             task_watcher: TaskWatcherConfig::default(),
+            mcp_server: McpServerConfig::default(),
+        }
+    }
+}
+
+// MCP tool-bridge listener configuration. Disabled by default; opt
+// in with `RC_MCP_SERVER_ENABLED=true`. When enabled, `run_server`
+// spawns a second Axum listener on `host:port` for the MCP
+// tool-bridge endpoints. The bridge itself is a follow-up — this
+// PR mounts only `/healthz` so the scaffolding can land first.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+}
+
+impl Default for McpServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "127.0.0.1".to_string(),
+            port: 3501,
         }
     }
 }
@@ -797,6 +847,18 @@ mod tests {
         assert_eq!(config.auto_scan.interval_minutes, 60);
         assert_eq!(config.auto_scan.max_concurrent, 2);
         assert!((config.auto_scan.cost_budget - 3.00).abs() < f64::EPSILON);
+    }
+
+    /// MCP listener is opt-in via `RC_MCP_SERVER_ENABLED`; defaults
+    /// must keep it off so an upgrade doesn't silently start a second
+    /// listener and clash with a user's other process on 3501.
+    /// Also pins host/port defaults for the spawn path in `run_server`.
+    #[test]
+    fn test_default_mcp_server_config_is_disabled_localhost() {
+        let config = Config::default();
+        assert!(!config.mcp_server.enabled);
+        assert_eq!(config.mcp_server.host, "127.0.0.1");
+        assert_eq!(config.mcp_server.port, 3501);
     }
 
     #[test]
