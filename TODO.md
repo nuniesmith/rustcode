@@ -886,10 +886,12 @@
   > was "expose OAuth code-exchange endpoints on the server so other
   > clients can use the token store," track that as a separate task.
 
-- [ ] **RC-CRATES-F: `claw-cli` binary in Docker image**
+- [x] **RC-CRATES-F: `claw-cli` binary in Docker image**
   > `crates/rusty-claude-cli` builds the claw binary. Add a second stage to the
   > rustcode Dockerfile copying `target/release/claw` into the image.
-  > Verify: `docker run rustcode claw --help`
+  > Verify: `docker run --rm --entrypoint claw rustcode:latest --help`
+  > (Note: `docker run rustcode claw --help` does not work because `claw` is
+  > passed as an arg to the `rustcode` entrypoint, not invoked directly.)
 
 - [x] **RC-CRATES-G: integration test suite covering both Claude and Grok paths**
   > `crates/mock-anthropic-service` is the test harness — already a dev-dep of rusty-claude-cli.
