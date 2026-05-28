@@ -490,18 +490,45 @@
   > tests cover the None/Some(list)/Some(empty) three-way contract and
   > the in-memory register-then-get round trip.
   >
-  > **PR B (next) — wire into `AutoScanner`.** Refactor `should_skip_path`
-  > / `should_analyze_file` from static `Self::*` methods to instance
-  > methods threading a per-repo overlay through the four current
-  > callsites (auto_scanner.rs:743, 805, 836, 872 and the
-  > `analyze_changed_files_with_progress` walk at :987). Look up the
-  > registered repo by scan target path.
+  > **PR B (2026-05-25) — wire into `AutoScanner`.** Done.
+  > `should_skip_path_with` / `should_analyze_file_with` are new
+  > variants accepting `Option<&[String]>`; the existing static
+  > methods delegate with `None` so the legacy behaviour is
+  > byte-for-byte unchanged (locked by
+  > `should_skip_path_with_none_matches_static_method`). Stacked on
+  > PR A's branch — the SQL helper references the `skip_extensions`
+  > column from migration 024. The scanner resolves the override
+  > once per scan via `fetch_skip_extensions_override` (one indexed
+  > SELECT against `registered_repos` by `local_path`; treats the
+  > lookup as advisory — never blocks a scan if the DB query
+  > fails). The override is threaded through `get_changed_files`,
+  > `get_files_from_recent_commits`, and
+  > `analyze_changed_files_with_progress` to all five historical
+  > `should_skip_path` / `should_analyze_file` call sites.
+  > `SKIP_DIRS` is never overridable (always-skipped paths like
+  > `node_modules/`, `target/`, `.git/`). The match accepts
+  > extensions with or without a leading dot so per-repo (`"png"`)
+  > and `SKIP_SUFFIXES` (`".png"`) representations both work.
   >
-  > **PR C (after B) — wire into audit runner.** `AuditRunnerConfig` and
-  > `FullAuditConfig` currently take `skip_extensions` from the global
-  > scanner config; need a `for_repo(&RegisteredRepo, &ScannerConfig)`
-  > overlay constructor that consults `effective_skip_extensions`. Then
-  > update audit call sites that scan a registered repo.
+  > **PR C (2026-05-25) — wire into audit runner.** Done. Stacked on
+  > PR B. `AuditRunnerConfig::with_repo_skip_extensions_override` and
+  > `FullAuditConfig::with_repo_skip_extensions_override` are
+  > builder-style overlays that replace `skip_extensions` (replace,
+  > not augment — matches PR A's contract). `AuditState` gains a
+  > `db_pool: Option<PgPool>` populated from `Database::pool()` in
+  > `from_env`; `handle_audit_post` consults
+  > `repo::sync::fetch_repo_skip_extensions` per-audit before
+  > spawning the runner. Both the LLM-assisted (`with_grok`) and
+  > static-only paths honour the overlay — the static-only branch
+  > now uses `AuditRunner::new(overlaid_config)` instead of
+  > `with_defaults()` so the override survives.
+  >
+  > Note: PR B's `AutoScanner::fetch_skip_extensions_override` and
+  > PR C's free `repo::sync::fetch_repo_skip_extensions` are
+  > structurally identical (~10-line SQL helper). Kept separate so
+  > PR B could land independently. A follow-up dedupe (have
+  > `AutoScanner` delegate to the free function) is trivial once
+  > both have merged.
 - [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
   > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
   > emits a structured `event = "proxy.dispatch"` log line at the end of

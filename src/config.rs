@@ -259,7 +259,7 @@ impl Config {
             database,
             model,
             auto_scan,
-            task_executor: TaskExecutorOptions::default(),
+            task_executor,
             task_watcher: TaskWatcherConfig::default(),
             mcp_server,
         })

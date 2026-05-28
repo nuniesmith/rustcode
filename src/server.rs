@@ -446,10 +446,12 @@ pub async fn run_server(config: Config) -> Result<()> {
             TaskExecutorOptions {
                 workspace_dir: executor_workspace,
                 dry_run,
-                // Plugin hooks not wired through to the API server yet.
-                // Set this from a config field to enable PreToolUse /
-                // PostToolUse plugins around agent tool calls.
-                plugin_config_home: None,
+                // Picked up from `RC_PLUGIN_CONFIG_HOME` in
+                // `Config::from_env`. When set, the executor builds
+                // a `plugins::HookRunner` from the registry and fires
+                // `PreToolUse` / `PostToolUse` hooks around every
+                // agent tool call.
+                plugin_config_home: config.task_executor.plugin_config_home.clone(),
             },
         ));
         let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty());
