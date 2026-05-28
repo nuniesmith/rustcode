@@ -69,7 +69,10 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Copy the rest of the workspace and build the release binary.
 COPY . .
 
-RUN cargo build --release --bin rustcode
+# Build both binaries in a single invocation so the dep graph is
+# walked once. `claw` is the CLI client (crates/rusty-claude-cli);
+# the runtime stage ships it alongside `rustcode` per RC-CRATES-F.
+RUN cargo build --release --bin rustcode --bin claw
 
 # -----------------------------------------------------------------------------
 # Stage 3 — runtime: just the binary + minimal shared libs
@@ -94,8 +97,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Binary
+# Binaries — the rustcode server is the default ENTRYPOINT below;
+# `claw` ships alongside it for CLI use against the running server
+# or as a standalone client. To invoke claw directly:
+#
+#   docker run --rm --entrypoint claw rustcode:latest --help
+#
+# Plain `docker run rustcode claw --help` won't work since the
+# ENTRYPOINT is `rustcode` (claw would become an arg to rustcode).
 COPY --from=builder /app/target/release/rustcode /usr/local/bin/rustcode
+COPY --from=builder /app/target/release/claw     /usr/local/bin/claw
 
 # SQL migrations are loaded from disk at runtime via sqlx::migrate!() — copy them
 # so the embedded migrator can find ./sql relative to the working directory.
