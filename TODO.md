@@ -865,11 +865,26 @@
   > (AGENT-D) so that bundled plugins run pre/post hooks around each step.
   > Update `file-summary` and `code-review` plugin manifests to reference Claude models once CLAUDE-A is done.
 
-- [ ] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
+- [~] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
   > Add `--mcp-server` flag to `src/bin/server.rs`. When set, start a second Axum
   > listener on port 3501 serving `runtime::mcp_tool_bridge`.
   > The claw binary Login/Logout subcommands also need runtime OAuth wiring
   > (stubs left in `crates/rusty-claude-cli/src/main.rs` with TODO comments).
+  >
+  > **Placeholder listener landed 2026-05-26:** the listener bound to
+  > `RC_MCP_HOST:RC_MCP_PORT` (defaults `127.0.0.1:3501`), gated on
+  > `RC_MCP_SERVER_ENABLED=true`. Currently mounts only `/healthz` —
+  > tool-bridge endpoints over `runtime::McpToolRegistry` are deferred
+  > until the wire format (JSON-RPC vs REST) is agreed. The "CLI flag"
+  > framing was downscoped to an env var to match the existing
+  > `src/bin/server.rs` config-from-env convention (no clap dep).
+  >
+  > **TODO claim correction:** the "Login/Logout stubs in
+  > `crates/rusty-claude-cli/src/main.rs` with TODO comments" line above
+  > is stale — `run_login` / `run_logout` at lines 816-871 are full
+  > production OAuth implementations, not stubs. If the original intent
+  > was "expose OAuth code-exchange endpoints on the server so other
+  > clients can use the token store," track that as a separate task.
 
 - [ ] **RC-CRATES-F: `claw-cli` binary in Docker image**
   > `crates/rusty-claude-cli` builds the claw binary. Add a second stage to the
