@@ -849,21 +849,36 @@
   > executor pieces gated on RC-CRATES-C by lines 242 and 356 above are
   > fully unblocked.
 
-- [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
+- [x] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
   >
   > **Preparation step completed (2026-04-06):**
   > - Migrated three plugin manifests from project root `.toml` files to bundled plugin structure:
   >   - `crates/plugins/bundled/todo-scan/` — TodoScanner plugin for repository TODO/FIXME/HACK marker scanning
-  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization (update model ref from Grok → Sonnet after CLAUDE-A)
-  >   - `crates/plugins/bundled/code-review/` — Automated code review (update model ref from Grok → Opus after CLAUDE-A)
+  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization
+  >   - `crates/plugins/bundled/code-review/` — Automated code review
   > - Converted all manifests from TOML to JSON format per project plugin standard
   > - Added comprehensive README.md documentation for each plugin
   > - All three plugins follow the same layout as `example-bundled` and `sample-hooks`
   >
-  > **Next:** wire `plugins::PluginLifecycle` into the task executor (TASK-C) / `AgentPipeline`
-  > (AGENT-D) so that bundled plugins run pre/post hooks around each step.
-  > Update `file-summary` and `code-review` plugin manifests to reference Claude models once CLAUDE-A is done.
+  > **Hook wiring landed via PRs #57, #58, #60, #61 (2026-05-25 → 2026-05-27):**
+  > - PR #57 added `plugin_hooks: Option<Arc<plugins::HookRunner>>` to `AgentPipeline`
+  >   (`src/agent/pipeline.rs:94`) and an `attach_plugin_hooks` helper on
+  >   `TaskExecutor` (`src/task_executor.rs:545`). Tool dispatch in
+  >   `execute_step_with_tools` now fires `PreToolUse` before and
+  >   `PostToolUse`/`PostToolUseFailure` after every `tools.execute()` call via
+  >   `tokio::task::spawn_blocking`. Denial (exit 2) skips the tool and surfaces
+  >   the hook message as a `tool_result` with `is_error: true`; non-zero/non-2
+  >   exits log a warning and proceed.
+  > - PR #60 added `RC_PLUGIN_CONFIG_HOME` to `Config::from_env`
+  >   (`src/config.rs`) and threaded it through `server.rs` into the
+  >   `TaskExecutorOptions` literal so the runtime can locate enabled plugin
+  >   directories.
+  > - PR #58 retitled the bundled `file-summary` and `code-review` manifests as
+  >   provider-neutral (LLM-agnostic) descriptions.
+  > - PR #61 migrated `src/code_review.rs` from `GrokClient` to
+  >   `AnthropicClient`, defaulting to `claude-opus-4-7` and reading
+  >   `RC_CODE_REVIEW_MODEL` for overrides.
 
 - [~] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
   > Add `--mcp-server` flag to `src/bin/server.rs`. When set, start a second Axum
@@ -1308,24 +1323,19 @@
 > Rustcode is already OpenAI-compatible — OpenWebUI needs zero code changes.
 > This is purely infrastructure/config work.
 
-- [ ] **DEPLOY-A: Docker Compose with OpenWebUI sidecar**
-  > Add `docker-compose.yml` at repo root:
-  > ```yaml
-  > services:
-  >   rustcode:
-  >     build: .
-  >     ports: ["3500:3500"]
-  >     env_file: .env
-  >   openwebui:
-  >     image: ghcr.io/open-webui/open-webui:main
-  >     ports: ["3000:8080"]
-  >     environment:
-  >       OPENAI_API_BASE_URL: http://rustcode:3500/v1
-  >       OPENAI_API_KEY: "${RC_PROXY_API_KEY}"
-  >     depends_on: [rustcode]
-  > ```
-  > OpenWebUI will pull the model list from `GET /v1/models` and route all chat through rustcode.
-  > Users get the full chat interface + history storage with no extra backend work.
+- [x] **DEPLOY-A: Docker Compose with OpenWebUI sidecar**
+  > Done 2026-05-28: `docker-compose.yml` already had the rustcode + postgres
+  > services; added an `openwebui` service behind the `webui` profile so it's
+  > opt-in. Launch with:
+  >
+  >   `docker compose --profile webui up -d`
+  >
+  > Browse to `http://localhost:${OPENWEBUI_HOST_PORT:-3000}`, sign up locally,
+  > and OpenWebUI pulls the model list from rustcode at `GET /v1/models` —
+  > routing all chat through `POST /v1/chat/completions`. The bearer token is
+  > `OPENWEBUI_API_KEY` (must match one of the keys in
+  > `RUSTCODE_PROXY_API_KEYS`, or both empty for dev-mode auth bypass).
+  > New env vars documented in `.env.example`.
 
 - [ ] **DEPLOY-B: Zed IDE config documentation**
   > Document the Zed `assistant` config block in README:

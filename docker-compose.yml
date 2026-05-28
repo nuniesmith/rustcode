@@ -9,6 +9,15 @@
 #
 # The `rustcode` service reads its config from `.env` in the project root.
 # Override individual values inline (e.g. `PORT=4000 docker compose up`).
+#
+# The optional `openwebui` profile adds an OpenAI-compatible chat UI in front
+# of the proxy:
+#   docker compose --profile webui up -d
+# Then browse to http://localhost:3000 and sign up locally. The model list is
+# pulled from rustcode at GET /v1/models; all chat traffic routes through
+# rustcode using the bearer token in OPENWEBUI_API_KEY (which must match one
+# of the comma-separated keys in RUSTCODE_PROXY_API_KEYS, or both can be
+# left empty for dev mode).
 # =============================================================================
 
 name: rustcode
@@ -75,10 +84,44 @@ services:
       start_period: 30s
       retries: 3
 
+  # OpenWebUI sidecar — OpenAI-compatible chat UI in front of the rustcode
+  # proxy. Gated behind the `webui` profile so it's opt-in:
+  #
+  #   docker compose --profile webui up -d
+  #
+  # Pulls the model list from rustcode at `GET /v1/models` and routes all
+  # chat through `POST /v1/chat/completions`. No code changes needed on the
+  # rustcode side — rustcode is already OpenAI-compatible.
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: rustcode-openwebui
+    restart: unless-stopped
+    profiles: ["webui"]
+    depends_on:
+      rustcode:
+        condition: service_healthy
+    environment:
+      # Point OpenWebUI at the rustcode service on the shared network.
+      OPENAI_API_BASE_URL: http://rustcode:3500/v1
+      # Bearer token sent on every request. Must match one of the keys in
+      # `RUSTCODE_PROXY_API_KEYS` (or both can be empty for dev-mode auth
+      # bypass). OpenWebUI requires *some* non-empty value here even when
+      # the upstream has auth disabled — use any placeholder string.
+      OPENAI_API_KEY: ${OPENWEBUI_API_KEY:-placeholder-dev-key}
+      # Disable WebUI's own model download (we serve via rustcode only).
+      ENABLE_OLLAMA_API: "false"
+    ports:
+      - "${OPENWEBUI_HOST_PORT:-3000}:8080"
+    volumes:
+      - rustcode_openwebui:/app/backend/data
+    networks:
+      - rustcode-net
+
 volumes:
   rustcode_pgdata:
   rustcode_repos:
   rustcode_data:
+  rustcode_openwebui:
 
 networks:
   rustcode-net:
