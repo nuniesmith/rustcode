@@ -104,13 +104,11 @@ impl RegisteredRepo {
 ///   contract).
 ///
 /// Canonical lookup used by every "scan a registered repo" surface:
-/// the audit runner consults it (PR C; see
-/// `audit::endpoint::handle_audit_post`) and PR B's auto-scanner has
-/// a structurally identical query in
-/// `AutoScanner::fetch_skip_extensions_override` (deliberately kept
-/// separate so PR B can land independently of PR C; a follow-up can
-/// dedupe once both have merged). Callers treat failures as advisory
-/// — never block the scan/audit on a lookup error.
+/// the audit runner (`audit::endpoint::handle_audit_post`) and the
+/// auto-scanner (`AutoScanner::check_and_scan_repo`) both call this
+/// directly so the SELECT and its NULL-vs-empty handling live in one
+/// place. Callers treat failures as advisory — never block the
+/// scan/audit on a lookup error.
 pub async fn fetch_repo_skip_extensions(
     pool: &PgPool,
     repo_path: &Path,

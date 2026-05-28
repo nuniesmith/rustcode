@@ -19,7 +19,6 @@
 
 use anyhow::{Context, Result};
 use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
-use sqlx::Row;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -283,44 +282,6 @@ impl AutoScanner {
         Ok(repos)
     }
 
-    /// Fetch the per-repo `skip_extensions` override for a
-    /// `repositories.path`. Looks up the matching `registered_repos`
-    /// row by exact `local_path`. Returns:
-    /// * `Ok(None)` when no `registered_repos` row exists for the
-    ///   path or when the row's `skip_extensions` is NULL — both mean
-    ///   "use the global `SKIP_SUFFIXES` default".
-    /// * `Ok(Some(list))` when the API-registered repo has an explicit
-    ///   override (including the empty list, which means "skip nothing
-    ///   by extension"). Forwarded verbatim to `should_skip_path_with`.
-    ///
-    /// `auto_scan` discovers repos in `repos_dir` and writes them to
-    /// the `repositories` table; the API's `POST /api/v1/repos` writes
-    /// to `registered_repos`. Same `local_path` is the join key (see
-    /// the precedent in `queue/processor.rs:resolve_repo_from_path`).
-    /// A scanner-discovered repo with no API registration returns
-    /// `None` here, falling back to global behaviour — that's the
-    /// pre-PR-A status quo, so existing scans are unaffected.
-    async fn fetch_skip_extensions_override(
-        &self,
-        repo_path: &Path,
-    ) -> Result<Option<Vec<String>>> {
-        let path_str = repo_path.to_string_lossy().to_string();
-        // try_get rather than query_scalar because the column is NULL-able
-        // and we want to distinguish "no row" from "row with NULL".
-        let row = sqlx::query(
-            "SELECT skip_extensions FROM registered_repos \
-             WHERE local_path = $1 AND active = TRUE \
-             LIMIT 1",
-        )
-        .bind(&path_str)
-        .fetch_optional(&self.pool)
-        .await?;
-        match row {
-            Some(r) => Ok(r.try_get::<Option<Vec<String>>, _>("skip_extensions")?),
-            None => Ok(None),
-        }
-    }
-
     // Check if repo needs scanning and scan if necessary
     async fn check_and_scan_repo(&self, repo: &Repository) -> Result<()> {
         let repo_name = &repo.name;
@@ -523,20 +484,22 @@ impl AutoScanner {
         // relative to the git diff walk that follows. We log-and-fall-back
         // to global behaviour if the lookup itself fails (treat the
         // registered_repos table as advisory — never block a scan on it).
-        let skip_override: Option<Vec<String>> = match self
-            .fetch_skip_extensions_override(&repo_path)
-            .await
-        {
-            Ok(override_opt) => override_opt,
-            Err(e) => {
-                warn!(
-                    repo = %repo.id,
-                    error = %e,
-                    "Failed to fetch per-repo skip_extensions; falling back to global SKIP_SUFFIXES"
-                );
-                None
-            }
-        };
+        //
+        // The lookup itself lives in `repo::sync::fetch_repo_skip_extensions`
+        // — same query the audit endpoint uses, so both surfaces honour
+        // the override identically without two copies of the SELECT.
+        let skip_override: Option<Vec<String>> =
+            match crate::repo::sync::fetch_repo_skip_extensions(&self.pool, &repo_path).await {
+                Ok(override_opt) => override_opt,
+                Err(e) => {
+                    warn!(
+                        repo = %repo.id,
+                        error = %e,
+                        "Failed to fetch per-repo skip_extensions; falling back to global SKIP_SUFFIXES"
+                    );
+                    None
+                }
+            };
 
         // Check for changes (both committed and uncommitted)
         let current_head = self.get_head_hash(&repo_path)?;
@@ -781,8 +744,9 @@ impl AutoScanner {
         current_head: Option<&str>,
         // Per-repo `skip_extensions` override (replaces SKIP_SUFFIXES
         // when set; see `should_skip_path_with`). The caller resolves
-        // this once at scan-start via `fetch_skip_extensions_override`
-        // so we don't requery per file.
+        // this once at scan-start via
+        // `repo::sync::fetch_repo_skip_extensions` so we don't requery
+        // per file.
         skip_override: Option<&[String]>,
     ) -> Result<Vec<PathBuf>> {
         use std::collections::HashSet;
