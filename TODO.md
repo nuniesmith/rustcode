@@ -1337,18 +1337,12 @@
   > `RUSTCODE_PROXY_API_KEYS`, or both empty for dev-mode auth bypass).
   > New env vars documented in `.env.example`.
 
-- [ ] **DEPLOY-B: Zed IDE config documentation**
-  > Document the Zed `assistant` config block in README:
-  > ```json
-  > "assistant": {
-  >   "version": "2",
-  >   "default_model": { "provider": "openai", "model": "claude-sonnet-4-6" },
-  >   "openai": {
-  >     "api_url": "http://your-server:3500/v1",
-  >     "available_models": [{ "name": "claude-opus-4-7" }, { "name": "claude-sonnet-4-6" }]
-  >   }
-  > }
-  > ```
+- [x] **DEPLOY-B: Zed IDE config documentation**
+  > Done 2026-05-28: added a "Client integrations" section to `README.md`
+  > documenting both the Zed `assistant` config block and the OpenWebUI
+  > sidecar (DEPLOY-A). The Zed block points `openai.api_url` at
+  > `http://your-server:3500/v1` with `claude-opus-4-7` / `claude-sonnet-4-6`
+  > model slugs and notes that the API key maps to `RUSTCODE_PROXY_API_KEYS`.
   > Works today against the existing proxy — no code changes needed.
 
 - [ ] **DEPLOY-C: model slug verification**
