@@ -21,10 +21,10 @@
 // # Example
 //
 // ```rust,no_run
-// use rustcode::github::GitHubClient;
+// use github_client::GitHubClient;
 //
 // #[tokio::main]
-// async fn main() -> anyhow::Result<()> {
+// async fn main() -> Result<(), github_client::GitHubError> {
 //     let client = GitHubClient::new("ghp_your_token")?;
 //
 //     // Fetch user repositories
@@ -38,7 +38,7 @@
 // }
 // ```
 //
-use crate::github::{GitHubError, Result, models::*};
+use crate::{GitHubError, Result, models::*};
 use chrono::{DateTime, Utc};
 use reqwest::{
     Client, StatusCode,

@@ -1302,12 +1302,32 @@
   > Entirely synchronous, no network or DB deps. Could also be used by
   > `crates/runtime`'s bash validation or `crates/plugins`.
 
-- [ ] **RC-EXTRACT-C: `crates/github-client` — GitHub API client**
-  > Candidates: `src/github/client.rs`, `src/github/models.rs`, `src/github/search.rs`
+- [x] **RC-EXTRACT-C: `crates/github-client` — GitHub API client**
+  > Done 2026-05-30. Extracted scope ended up smaller than the original
+  > candidate list — `search.rs` was incorrectly grouped with the HTTP
+  > side: `GitHubSearcher` carries a `PgPool` and executes raw `sqlx`
+  > queries, so it's database-coupled and stays in `src/github/`.
   >
-  > The pure HTTP client side is self-contained. Leave the sync logic
-  > (`github/sync.rs`, `github/background_sync.rs`, `github/webhook.rs`) in `src/`
-  > since it ties into the DB and queue.
+  > New crate `crates/github-client/` contains: `client.rs`
+  > (`GitHubClient`, `GitHubConfig`, `RateLimitInfo`), `models.rs` (all
+  > the domain types: `Commit`, `Issue`, `PullRequest`, etc.), and
+  > `error.rs` (lifted `GitHubError` + `Result` out of `src/github/mod.rs`).
+  > Deps: `chrono`, `reqwest`, `serde`, `serde_json`, `sqlx` (only because
+  > `GitHubError` carries a `DatabaseError(#[from] sqlx::Error)` variant),
+  > `thiserror`, `tokio`, `tracing`, `urlencoding`.
+  >
+  > `src/github/mod.rs` re-exports the `client` and `models` modules
+  > themselves plus every public type, so existing consumer paths
+  > (`crate::github::GitHubClient`, `crate::github::client::GitHubClient`,
+  > `crate::github::models::Repository`, etc.) keep working with zero
+  > call-site changes. Sibling modules `sync.rs`, `background_sync.rs`,
+  > `search.rs`, `webhook.rs` remain in `src/github/`.
+  >
+  > Verification: `cargo build -p github-client` ✓; `cargo test -p github-client`
+  > — 8/8 pass; `cargo check --workspace --tests --exclude rustcode
+  > --exclude rag` clean. The `rustcode` bin can't be built in this sandbox
+  > (ort-sys CDN block); all consumer imports were verified by hand against
+  > the re-export surface.
 
 - [ ] **RC-EXTRACT-D: `crates/llm` — unified LLM client surface**
   > Prerequisite: RC-CLEANUP-A and RC-CRATES-B fully done.

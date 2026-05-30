@@ -32,6 +32,7 @@ members  = [
     "crates/api",
     "crates/commands",
     "crates/compat-harness",
+    "crates/github-client",
     "crates/mock-anthropic-service",
     "crates/plugins",
     "crates/rag",
@@ -206,11 +207,12 @@ required-features = ["integration"]
 [dependencies]
 
 # Internal crates
-api      = { path = "crates/api" }
-plugins  = { path = "crates/plugins" }
-rag      = { path = "crates/rag" }
-runtime  = { path = "crates/runtime" }
-tools    = { path = "crates/tools" }
+api           = { path = "crates/api" }
+github-client = { path = "crates/github-client" }
+plugins       = { path = "crates/plugins" }
+rag           = { path = "crates/rag" }
+runtime       = { path = "crates/runtime" }
+tools         = { path = "crates/tools" }
 
 # All deps inherit versions from [workspace.dependencies] above
 anyhow                             = { workspace = true }
