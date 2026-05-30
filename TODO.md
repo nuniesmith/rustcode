@@ -1345,12 +1345,28 @@
   > model slugs and notes that the API key maps to `RUSTCODE_PROXY_API_KEYS`.
   > Works today against the existing proxy — no code changes needed.
 
-- [ ] **DEPLOY-C: model slug verification**
+- [x] **DEPLOY-C: model slug verification**
   > Before hardcoding in CLAUDE-B, confirm exact Anthropic model slugs via:
   > `curl https://api.anthropic.com/v1/models -H "x-api-key: $ANTHROPIC_API_KEY"`
   > Update `crates/api/src/providers/mod.rs` aliases (`"opus"`, `"sonnet"`) to match.
-  > Currently set to `claude-opus-4-6` / `claude-sonnet-4-6` — update to `claude-opus-4-7`
-  > if that slug is confirmed live.
+  >
+  > **Done 2026-05-28:** `crates/api/src/providers/mod.rs` already resolved
+  > `opus → claude-opus-4-7`, but a stale unit test
+  > (`api::client::tests::resolves_existing_and_grok_aliases`) still asserted
+  > `claude-opus-4-6` — main was RED. Standardized the opus slug to
+  > `claude-opus-4-7` across all 13 remaining references (the api alias test,
+  > the claw CLI's own `resolve_model_alias` + its test, `DEFAULT_MODEL`,
+  > `--model` arg default, `tools::DEFAULT_AGENT_MODEL`, and assorted test
+  > fixtures / a routing comment). `sonnet` was already uniformly
+  > `claude-sonnet-4-6`. `runtime::pricing_for_model` matches on the `"opus"`
+  > substring so cost tracking is unaffected by the version bump.
+  >
+  > Live `/v1/models` confirmation still can't run from CI (no key), but the
+  > workspace had already adopted `claude-opus-4-7` in the core resolver,
+  > `code_review.rs`, and the README — this change just removes the stragglers.
+  > Note: `crates/api/src/providers/mod.rs` resolves `haiku` to
+  > `claude-haiku-4-5-20251213` while the runtime pricing test uses
+  > `...20251001`; left untouched (out of opus/sonnet scope, no failing test).
 
 ---
 

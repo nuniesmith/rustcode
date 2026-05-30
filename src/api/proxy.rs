@@ -1366,7 +1366,7 @@ fn check_auth(state: &ProxyState, headers: &HeaderMap) -> Option<(StatusCode, Js
 // - `"grok-*"` / `"grok"` — always use Grok
 // - `"anthropic/*"` / `"claude-*"` — treated as explicit remote (Grok) targets.
 //   OpenClaw and other OpenAI-compatible clients send Anthropic model names
-//   (e.g. `anthropic/claude-opus-4-6`) when configured with a custom base URL;
+//   (e.g. `anthropic/claude-opus-4-7`) when configured with a custom base URL;
 //   we intercept and route to the remote backend without the classifier round-trip.
 // - `"rc:<hint>"` — strip prefix, use hint as the classification prompt
 // - anything else — treat as `"auto"` (message-classifier decides)
