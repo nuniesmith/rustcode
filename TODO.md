@@ -138,6 +138,17 @@
   >     against same-clock-tick parallel collisions, and switched hook /
   >     plugin-command execution from login `sh -lc` to non-login `sh -c` so
   >     profile banners (nvm/pyenv) no longer pollute captured/parsed output.
+  >   - **Per-crate matrix exposed a real hook-runner race.** Fanning `test`
+  >     out per crate (so a failing crate names itself) pinned a CI-only
+  >     `plugins` failure — invisible in the sandbox, no Actions-log access — to
+  >     a `BrokenPipe` (EPIPE): the hook runner writes the hook input to the
+  >     child's stdin, but a hook that ignores stdin and exits first closes the
+  >     pipe. This is a *production* bug (intermittent "hook failed to start"),
+  >     not just a test issue — fixed in both the `plugins` and `runtime` hook
+  >     runners by tolerating BrokenPipe on the stdin write. Separately, `build`
+  >     compiled the full workspace on a GitHub runner (ort downloaded fine); it
+  >     stays non-blocking (step-level `continue-on-error`) until that download
+  >     is proven stable across runs.
   >
   > **Follow-ups:**
   >   - **CI-A.2** — make `build` blocking + add a DB-backed test job. `build`

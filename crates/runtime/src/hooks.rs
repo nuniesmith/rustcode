@@ -692,7 +692,15 @@ impl CommandWithStdin {
     ) -> std::io::Result<CommandExecution> {
         let mut child = self.command.spawn()?;
         if let Some(mut child_stdin) = child.stdin.take() {
-            child_stdin.write_all(stdin)?;
+            // A hook may ignore its stdin and exit before we finish writing,
+            // which surfaces as BrokenPipe (SIGPIPE is ignored process-wide).
+            // That is not a failure to start — capture the hook's output and
+            // exit status regardless.
+            if let Err(error) = child_stdin.write_all(stdin) {
+                if error.kind() != std::io::ErrorKind::BrokenPipe {
+                    return Err(error);
+                }
+            }
         }
 
         loop {
