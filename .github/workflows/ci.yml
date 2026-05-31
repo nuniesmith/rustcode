@@ -77,47 +77,59 @@ jobs:
       - run: cargo clippy --workspace --exclude rustcode --exclude rag --all-targets
 
   test:
-    name: test (leaf crates)
+    name: test (${{ matrix.crate }})
     runs-on: ubuntu-latest
+    # Blocking gate, fanned out per crate so a failing crate names itself in the
+    # check title (e.g. `test (api)`). `fail-fast: false` runs every crate even
+    # when one fails. The two ONNX crates (rustcode, rag) compile in `build`; the
+    # three environment-sensitive crates (tools, runtime, rusty-claude-cli) run
+    # in the non-blocking `test-extended` job below. Network/API-key tests are
+    # #[ignore]'d in-tree; Postgres tests live in rustcode (DB job, CI-A.2).
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - api
+          - commands
+          - compat-harness
+          - github-client
+          - mock-anthropic-service
+          - plugins
+          - telemetry
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Blocking gate: unit, integration, and doc tests for the leaf crates
-      # whose suites are deterministic and environment-independent. The two ONNX
-      # crates (rustcode, rag) compile in the `build` job; the three
-      # environment-sensitive crates (tools, runtime, rusty-claude-cli) run in
-      # the non-blocking `test-extended` job below. Tests gated behind
-      # network/API keys are #[ignore]'d in-tree and skipped automatically.
-      # Postgres-backed tests live in rustcode and run in the DB job (CI-A.2).
-      - run: cargo test --workspace --exclude rustcode --exclude rag --exclude tools --exclude runtime --exclude rusty-claude-cli
+      - run: cargo test -p ${{ matrix.crate }}
 
   test-extended:
     name: test-extended (env-sensitive, non-blocking)
     runs-on: ubuntu-latest
-    # Non-blocking: these suites depend on the runner environment (loopback HTTP
-    # a proxy can intercept, a process-global env lock, integration servers), so
-    # a failure here must not block the merge gate. Run for visibility; promoting
-    # them into the blocking `test` job once hardened is tracked as CI-A.4.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # Non-blocking via step-level continue-on-error → the job stays GREEN even
+      # when these fail (job-level continue-on-error would still report a failed
+      # check). These suites depend on the runner environment (loopback HTTP a
+      # proxy can intercept, a process-global env lock, integration servers).
+      # Run for visibility; promoting them into the blocking `test` job once
+      # hardened is tracked as CI-A.4.
       - run: cargo test -p tools -p runtime -p rusty-claude-cli
+        continue-on-error: true
 
   build:
     name: build (full workspace)
     runs-on: ubuntu-latest
-    # Non-blocking until ort-on-CI is proven: `ort-sys` downloads an ONNX Runtime
-    # binary from a CDN at build time, which returns 403 to some cloud IPs. This
-    # job proves the main binary builds (something no ort-blocked sandbox can
-    # verify), but must not block the gate while that download is unproven on
-    # GitHub runners. Tracked as CI-A.2.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Compiles rustcode + rag as well; `ort` downloads the ONNX Runtime here.
+      # Non-blocking until ort-on-CI is proven, via step-level continue-on-error
+      # → the job stays GREEN even when the build fails (job-level would still
+      # report a failed check). `ort-sys` downloads an ONNX Runtime binary from a
+      # CDN at build time, which returns 403 to some cloud IPs. This job proves
+      # the main binary builds (something no ort-blocked sandbox can verify), but
+      # must not block the gate while that download is unproven. Tracked CI-A.2.
       - run: cargo build --workspace
+        continue-on-error: true
