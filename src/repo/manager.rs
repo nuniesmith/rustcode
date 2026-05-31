@@ -106,8 +106,8 @@ impl RepoManager {
 
         let repo_path_str = repo_path.display().to_string();
         let command = build_git_command(&["clone", "--depth=1", &clone_url, &repo_path_str]);
-        let output = run_git_command(command, None)
-            .context("Failed to execute git clone command")?;
+        let output =
+            run_git_command(command, None).context("Failed to execute git clone command")?;
 
         if output.return_code_interpretation.is_some() {
             error!("Git clone failed: {}", output.stderr);
@@ -136,8 +136,7 @@ impl RepoManager {
 
         // Fetch and pull latest changes. `cwd: Some(repo_path)` replaces
         // the previous `git -C <path>` invocation.
-        let command =
-            build_git_command(&["pull", "--rebase", "origin", &self.default_branch]);
+        let command = build_git_command(&["pull", "--rebase", "origin", &self.default_branch]);
         let output =
             run_git_command(command, Some(repo_path)).context("Failed to execute git pull")?;
 

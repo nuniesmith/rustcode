@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use rag::EmbeddingGenerator;
 use crate::indexing::{DocumentIndexer, IndexingConfig};
+use rag::EmbeddingGenerator;
 use sqlx::PgPool;
 
 // ============================================================================

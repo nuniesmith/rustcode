@@ -13,8 +13,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use async_trait::async_trait;
 use ::api::ToolDefinition;
+use async_trait::async_trait;
 use runtime::{BashCommandInput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -301,8 +301,7 @@ impl ToolBackend for FileSystemTools {
             ToolDefinition {
                 name: "read_file".to_string(),
                 description: Some(
-                    "Read the contents of a file. Output is truncated past 16 KiB."
-                        .to_string(),
+                    "Read the contents of a file. Output is truncated past 16 KiB.".to_string(),
                 ),
                 input_schema: serde_json::json!({
                     "type": "object",
@@ -462,7 +461,11 @@ mod tests {
     fn tool_definitions_omit_run_command_when_disabled() {
         let dir = TempDir::new().unwrap();
         let tools = FileSystemTools::new(dir.path().to_path_buf());
-        let names: Vec<_> = tools.tool_definitions().into_iter().map(|d| d.name).collect();
+        let names: Vec<_> = tools
+            .tool_definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
         assert!(names.contains(&"write_file".to_string()));
         assert!(!names.contains(&"run_command".to_string()));
     }
@@ -471,7 +474,11 @@ mod tests {
     fn tool_definitions_include_run_command_when_enabled() {
         let dir = TempDir::new().unwrap();
         let tools = FileSystemTools::new(dir.path().to_path_buf()).with_command_execution(true);
-        let names: Vec<_> = tools.tool_definitions().into_iter().map(|d| d.name).collect();
+        let names: Vec<_> = tools
+            .tool_definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
         assert!(names.contains(&"run_command".to_string()));
     }
 }

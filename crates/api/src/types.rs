@@ -431,7 +431,10 @@ mod tests {
         assert_eq!(request.temperature, Some(0.0));
 
         let json_some: Value = serde_json::to_value(&request).unwrap();
-        assert_eq!(json_some.get("temperature").and_then(Value::as_f64), Some(0.0));
+        assert_eq!(
+            json_some.get("temperature").and_then(Value::as_f64),
+            Some(0.0)
+        );
     }
 
     #[test]
@@ -442,7 +445,9 @@ mod tests {
             model: "claude-sonnet-4-6".to_string(),
             max_tokens: 32,
             messages: vec![InputMessage::user_text("hi")],
-            system: Some(vec![SystemBlock::cached_text("you are a helpful assistant")]),
+            system: Some(vec![SystemBlock::cached_text(
+                "you are a helpful assistant",
+            )]),
             tools: None,
             tool_choice: None,
             temperature: None,

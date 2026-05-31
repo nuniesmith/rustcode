@@ -5,11 +5,11 @@
 
 use super::{ResearchRequest, WorkerResult, save_worker_result};
 use crate::db::get_all_embeddings;
-use rag::{EmbeddingConfig, EmbeddingGenerator};
 use crate::llm::GrokClient;
-use rag::vector_index::{IndexConfig, VectorIndex};
 use anyhow::Result;
 use futures::future::join_all;
+use rag::vector_index::{IndexConfig, VectorIndex};
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::sync::OnceLock;

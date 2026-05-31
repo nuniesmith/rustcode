@@ -376,7 +376,10 @@ impl SimpleHttpMock {
     }
 
     fn captured_requests(&self) -> Vec<CapturedHttpRequest> {
-        self.captured.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.captured
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 

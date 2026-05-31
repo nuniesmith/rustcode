@@ -25,8 +25,8 @@ use axum::{
 };
 use std::sync::Arc;
 
-use rag::{EmbeddingConfig, EmbeddingGenerator};
 use crate::indexing::IndexingConfig;
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use sqlx::PgPool;
 
 pub use auth::{AuthConfig, AuthResult, generate_api_key, hash_api_key};

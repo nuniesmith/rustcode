@@ -58,8 +58,7 @@ impl AutoMergeConfig {
                 .and_then(|s| s.parse().ok())
                 .map(Duration::from_secs)
                 .unwrap_or(default.timeout),
-            merge_method: std::env::var("RC_AUTOMERGE_METHOD")
-                .unwrap_or(default.merge_method),
+            merge_method: std::env::var("RC_AUTOMERGE_METHOD").unwrap_or(default.merge_method),
             failure_label: std::env::var("RC_AUTOMERGE_FAILURE_LABEL")
                 .unwrap_or(default.failure_label),
         }
@@ -187,11 +186,12 @@ pub async fn poll_and_merge(
 /// other code paths (MEM-C consolidation, future post-run hooks) may
 /// have touched it too.
 pub fn update_result_with_merge_state(task_id: &str, state: MergeState) -> Result<()> {
-    let path = Path::new("tasks").join("results").join(format!("{}.json", task_id));
+    let path = Path::new("tasks")
+        .join("results")
+        .join(format!("{}.json", task_id));
     let content = fs::read_to_string(&path)
         .with_context(|| format!("read result file {}", path.display()))?;
-    let mut result: TaskResult =
-        serde_json::from_str(&content).context("parse result file")?;
+    let mut result: TaskResult = serde_json::from_str(&content).context("parse result file")?;
     result.merge_state = Some(state);
 
     let tmp_path = path.with_extension("json.tmp");

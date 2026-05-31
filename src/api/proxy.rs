@@ -129,8 +129,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::api::repos::RepoAppState;
-use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::llm::ollama::StreamChunk;
+use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{
@@ -484,10 +484,7 @@ pub fn proxy_router(state: ProxyState) -> Router {
     Router::new()
         .route("/chat/completions", post(handle_chat_completions))
         .route("/models", axum::routing::get(handle_list_models))
-        .route(
-            "/agent/run",
-            post(crate::api::agent::handle_agent_run),
-        )
+        .route("/agent/run", post(crate::api::agent::handle_agent_run))
         .with_state(state)
 }
 
@@ -797,7 +794,8 @@ async fn handle_streaming(
                     use crate::db::Database;
                     match Database::new("data/rustcode.db").await {
                         Ok(db) => {
-                            let client = crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
+                            let client =
+                                crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
                             client.ask_tracked(&prompt, None, "proxy-stream").await
                         }
                         Err(e) => Err(anyhow::anyhow!("DB init failed: {}", e)),
@@ -990,9 +988,8 @@ async fn handle_streaming(
     // The tuple carries: (model_used, used_fallback, prompt_tokens,
     // completion_tokens, cache_creation_input_tokens, cache_read_input_tokens).
     // The two cache token fields are only populated for the Claude arm.
-    type FinalMeta = Arc<
-        tokio::sync::Mutex<Option<(String, bool, u32, u32, Option<u32>, Option<u32>)>>,
-    >;
+    type FinalMeta =
+        Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32, Option<u32>, Option<u32>)>>>;
     let accumulated = Arc::new(tokio::sync::Mutex::new(String::new()));
     let final_meta: FinalMeta = Arc::new(tokio::sync::Mutex::new(None));
 
@@ -1874,17 +1871,15 @@ async fn send_claude_done(
     usage: Option<&Usage>,
     tier: ClaudeTier,
 ) {
-    let (input_tokens, output_tokens, cache_creation, cache_read) = usage.map_or(
-        (None, None, None, None),
-        |u| {
+    let (input_tokens, output_tokens, cache_creation, cache_read) =
+        usage.map_or((None, None, None, None), |u| {
             (
                 Some(u.input_tokens),
                 Some(u.output_tokens),
                 (u.cache_creation_input_tokens > 0).then_some(u.cache_creation_input_tokens),
                 (u.cache_read_input_tokens > 0).then_some(u.cache_read_input_tokens),
             )
-        },
-    );
+        });
     info!(
         model = %model_used,
         tier = %tier,
@@ -2198,8 +2193,7 @@ mod tests {
             cache_creation_input_tokens: Some(1234),
             cache_read_input_tokens: Some(5678),
         };
-        let json: serde_json::Value =
-            serde_json::to_value(&chunk).expect("chunk should serialize");
+        let json: serde_json::Value = serde_json::to_value(&chunk).expect("chunk should serialize");
         assert_eq!(json["cache_creation_input_tokens"], serde_json::json!(1234));
         assert_eq!(json["cache_read_input_tokens"], serde_json::json!(5678));
     }
@@ -2303,8 +2297,7 @@ mod tests {
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
         };
-        let json: serde_json::Value =
-            serde_json::to_value(&chunk).expect("chunk should serialize");
+        let json: serde_json::Value = serde_json::to_value(&chunk).expect("chunk should serialize");
         assert!(json.get("cache_creation_input_tokens").is_none());
         assert!(json.get("cache_read_input_tokens").is_none());
     }

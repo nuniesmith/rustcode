@@ -54,11 +54,11 @@ pub mod webhook;
 // Re-export the HTTP client surface from the standalone crate. Module
 // paths (`crate::github::client`, `crate::github::models`) keep resolving
 // for the in-tree consumers that use the full path.
-pub use github_client::{client, models};
 pub use github_client::{
     Commit, CommitStatus, GitHubClient, GitHubConfig, GitHubError, Issue, IssueState, Label,
     PrState, PullRequest, RateLimitInfo, Repository, RepositoryVisibility, Result, User,
 };
+pub use github_client::{client, models};
 
 pub use background_sync::{
     BackgroundSyncConfig, BackgroundSyncManager, start_background_sync,

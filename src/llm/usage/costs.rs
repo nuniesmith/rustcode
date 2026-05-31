@@ -436,7 +436,8 @@ impl CostTracker {
         let input_cost = (usage.input_tokens as f64) * input_per_token;
         let output_cost = (usage.output_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_OUTPUT;
         let cached_cost = (usage.cached_tokens as f64 / 1_000_000.0) * GROK_COST_PER_MILLION_CACHED;
-        let cache_creation_cost = (usage.cache_creation_input_tokens as f64) * input_per_token * 1.25;
+        let cache_creation_cost =
+            (usage.cache_creation_input_tokens as f64) * input_per_token * 1.25;
         let cache_read_cost = (usage.cache_read_input_tokens as f64) * input_per_token * 0.10;
 
         input_cost + output_cost + cached_cost + cache_creation_cost + cache_read_cost

@@ -35,8 +35,8 @@
 // # }
 // ```
 
-use rag::{Embedding, EmbeddingGenerator};
 use anyhow::{Context, Result};
+use rag::{Embedding, EmbeddingGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;

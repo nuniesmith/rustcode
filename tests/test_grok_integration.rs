@@ -24,8 +24,8 @@
 use std::time::{Duration, Instant};
 
 use rustcode::ResponseCache;
-use rustcode::llm::simple_client::GrokClient;
 use rustcode::llm::router::{ModelRouter, ModelRouterConfig, TaskKind};
+use rustcode::llm::simple_client::GrokClient;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -51,8 +51,7 @@ macro_rules! require_env {
 // Build a `GrokClient` from `XAI_API_KEY`; skip if absent.
 fn xai_client() -> GrokClient {
     let key = require_env!("XAI_API_KEY");
-    GrokClient::new(key)
-        .with_model("grok-4.20-multi-agent-0309")
+    GrokClient::new(key).with_model("grok-4.20-multi-agent-0309")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,7 +195,11 @@ fn test_model_router_routes_to_correct_provider() {
     let router = ModelRouter::new(config);
 
     let remote_kinds = [TaskKind::CodeReview, TaskKind::ArchitecturalReason];
-    let local_kinds  = [TaskKind::ScaffoldStub, TaskKind::TodoTagging, TaskKind::TreeSummary];
+    let local_kinds = [
+        TaskKind::ScaffoldStub,
+        TaskKind::TodoTagging,
+        TaskKind::TreeSummary,
+    ];
 
     for kind in &remote_kinds {
         let target = router.route(kind);
@@ -287,7 +290,8 @@ async fn test_rag_context_injection_enriches_prompt() {
     let client = xai_client();
 
     // Simulate what enhance_prompt_with_rag() does: prepend chunk snippets
-    let chunk_1 = "// src/model_router.rs:42\npub fn classify_prompt(&self, prompt: &str) -> TaskKind {";
+    let chunk_1 =
+        "// src/model_router.rs:42\npub fn classify_prompt(&self, prompt: &str) -> TaskKind {";
     let chunk_2 = "// src/llm/simple_client.rs:30\npub struct GrokClient { inner: OpenAiCompatClient, model: String }";
 
     let rag_chunks: Vec<&str> = vec![chunk_1, chunk_2];
@@ -329,7 +333,11 @@ async fn test_rag_context_injection_enriches_prompt() {
         !response.trim().is_empty(),
         "Response to RAG-enriched prompt must be non-empty"
     );
-    eprintln!("[G-3] Live response ({} chars): {}…", response.len(), &response[..response.len().min(120)]);
+    eprintln!(
+        "[G-3] Live response ({} chars): {}…",
+        response.len(),
+        &response[..response.len().min(120)]
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -355,7 +363,7 @@ async fn test_response_cache_hit_on_second_identical_request() {
         .await
         .expect("Cache DB should initialise");
 
-    let prompt    = "What is 2+2? Reply with just the number.";
+    let prompt = "What is 2+2? Reply with just the number.";
     let operation = "test_cache_integration";
 
     // ── First call: expect cache miss ────────────────────────────────────────
@@ -366,7 +374,10 @@ async fn test_response_cache_hit_on_second_identical_request() {
         .expect("cache.get should not error");
     let miss_elapsed = before_miss.elapsed();
 
-    assert!(miss.is_none(), "First call must be a cache miss, got: {miss:?}");
+    assert!(
+        miss.is_none(),
+        "First call must be a cache miss, got: {miss:?}"
+    );
     eprintln!("[G-4] Cache miss confirmed ({miss_elapsed:?})");
 
     // Simulate API response and store it
@@ -461,17 +472,17 @@ fn test_provider_detection_switches_to_anthropic_for_claude_models() {
 
     // Claude aliases must all resolve to Anthropic
     let claude_cases = [
-        ("claude-opus-4-7",           ProviderKind::Anthropic),
-        ("claude-sonnet-4-6",         ProviderKind::Anthropic),
+        ("claude-opus-4-7", ProviderKind::Anthropic),
+        ("claude-sonnet-4-6", ProviderKind::Anthropic),
         ("claude-haiku-4-5-20251213", ProviderKind::Anthropic),
-        ("opus",                      ProviderKind::Anthropic),
-        ("sonnet",                    ProviderKind::Anthropic),
-        ("haiku",                     ProviderKind::Anthropic),
+        ("opus", ProviderKind::Anthropic),
+        ("sonnet", ProviderKind::Anthropic),
+        ("haiku", ProviderKind::Anthropic),
     ];
 
     for (model, expected_provider) in claude_cases {
         let canonical = resolve_model_alias(model);
-        let provider  = detect_provider_kind(&canonical);
+        let provider = detect_provider_kind(&canonical);
         assert_eq!(
             provider, expected_provider,
             "Model {model:?} should map to {expected_provider:?}, got {provider:?}"
@@ -481,16 +492,16 @@ fn test_provider_detection_switches_to_anthropic_for_claude_models() {
 
     // Grok 4.20 aliases must all resolve to Xai
     let grok_cases = [
-        ("grok-4.20-multi-agent-0309",    ProviderKind::Xai),
-        ("grok-4.20-0309-reasoning",      ProviderKind::Xai),
-        ("grok-4.20-0309-non-reasoning",  ProviderKind::Xai),
-        ("grok-4",                        ProviderKind::Xai),
-        ("grok-3",                        ProviderKind::Xai),
+        ("grok-4.20-multi-agent-0309", ProviderKind::Xai),
+        ("grok-4.20-0309-reasoning", ProviderKind::Xai),
+        ("grok-4.20-0309-non-reasoning", ProviderKind::Xai),
+        ("grok-4", ProviderKind::Xai),
+        ("grok-3", ProviderKind::Xai),
     ];
 
     for (model, expected_provider) in grok_cases {
         let canonical = resolve_model_alias(model);
-        let provider  = detect_provider_kind(&canonical);
+        let provider = detect_provider_kind(&canonical);
         assert_eq!(
             provider, expected_provider,
             "Model {model:?} should map to {expected_provider:?}, got {provider:?}"
@@ -520,15 +531,15 @@ async fn test_claude_switch_live_completion() {
     let client = AnthropicClient::from_auth(AuthSource::ApiKey(api_key));
 
     let request = MessageRequest {
-        model:       "claude-haiku-4-5-20251213".to_string(),
-        max_tokens:  64,
-        messages:    vec![InputMessage::user_text("Reply with exactly: CLAUDE_OK")],
-        system:      None,
-        tools:       None,
+        model: "claude-haiku-4-5-20251213".to_string(),
+        max_tokens: 64,
+        messages: vec![InputMessage::user_text("Reply with exactly: CLAUDE_OK")],
+        system: None,
+        tools: None,
         tool_choice: None,
         temperature: None,
         response_format: None,
-        stream:      false,
+        stream: false,
     };
 
     let response = client
@@ -572,12 +583,12 @@ fn test_grok_420_model_alias_resolution() {
     // Aliases registered in MODEL_REGISTRY get rewritten; unknown model strings
     // pass through unchanged. Keep the bonus test focused on aliases we ship.
     let cases = [
-        ("grok-3",    "grok-3"),
-        ("grok",      "grok-3"),
+        ("grok-3", "grok-3"),
+        ("grok", "grok-3"),
         ("grok-mini", "grok-3-mini"),
-        ("opus",      "claude-opus-4-7"),
-        ("sonnet",    "claude-sonnet-4-6"),
-        ("haiku",     "claude-haiku-4-5-20251213"),
+        ("opus", "claude-opus-4-7"),
+        ("sonnet", "claude-sonnet-4-6"),
+        ("haiku", "claude-haiku-4-5-20251213"),
     ];
 
     for (input, expected) in cases {

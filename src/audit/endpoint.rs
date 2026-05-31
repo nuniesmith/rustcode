@@ -292,7 +292,9 @@ pub async fn handle_audit_post(
             // per-repo override is honoured here too: build a runner
             // explicitly from the overlaid config rather than calling
             // `with_defaults` (which would discard the override).
-            AuditRunner::new(runner_config).run_static_only(&repo_path).await
+            AuditRunner::new(runner_config)
+                .run_static_only(&repo_path)
+                .await
         };
 
         match result {
