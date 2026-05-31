@@ -88,7 +88,10 @@ async fn send_message_posts_json_and_parses_response() {
     // No betas were opted in, so the anthropic-beta header is omitted entirely.
     // AnthropicRequestProfile::default() carries no betas; they are opt-in via
     // with_beta(). (See telemetry::request_profile_default_betas_are_empty.)
-    assert_eq!(request.headers.get("anthropic-beta").map(String::as_str), None);
+    assert_eq!(
+        request.headers.get("anthropic-beta").map(String::as_str),
+        None
+    );
     let body: serde_json::Value =
         serde_json::from_str(&request.body).expect("request body should be json");
     assert_eq!(
