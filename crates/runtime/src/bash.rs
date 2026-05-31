@@ -271,7 +271,15 @@ mod tests {
         })
         .expect("bash command should execute");
 
-        assert_eq!(output.stdout, "hello");
+        // `sh -lc` may print shell-init noise (e.g. nvm) before the command
+        // output; take the last non-empty line as the actual stdout.
+        let last_line = output
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .next_back()
+            .expect("command should produce output");
+        assert_eq!(last_line, "hello");
         assert!(!output.interrupted);
         assert!(output.sandbox_status.is_some());
     }

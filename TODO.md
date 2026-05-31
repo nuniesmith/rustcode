@@ -159,15 +159,23 @@
   >     the rustcode-crate PgPool tests.
   >   - **CI-A.3** — tighten `clippy` to `-D warnings` once the
   >     pedantic/nursery backlog is cleared.
-  >   - **CI-A.4** — promote `test-extended` (tools, runtime, rusty-claude-cli)
-  >     into the blocking `test` job once their suites are environment-robust.
-  >     Known fragilities: `tools` web_search spins up a loopback mock server a
-  >     proxy can intercept (→ request error → server-thread panic → process
-  >     abort, which fails ~7 sibling tests as collateral); `runtime` oauth
-  >     tests serialize on a process-global env lock that can hang; the
-  >     `rusty-claude-cli` integration tests spin up servers. (The login-shell
-  >     *output* pollution is already fixed — hooks/plugin-commands now run
-  >     under non-login `sh -c`.)
+  >   - **CI-A.4** — promote `test-extended` into the blocking `test` matrix as
+  >     each crate is made environment-robust.
+  >     - **`runtime` — DONE (promoted).** Fixed two real bugs the sandbox hid:
+  >       a `TestServer` `Drop` that double-panicked into a process abort
+  >       (`tools`), and — the runtime blocker — re-entrant env-lock *deadlocks*
+  >       in `oauth.rs` / `prompt.rs` (a test held `env_lock()` then called the
+  >       locking `test_set_var`, re-acquiring the same non-reentrant mutex on
+  >       one thread). Also made the bash/git tests tolerant of the dev sandbox's
+  >       quirks (nvm login-shell noise → take the last stdout line; global
+  >       `commit.gpgsign=true` → set `commit.gpgsign false` per temp repo). Full
+  >       suite now 362/0 locally and green per-crate on CI.
+  >     - **`tools` — partial.** Fixed web_search (a stale `/fallback` vs
+  >       `/search` mock assertion that aborted the process) + the git-identity
+  >       gpgsign tests. Remaining before promotion: `enter/exit_plan_mode`
+  >       (Bool(false)), `agent_fake_runner` (Null), `skill_loads_local_skill`
+  >       — investigate whether real or sandbox-coupled.
+  >     - **`rusty-claude-cli`** — not yet examined (integration servers).
   >   - **CI-B** (below) — add cargo-audit / cargo-deny.
   >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
   >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).

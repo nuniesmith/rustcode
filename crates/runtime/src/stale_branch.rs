@@ -184,6 +184,9 @@ mod tests {
         run(path, &["init", "--quiet", "-b", "main"]);
         run(path, &["config", "user.email", "tests@example.com"]);
         run(path, &["config", "user.name", "Stale Branch Tests"]);
+        // Disable signing: a global `commit.gpgsign = true` (with an unavailable
+        // key) would otherwise fail the commit below with exit 128.
+        run(path, &["config", "commit.gpgsign", "false"]);
         fs::write(path.join("init.txt"), "initial\n").expect("write init file");
         run(path, &["add", "."]);
         run(path, &["commit", "-m", "initial commit", "--quiet"]);
