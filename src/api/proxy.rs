@@ -129,13 +129,13 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::api::repos::RepoAppState;
-use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::llm::ollama::StreamChunk;
+use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{
-    AnthropicClient, InputMessage, MessageRequest, MessageResponse,
-    OutputContentBlock as AnthropicContentBlock, PromptCache, SystemBlock,
+    AnthropicClient, ContentBlockDelta, InputMessage, MessageRequest, MessageResponse,
+    OutputContentBlock as AnthropicContentBlock, PromptCache, StreamEvent, SystemBlock, Usage,
 };
 
 // ---------------------------------------------------------------------------
@@ -339,6 +339,15 @@ struct OaiChunkResponse {
     // Only present on the final chunk (finish_reason = "stop").
     #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<OaiUsage>,
+    // Anthropic prompt-cache write tokens. Only emitted on the final chunk of
+    // a Claude-served stream — every other path leaves it `None` so the field
+    // is skipped from the serialized JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_creation_input_tokens: Option<u32>,
+    // Anthropic prompt-cache read tokens. Only emitted on the final chunk of
+    // a Claude-served stream — every other path leaves it `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_read_input_tokens: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -475,10 +484,7 @@ pub fn proxy_router(state: ProxyState) -> Router {
     Router::new()
         .route("/chat/completions", post(handle_chat_completions))
         .route("/models", axum::routing::get(handle_list_models))
-        .route(
-            "/agent/run",
-            post(crate::api::agent::handle_agent_run),
-        )
+        .route("/agent/run", post(crate::api::agent::handle_agent_run))
         .with_state(state)
 }
 
@@ -579,6 +585,21 @@ async fn handle_chat_completions(
         {
             Ok(Some(hit)) => {
                 debug!(cache_key = %cache_key, "Proxy cache hit");
+                log_dispatch_event(&DispatchLogContext {
+                    task_kind: &hit.task_kind,
+                    target_kind: target_kind_label(&target),
+                    model_used: &hit.model_used,
+                    prompt_tokens: hit.prompt_tokens,
+                    completion_tokens: hit.completion_tokens,
+                    cache_creation_input_tokens: hit.cache_creation_input_tokens.unwrap_or(0),
+                    cache_read_input_tokens: hit.cache_read_input_tokens.unwrap_or(0),
+                    rag_chunks_used: hit.rag_chunks_used,
+                    repo_context_injected: hit.repo_context_injected,
+                    repo_id: req.x_repo_id.as_deref(),
+                    cached: true,
+                    streaming: false,
+                    used_fallback: hit.used_fallback,
+                });
                 return build_oai_response(
                     hit.content,
                     hit.model_used,
@@ -617,16 +638,51 @@ async fn handle_chat_completions(
         tokens_used,
         cache_creation_input_tokens,
         cache_read_input_tokens,
+        error: dispatch_error,
     } = outcome;
 
     let (prompt_tok, completion_tok) = split_tokens(tokens_used, &full_prompt, &reply);
+    let task_kind_str = format!("{:?}", task_kind);
+    let target_kind = target_kind_label(&target);
+
+    // ── 11. Backend-error fast path ───────────────────────────────────────────
+    // When the dispatch helper returned an error, the `reply` body carries
+    // the error text so the client still sees it; we skip the cache write
+    // (poisoning the cache with error responses would replay failures on
+    // every duplicate request for the TTL) and emit a `proxy.dispatch_error`
+    // event instead of the success event.
+    if let Some(error_message) = dispatch_error.as_deref() {
+        log_dispatch_error_event(&DispatchErrorLogContext {
+            task_kind: &task_kind_str,
+            target_kind,
+            model_used: &model_used,
+            error_message,
+            repo_id: req.x_repo_id.as_deref(),
+            streaming: false,
+        });
+        return build_oai_response(
+            reply,
+            model_used,
+            used_fallback,
+            task_kind_str,
+            rag_chunks_used,
+            repo_context_injected,
+            prompt_tok,
+            completion_tok,
+            false,
+            cache_key,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+        )
+        .into_response();
+    }
 
     // ── 11. Cache (fire-and-forget) ───────────────────────────────────────────
     let cached_val = CachedProxyResponse {
         content: reply.clone(),
         model_used: model_used.clone(),
         used_fallback,
-        task_kind: format!("{:?}", task_kind),
+        task_kind: task_kind_str.clone(),
         rag_chunks_used,
         repo_context_injected,
         prompt_tokens: prompt_tok,
@@ -647,12 +703,28 @@ async fn handle_chat_completions(
         });
     }
 
-    // ── 12. Build OpenAI-compatible response ──────────────────────────────────
+    // ── 12. Emit structured dispatch log + build OpenAI-compatible response ──
+    log_dispatch_event(&DispatchLogContext {
+        task_kind: &task_kind_str,
+        target_kind,
+        model_used: &model_used,
+        prompt_tokens: prompt_tok,
+        completion_tokens: completion_tok,
+        cache_creation_input_tokens: cache_creation_input_tokens.unwrap_or(0),
+        cache_read_input_tokens: cache_read_input_tokens.unwrap_or(0),
+        rag_chunks_used,
+        repo_context_injected,
+        repo_id: req.x_repo_id.as_deref(),
+        cached: false,
+        streaming: false,
+        used_fallback,
+    });
+
     build_oai_response(
         reply,
         model_used,
         used_fallback,
-        format!("{:?}", task_kind),
+        task_kind_str,
         rag_chunks_used,
         repo_context_injected,
         prompt_tok,
@@ -722,7 +794,8 @@ async fn handle_streaming(
                     use crate::db::Database;
                     match Database::new("data/rustcode.db").await {
                         Ok(db) => {
-                            let client = crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
+                            let client =
+                                crate::llm::grok_client::GrokClient::new(api_key.clone(), db);
                             client.ask_tracked(&prompt, None, "proxy-stream").await
                         }
                         Err(e) => Err(anyhow::anyhow!("DB init failed: {}", e)),
@@ -738,6 +811,8 @@ async fn handle_streaming(
                                 used_fallback: false,
                                 prompt_tokens: Some(resp.prompt_tokens as u32),
                                 completion_tokens: Some(resp.completion_tokens as u32),
+                                cache_creation_input_tokens: None,
+                                cache_read_input_tokens: None,
                             })
                             .await;
                     }
@@ -750,10 +825,19 @@ async fn handle_streaming(
             rx
         }
         ModelTarget::Claude { model, tier } => {
-            // Synthesise a single-delta stream from a blocking Claude call.
-            // Native SSE streaming via AnthropicClient::stream_message lives behind
-            // a follow-up task (currently this matches the Grok path's behaviour).
-            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(4);
+            // Real Anthropic SSE: pump `AnthropicClient::stream_message` and
+            // translate each `StreamEvent` into a `StreamChunk`. We forward
+            // only `TextDelta`s (the other delta variants — InputJson,
+            // Thinking, Signature — are skipped to match the non-streaming
+            // path's `extract_text` text-only contract). Final usage is read
+            // off the last `MessageDelta` event and emitted on
+            // `MessageStop`.
+            //
+            // Channel buffer is wider than the synthesised path's 4 because
+            // a real stream produces dozens of small deltas; back-pressuring
+            // the SSE pump on every token would block the upstream reqwest
+            // chunk reader.
+            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(64);
             let model = model.clone();
             let tier = *tier;
             let anthropic_client = state.repo_state.anthropic_client.clone();
@@ -781,29 +865,95 @@ async fn handle_streaming(
                     tool_choice: None,
                     temperature: None,
                     response_format: None,
+                    // stream_message flips this on internally; the explicit
+                    // false here matches the historical request shape so the
+                    // prompt-cache request fingerprint is comparable to the
+                    // non-streaming dispatch's.
                     stream: false,
                 };
 
-                match client.send_message(&message_req).await {
-                    Ok(resp) => {
-                        let text = extract_text(&resp);
-                        info!(
-                            model = %resp.model,
-                            tier = %tier,
-                            "Proxy stream: Claude dispatch succeeded"
-                        );
-                        let _ = tx.send(StreamChunk::Delta(text)).await;
-                        let _ = tx
-                            .send(StreamChunk::Done {
-                                model_used: resp.model,
-                                used_fallback: false,
-                                prompt_tokens: Some(resp.usage.input_tokens),
-                                completion_tokens: Some(resp.usage.output_tokens),
-                            })
-                            .await;
-                    }
+                let mut stream = match client.stream_message(&message_req).await {
+                    Ok(stream) => stream,
                     Err(e) => {
+                        warn!(error = %e, "Proxy stream: Claude stream_message failed");
                         let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                        return;
+                    }
+                };
+
+                // Per-stream accumulators. `model_used` is updated when the
+                // `MessageStart` event arrives (Anthropic echoes the resolved
+                // model slug — important for `auto` / aliased model routing).
+                // `latest_usage` tracks the most recent `MessageDelta::usage`
+                // so the final `Done` reflects the terminal token counts
+                // including cache creation / read totals.
+                let mut model_used = model.clone();
+                let mut latest_usage: Option<Usage> = None;
+                let mut done_sent = false;
+
+                loop {
+                    match stream.next_event().await {
+                        Ok(Some(event)) => match event {
+                            StreamEvent::MessageStart(start) => {
+                                if !start.message.model.is_empty() {
+                                    model_used = start.message.model;
+                                }
+                                // The initial usage carries the prompt-token
+                                // count; later MessageDeltas update it with
+                                // cumulative output + cache totals.
+                                latest_usage = Some(start.message.usage);
+                            }
+                            StreamEvent::ContentBlockDelta(delta) => {
+                                if let ContentBlockDelta::TextDelta { text } = delta.delta {
+                                    if tx.send(StreamChunk::Delta(text)).await.is_err() {
+                                        // Receiver dropped (client disconnected).
+                                        // Stop pumping; no Done is needed.
+                                        return;
+                                    }
+                                }
+                                // Other delta kinds (InputJson, Thinking,
+                                // Signature) are silently dropped: matches
+                                // the non-streaming `extract_text` contract.
+                            }
+                            StreamEvent::MessageDelta(delta) => {
+                                latest_usage = Some(delta.usage);
+                            }
+                            StreamEvent::MessageStop(_) => {
+                                send_claude_done(
+                                    &tx,
+                                    model_used.clone(),
+                                    latest_usage.as_ref(),
+                                    tier,
+                                )
+                                .await;
+                                done_sent = true;
+                                // Don't break — keep draining so the
+                                // underlying MessageStream gets a chance to
+                                // settle its prompt-cache record. The next
+                                // iteration sees Ok(None) and exits.
+                            }
+                            _ => {} // ContentBlockStart / ContentBlockStop
+                        },
+                        Ok(None) => {
+                            // Stream exhausted without an explicit
+                            // MessageStop — emit Done with whatever usage
+                            // we have so the cache write still fires.
+                            if !done_sent {
+                                send_claude_done(
+                                    &tx,
+                                    model_used.clone(),
+                                    latest_usage.as_ref(),
+                                    tier,
+                                )
+                                .await;
+                            }
+                            return;
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Proxy stream: Claude stream error mid-flight");
+                            let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                            return;
+                        }
                     }
                 }
             });
@@ -820,11 +970,26 @@ async fn handle_streaming(
     let id_clone = completion_id.clone();
     let cache_key_clone = cache_key.clone();
     let task_kind_str = format!("{:?}", task_kind);
+    // Separate copies for the two closures below. The `.map` closure is
+    // FnMut and only borrows on each call; the `.chain` `async move` block
+    // consumes its copy when it builds `CachedProxyResponse`.
+    let task_kind_for_map = task_kind_str.clone();
+    let target_kind_for_map = target_kind_label(&target);
+    let repo_id_for_map = req.x_repo_id.clone();
+    // Model slug used for dispatch_error logging when the stream errors
+    // before we observe the resolved model (e.g. before Claude's
+    // MessageStart event). When the stream succeeds, the model is read
+    // off the terminal StreamChunk::Done instead.
+    let model_for_map = target_model_label(&target).to_string();
     let cache = Arc::clone(&state.repo_state.cache);
 
     // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
     // so the FnMut closure can share it with the cache-write spawned at the end.
-    type FinalMeta = Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32)>>>;
+    // The tuple carries: (model_used, used_fallback, prompt_tokens,
+    // completion_tokens, cache_creation_input_tokens, cache_read_input_tokens).
+    // The two cache token fields are only populated for the Claude arm.
+    type FinalMeta =
+        Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32, Option<u32>, Option<u32>)>>>;
     let accumulated = Arc::new(tokio::sync::Mutex::new(String::new()));
     let final_meta: FinalMeta = Arc::new(tokio::sync::Mutex::new(None));
 
@@ -838,6 +1003,19 @@ async fn handle_streaming(
 
             match chunk {
                 StreamChunk::Error(e) => {
+                    log_dispatch_error_event(&DispatchErrorLogContext {
+                        task_kind: &task_kind_for_map,
+                        target_kind: target_kind_for_map,
+                        // The backend model slug isn't reliably knowable
+                        // here — the stream errored before we observed a
+                        // MessageStart for Claude or got Done metadata for
+                        // Ollama/Grok. Use the original target's model
+                        // string from the dispatcher's perspective.
+                        model_used: &model_for_map,
+                        error_message: &e,
+                        repo_id: repo_id_for_map.as_deref(),
+                        streaming: true,
+                    });
                     // Emit an error frame that OpenAI clients recognise.
                     let err_payload = serde_json::json!({
                         "error": { "message": e, "type": "stream_error" }
@@ -866,6 +1044,8 @@ async fn handle_streaming(
                             finish_reason: None,
                         }],
                         usage: None,
+                        cache_creation_input_tokens: None,
+                        cache_read_input_tokens: None,
                     };
                     let data =
                         serde_json::to_string(&chunk_resp).unwrap_or_else(|_| "{}".to_string());
@@ -877,13 +1057,38 @@ async fn handle_streaming(
                     used_fallback,
                     prompt_tokens,
                     completion_tokens,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 } => {
                     // Store final metadata so we can cache after the stream ends.
                     let pt = prompt_tokens.unwrap_or(0);
                     let ct = completion_tokens.unwrap_or(0);
                     if let Ok(mut m) = meta_clone.try_lock() {
-                        *m = Some((model_used.clone(), used_fallback, pt, ct));
+                        *m = Some((
+                            model_used.clone(),
+                            used_fallback,
+                            pt,
+                            ct,
+                            cache_creation_input_tokens,
+                            cache_read_input_tokens,
+                        ));
                     }
+
+                    log_dispatch_event(&DispatchLogContext {
+                        task_kind: &task_kind_for_map,
+                        target_kind: target_kind_for_map,
+                        model_used: &model_used,
+                        prompt_tokens: pt,
+                        completion_tokens: ct,
+                        cache_creation_input_tokens: cache_creation_input_tokens.unwrap_or(0),
+                        cache_read_input_tokens: cache_read_input_tokens.unwrap_or(0),
+                        rag_chunks_used,
+                        repo_context_injected,
+                        repo_id: repo_id_for_map.as_deref(),
+                        cached: false,
+                        streaming: true,
+                        used_fallback,
+                    });
 
                     let final_chunk = OaiChunkResponse {
                         id,
@@ -903,6 +1108,8 @@ async fn handle_streaming(
                             completion_tokens: ct,
                             total_tokens: pt + ct,
                         }),
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
                     };
                     let data =
                         serde_json::to_string(&final_chunk).unwrap_or_else(|_| "{}".to_string());
@@ -914,7 +1121,15 @@ async fn handle_streaming(
         .chain(stream::once(async move {
             // Best-effort cache write once the stream is complete.
             let acc = accumulated.lock().await;
-            if let Some((model_used, used_fallback, pt, ct)) = final_meta.lock().await.clone() {
+            if let Some((
+                model_used,
+                used_fallback,
+                pt,
+                ct,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+            )) = final_meta.lock().await.clone()
+            {
                 let cached_val = CachedProxyResponse {
                     content: acc.clone(),
                     model_used: model_used.clone(),
@@ -924,11 +1139,8 @@ async fn handle_streaming(
                     repo_context_injected,
                     prompt_tokens: pt,
                     completion_tokens: ct,
-                    // Streaming path doesn't yet surface Anthropic cache token
-                    // counts — the streaming MessageStream usage observation would
-                    // need to be plumbed through StreamChunk to fill these in.
-                    cache_creation_input_tokens: None,
-                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 };
                 let key = cache_key_clone;
                 tokio::spawn(async move {
@@ -959,6 +1171,8 @@ async fn handle_streaming(
             finish_reason: None,
         }],
         usage: None,
+        cache_creation_input_tokens: None,
+        cache_read_input_tokens: None,
     };
     let first_data = serde_json::to_string(&first_chunk).unwrap_or_else(|_| "{}".to_string());
     let first_event = stream::once(async move {
@@ -1149,7 +1363,7 @@ fn check_auth(state: &ProxyState, headers: &HeaderMap) -> Option<(StatusCode, Js
 // - `"grok-*"` / `"grok"` — always use Grok
 // - `"anthropic/*"` / `"claude-*"` — treated as explicit remote (Grok) targets.
 //   OpenClaw and other OpenAI-compatible clients send Anthropic model names
-//   (e.g. `anthropic/claude-opus-4-6`) when configured with a custom base URL;
+//   (e.g. `anthropic/claude-opus-4-7`) when configured with a custom base URL;
 //   we intercept and route to the remote backend without the classifier round-trip.
 // - `"rc:<hint>"` — strip prefix, use hint as the classification prompt
 // - anything else — treat as `"auto"` (message-classifier decides)
@@ -1307,6 +1521,12 @@ struct DispatchOutcome {
     cache_creation_input_tokens: Option<u32>,
     // Anthropic prompt-cache read tokens (only set for Claude responses).
     cache_read_input_tokens: Option<u32>,
+    // Backend error message when the dispatch failed. The error is *also*
+    // surfaced as the `reply` body (so clients still get a textual
+    // response), but having it as an explicit field lets callers
+    // distinguish errors from successes without string-matching on `reply`.
+    // Populated only by `DispatchOutcome::error`.
+    error: Option<String>,
 }
 
 impl DispatchOutcome {
@@ -1318,17 +1538,19 @@ impl DispatchOutcome {
             tokens_used: tokens,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            error: None,
         }
     }
 
     fn error(msg: String, model: String) -> Self {
         Self {
-            reply: msg,
+            reply: msg.clone(),
             model_used: model,
             used_fallback: false,
             tokens_used: None,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            error: Some(msg),
         }
     }
 }
@@ -1365,6 +1587,7 @@ async fn dispatch(
                         tokens_used: tokens,
                         cache_creation_input_tokens: None,
                         cache_read_input_tokens: None,
+                        error: None,
                     }
                 }
                 Err(e) => {
@@ -1496,6 +1719,7 @@ async fn dispatch_claude(
                 tokens_used: tokens,
                 cache_creation_input_tokens: cache_creation,
                 cache_read_input_tokens: cache_read,
+                error: None,
             }
         }
         Err(e) => {
@@ -1514,6 +1738,111 @@ const PROMPT_CACHE_MIN_TOKENS: usize = 1024;
 const PROMPT_CACHE_CHAR_PER_TOKEN: usize = 4;
 const PROMPT_CACHE_MIN_CHARS: usize = PROMPT_CACHE_MIN_TOKENS * PROMPT_CACHE_CHAR_PER_TOKEN;
 
+// Short label for a `ModelTarget` variant. Used as the `target` field on
+// structured dispatch logs so we can filter by backend without parsing the
+// model slug. "claude" covers both Planner (Opus) and Sonnet tiers; the
+// `tier` field already lives on the Claude-specific log entries.
+const fn target_kind_label(target: &ModelTarget) -> &'static str {
+    match target {
+        ModelTarget::Local { .. } => "local",
+        ModelTarget::Remote { .. } => "remote",
+        ModelTarget::Claude { .. } => "claude",
+    }
+}
+
+// Extract the model slug from a `ModelTarget` regardless of variant. Used
+// for the `model` field on structured dispatch_error events emitted before
+// the backend has confirmed its resolved model slug.
+fn target_model_label(target: &ModelTarget) -> &str {
+    match target {
+        ModelTarget::Local { model, .. }
+        | ModelTarget::Remote { model, .. }
+        | ModelTarget::Claude { model, .. } => model,
+    }
+}
+
+/// Carrier for the fields a "proxy dispatch" log line emits. Keeps the three
+/// call sites (non-stream cache hit, non-stream dispatch, streaming Done) in
+/// sync — drifting field names across paths would make the log unusable for
+/// downstream metrics.
+///
+/// `task_kind` is a pre-formatted string rather than `&TaskKind` so the
+/// streaming closure (which captures variables across multiple FnMut calls)
+/// can reuse the same `format!("{:?}", task_kind)` it already needs for
+/// `CachedProxyResponse::task_kind`. `TaskKind::Display` delegates to
+/// `Debug`, so the wire format is identical either way.
+struct DispatchLogContext<'a> {
+    task_kind: &'a str,
+    target_kind: &'static str,
+    model_used: &'a str,
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    cache_creation_input_tokens: u32,
+    cache_read_input_tokens: u32,
+    rag_chunks_used: usize,
+    repo_context_injected: bool,
+    repo_id: Option<&'a str>,
+    cached: bool,
+    streaming: bool,
+    used_fallback: bool,
+}
+
+// Emit the canonical "proxy.dispatch" structured event. The fields are a
+// stable surface for log-based routing-quality analysis (see the RC-API
+// "routing heuristic tuning" TODO).
+fn log_dispatch_event(ctx: &DispatchLogContext<'_>) {
+    info!(
+        event = "proxy.dispatch",
+        task_kind = ctx.task_kind,
+        target = ctx.target_kind,
+        model = %ctx.model_used,
+        prompt_tokens = ctx.prompt_tokens,
+        completion_tokens = ctx.completion_tokens,
+        cache_creation_input_tokens = ctx.cache_creation_input_tokens,
+        cache_read_input_tokens = ctx.cache_read_input_tokens,
+        rag_chunks_used = ctx.rag_chunks_used,
+        repo_context_injected = ctx.repo_context_injected,
+        repo_id = ctx.repo_id.unwrap_or(""),
+        cached = ctx.cached,
+        streaming = ctx.streaming,
+        used_fallback = ctx.used_fallback,
+        "Proxy dispatch completed"
+    );
+}
+
+/// Carrier for the fields a `proxy.dispatch_error` log line emits. Shape
+/// intentionally mirrors `DispatchLogContext` for the fields they share
+/// (task_kind, target, model, repo_id, streaming) so downstream queries
+/// that group by `task_kind` + `target` work the same on both event types
+/// — the error variant just swaps the success-side token fields for an
+/// `error_message`.
+struct DispatchErrorLogContext<'a> {
+    task_kind: &'a str,
+    target_kind: &'static str,
+    model_used: &'a str,
+    error_message: &'a str,
+    repo_id: Option<&'a str>,
+    streaming: bool,
+}
+
+// Emit the canonical "proxy.dispatch_error" structured event. Pairs with
+// log_dispatch_event so a downstream metrics roll-up can compute
+// dispatch_error_rate = count(proxy.dispatch_error) /
+// (count(proxy.dispatch) + count(proxy.dispatch_error)) grouped by
+// task_kind/target.
+fn log_dispatch_error_event(ctx: &DispatchErrorLogContext<'_>) {
+    warn!(
+        event = "proxy.dispatch_error",
+        task_kind = ctx.task_kind,
+        target = ctx.target_kind,
+        model = %ctx.model_used,
+        error = ctx.error_message,
+        repo_id = ctx.repo_id.unwrap_or(""),
+        streaming = ctx.streaming,
+        "Proxy dispatch failed"
+    );
+}
+
 // Build the Anthropic `system` field for a Claude dispatch. Returns `None`
 // when the caller had no system prompt. Otherwise emits a single `text`
 // block, marked `cache_control: { type: "ephemeral" }` once the prompt is
@@ -1529,6 +1858,47 @@ fn build_system_blocks(system_prompt: Option<&str>) -> Option<Vec<SystemBlock>> 
         SystemBlock::text(text)
     };
     Some(vec![block])
+}
+
+// Build and send the terminal `StreamChunk::Done` for a Claude stream.
+// Centralises the usage → cache-token translation so the `MessageStop` and
+// "stream exhausted without MessageStop" paths agree. Errors on the send
+// (receiver dropped) are intentionally swallowed: the client is already
+// gone, no further work would change the outcome.
+async fn send_claude_done(
+    tx: &tokio::sync::mpsc::Sender<StreamChunk>,
+    model_used: String,
+    usage: Option<&Usage>,
+    tier: ClaudeTier,
+) {
+    let (input_tokens, output_tokens, cache_creation, cache_read) =
+        usage.map_or((None, None, None, None), |u| {
+            (
+                Some(u.input_tokens),
+                Some(u.output_tokens),
+                (u.cache_creation_input_tokens > 0).then_some(u.cache_creation_input_tokens),
+                (u.cache_read_input_tokens > 0).then_some(u.cache_read_input_tokens),
+            )
+        });
+    info!(
+        model = %model_used,
+        tier = %tier,
+        input_tokens = input_tokens.unwrap_or(0),
+        output_tokens = output_tokens.unwrap_or(0),
+        cache_creation_input_tokens = cache_creation.unwrap_or(0),
+        cache_read_input_tokens = cache_read.unwrap_or(0),
+        "Proxy stream: Claude stream finished"
+    );
+    let _ = tx
+        .send(StreamChunk::Done {
+            model_used,
+            used_fallback: false,
+            prompt_tokens: input_tokens,
+            completion_tokens: output_tokens,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+        })
+        .await;
 }
 
 // Concatenate all Text content blocks from a Claude response into a single string.
@@ -1793,5 +2163,195 @@ mod tests {
             Some("ephemeral"),
             "expected ephemeral cache marker on long system prompt"
         );
+    }
+
+    #[test]
+    fn streaming_final_chunk_serializes_cache_token_fields_when_set() {
+        // Final-chunk shape on a Claude-served stream: usage carries the
+        // standard OpenAI token counts and the proxy adds the two
+        // Anthropic-specific cache counters so SSE clients can read them off
+        // the wire the same way the non-streaming path exposes them via
+        // x_ra_metadata.
+        let chunk = OaiChunkResponse {
+            id: "chatcmpl-rc-final".to_string(),
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "claude-sonnet-4-6".to_string(),
+            choices: vec![OaiChunkChoice {
+                index: 0,
+                delta: OaiDelta {
+                    role: None,
+                    content: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: Some(OaiUsage {
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+            }),
+            cache_creation_input_tokens: Some(1234),
+            cache_read_input_tokens: Some(5678),
+        };
+        let json: serde_json::Value = serde_json::to_value(&chunk).expect("chunk should serialize");
+        assert_eq!(json["cache_creation_input_tokens"], serde_json::json!(1234));
+        assert_eq!(json["cache_read_input_tokens"], serde_json::json!(5678));
+    }
+
+    #[tokio::test]
+    async fn send_claude_done_emits_cache_tokens_only_when_nonzero() {
+        // Helper used by the native-SSE Claude arm to terminate the stream.
+        // When the final `Usage` carries cache_creation/cache_read tokens,
+        // those flow into `StreamChunk::Done` (so downstream `OaiChunkResponse`
+        // can expose them on the wire). When both are zero, the
+        // `then_some` guards keep them out of the chunk — keeps the cache
+        // write metadata honest about whether Anthropic actually counted a
+        // cache hit.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StreamChunk>(2);
+        let usage = Usage {
+            input_tokens: 1_500,
+            cache_creation_input_tokens: 1_200,
+            cache_read_input_tokens: 0,
+            output_tokens: 320,
+        };
+        send_claude_done(
+            &tx,
+            "claude-sonnet-4-6".to_string(),
+            Some(&usage),
+            ClaudeTier::Executor,
+        )
+        .await;
+        let chunk = rx.recv().await.expect("Done chunk should be sent");
+        match chunk {
+            StreamChunk::Done {
+                model_used,
+                used_fallback,
+                prompt_tokens,
+                completion_tokens,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+            } => {
+                assert_eq!(model_used, "claude-sonnet-4-6");
+                assert!(!used_fallback);
+                assert_eq!(prompt_tokens, Some(1_500));
+                assert_eq!(completion_tokens, Some(320));
+                assert_eq!(cache_creation_input_tokens, Some(1_200));
+                // Cache-read tokens are zero ⇒ the helper drops the field
+                // (None) rather than emitting an explicit 0.
+                assert_eq!(cache_read_input_tokens, None);
+            }
+            other => panic!("expected StreamChunk::Done, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_claude_done_handles_missing_usage_gracefully() {
+        // Stream exhausted before any MessageDelta arrived. The helper
+        // should still emit Done so the cache-write tail runs — token
+        // fields are simply absent.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StreamChunk>(2);
+        send_claude_done(
+            &tx,
+            "claude-opus-4-7".to_string(),
+            None,
+            ClaudeTier::Planner,
+        )
+        .await;
+        let chunk = rx.recv().await.expect("Done chunk should be sent");
+        match chunk {
+            StreamChunk::Done {
+                prompt_tokens,
+                completion_tokens,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
+                ..
+            } => {
+                assert_eq!(prompt_tokens, None);
+                assert_eq!(completion_tokens, None);
+                assert_eq!(cache_creation_input_tokens, None);
+                assert_eq!(cache_read_input_tokens, None);
+            }
+            other => panic!("expected StreamChunk::Done, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn streaming_chunk_omits_cache_token_fields_when_unset() {
+        // The two cache fields are `#[serde(skip_serializing_if = "Option::is_none")]`,
+        // so non-Claude paths (and Claude chunks before Done) emit the standard
+        // OpenAI shape without the extension fields.
+        let chunk = OaiChunkResponse {
+            id: "chatcmpl-rc-mid".to_string(),
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "streaming".to_string(),
+            choices: vec![OaiChunkChoice {
+                index: 0,
+                delta: OaiDelta {
+                    role: None,
+                    content: Some("hello".to_string()),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&chunk).expect("chunk should serialize");
+        assert!(json.get("cache_creation_input_tokens").is_none());
+        assert!(json.get("cache_read_input_tokens").is_none());
+    }
+
+    #[test]
+    fn target_kind_label_emits_stable_strings_per_variant() {
+        // These labels are part of the structured dispatch-log surface
+        // (`target = "local" | "remote" | "claude"`). Downstream log queries
+        // pin against them, so the strings must stay stable; renaming any
+        // requires a coordinated log-pipeline change.
+        let local = ModelTarget::Local {
+            model: "qwen2.5-coder:7b".to_string(),
+            base_url: "http://localhost:11434".to_string(),
+        };
+        let remote = ModelTarget::Remote {
+            model: "grok-3".to_string(),
+            api_key: "test".to_string(),
+        };
+        let claude = ModelTarget::Claude {
+            model: "claude-sonnet-4-6".to_string(),
+            tier: ClaudeTier::Executor,
+        };
+        assert_eq!(target_kind_label(&local), "local");
+        assert_eq!(target_kind_label(&remote), "remote");
+        assert_eq!(target_kind_label(&claude), "claude");
+        // target_model_label pulls the model slug out of any variant — used
+        // when the stream errors before the backend confirms its resolved
+        // model on a MessageStart event.
+        assert_eq!(target_model_label(&local), "qwen2.5-coder:7b");
+        assert_eq!(target_model_label(&remote), "grok-3");
+        assert_eq!(target_model_label(&claude), "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn dispatch_outcome_error_constructor_sets_error_and_reply() {
+        // Two facts the rest of the proxy depends on:
+        // 1. `reply` carries the error text so the client still sees a
+        //    human-readable response in OaiChatResponse.message.content.
+        // 2. `error` carries the same text, signalling to
+        //    handle_chat_completions that this was a backend failure
+        //    (skip the cache write, emit proxy.dispatch_error instead of
+        //    proxy.dispatch).
+        let outcome =
+            DispatchOutcome::error("connection refused".to_string(), "grok-3".to_string());
+        assert_eq!(outcome.reply, "connection refused");
+        assert_eq!(outcome.error.as_deref(), Some("connection refused"));
+        assert_eq!(outcome.model_used, "grok-3");
+        assert!(!outcome.used_fallback);
+        assert!(outcome.tokens_used.is_none());
+
+        // Sanity: the success constructor leaves `error` as None so the
+        // "fast path" branch in handle_chat_completions falls through to
+        // the normal cache write + success log.
+        let ok = DispatchOutcome::ok("hello".to_string(), "grok-3".to_string(), Some(42));
+        assert!(ok.error.is_none());
     }
 }

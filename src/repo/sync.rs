@@ -3,8 +3,8 @@
 // Handles repo registration, tree snapshots, TODO extraction, and .rustcode/ cache management
 
 use crate::db::store_embedding;
-use rag::{EmbeddingConfig, EmbeddingGenerator};
 use crate::research::worker::refresh_rag_index;
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
@@ -27,6 +27,13 @@ pub struct RegisteredRepo {
     pub branch: String,
     pub last_synced: Option<u64>, // unix timestamp
     pub active: bool,
+    // Per-repo override for the scanner's skip-extensions list. `None`
+    // means "use the global `SCANNER_SKIP_EXTENSIONS` / config default";
+    // `Some(list)` *replaces* the global default for this repo (see
+    // `effective_skip_extensions`). Extensions are stored without the
+    // leading dot to match the `default_skip_extensions()` representation
+    // in src/config.rs. Persisted as a Postgres TEXT[] (migration 024).
+    pub skip_extensions: Option<Vec<String>>,
 }
 
 impl RegisteredRepo {
@@ -41,6 +48,7 @@ impl RegisteredRepo {
             branch: "main".to_string(),
             last_synced: None,
             active: true,
+            skip_extensions: None,
         }
     }
 
@@ -67,6 +75,56 @@ impl RegisteredRepo {
 
     pub fn context_path(&self) -> PathBuf {
         self.cache_dir().join("context.md")
+    }
+
+    /// Effective skip-extensions list for this repo. Returns the per-repo
+    /// override if set; otherwise falls back to `global_default`. Replace
+    /// (not additive) semantics — a repo that sets an empty list opts out
+    /// of all extension-based skipping. PR B will call this from the
+    /// scanner; PR A only ships the helper + the persistence to back it.
+    pub fn effective_skip_extensions<'a>(&'a self, global_default: &'a [String]) -> &'a [String] {
+        match self.skip_extensions.as_deref() {
+            Some(list) => list,
+            None => global_default,
+        }
+    }
+}
+
+/// Look up the per-repo `skip_extensions` override for a given path by
+/// matching `registered_repos.local_path` exactly.
+///
+/// Returns:
+/// * `Ok(None)` — no `registered_repos` row exists for the path, or the
+///   row's `skip_extensions` column is NULL. Both mean "use the
+///   caller's global default" (the scanner falls back to `SKIP_SUFFIXES`,
+///   the audit runner falls back to `AuditRunnerConfig.skip_extensions`).
+/// * `Ok(Some(list))` — an API-registered repo has an explicit
+///   override. Forwarded verbatim, including the empty-list case
+///   (which means "skip nothing by extension on this repo" per PR A's
+///   contract).
+///
+/// Canonical lookup used by every "scan a registered repo" surface:
+/// the audit runner (`audit::endpoint::handle_audit_post`) and the
+/// auto-scanner (`AutoScanner::check_and_scan_repo`) both call this
+/// directly so the SELECT and its NULL-vs-empty handling live in one
+/// place. Callers treat failures as advisory — never block the
+/// scan/audit on a lookup error.
+pub async fn fetch_repo_skip_extensions(
+    pool: &PgPool,
+    repo_path: &Path,
+) -> anyhow::Result<Option<Vec<String>>> {
+    let path_str = repo_path.to_string_lossy().to_string();
+    let row = sqlx::query(
+        "SELECT skip_extensions FROM registered_repos \
+         WHERE local_path = $1 AND active = TRUE \
+         LIMIT 1",
+    )
+    .bind(&path_str)
+    .fetch_optional(pool)
+    .await?;
+    match row {
+        Some(r) => Ok(r.try_get::<Option<Vec<String>>, _>("skip_extensions")?),
+        None => Ok(None),
     }
 }
 
@@ -240,7 +298,7 @@ impl RepoSyncService {
 
         let rows = sqlx::query(
             r#"
-            SELECT id, name, local_path, remote_url, branch, last_synced, active
+            SELECT id, name, local_path, remote_url, branch, last_synced, active, skip_extensions
             FROM registered_repos
             WHERE active = TRUE
             "#,
@@ -257,6 +315,10 @@ impl RepoSyncService {
             let branch: String = row.try_get("branch")?;
             let last_synced: Option<i64> = row.try_get("last_synced")?;
             let active: bool = row.try_get("active")?;
+            // skip_extensions is TEXT[] NULL (migration 024). NULL → None
+            // means "use global default"; Some(_) replaces global per
+            // RegisteredRepo::effective_skip_extensions.
+            let skip_extensions: Option<Vec<String>> = row.try_get("skip_extensions")?;
 
             let repo = RegisteredRepo {
                 id: id.clone(),
@@ -266,6 +328,7 @@ impl RepoSyncService {
                 branch,
                 last_synced: last_synced.map(|v| v as u64),
                 active,
+                skip_extensions,
             };
             self.repos.insert(repo.id.clone(), repo);
         }
@@ -312,15 +375,16 @@ impl RepoSyncService {
             if let Err(e) = sqlx::query(
                 r#"
                 INSERT INTO registered_repos
-                    (id, name, local_path, remote_url, branch, last_synced, active)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (id, name, local_path, remote_url, branch, last_synced, active, skip_extensions)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (local_path) WHERE active = TRUE DO UPDATE SET
-                    id         = EXCLUDED.id,
-                    name       = EXCLUDED.name,
-                    remote_url = EXCLUDED.remote_url,
-                    branch     = EXCLUDED.branch,
-                    last_synced = COALESCE(EXCLUDED.last_synced, registered_repos.last_synced),
-                    active     = EXCLUDED.active
+                    id              = EXCLUDED.id,
+                    name            = EXCLUDED.name,
+                    remote_url      = EXCLUDED.remote_url,
+                    branch          = EXCLUDED.branch,
+                    last_synced     = COALESCE(EXCLUDED.last_synced, registered_repos.last_synced),
+                    active          = EXCLUDED.active,
+                    skip_extensions = EXCLUDED.skip_extensions
                 "#,
             )
             .bind(&repo.id)
@@ -330,6 +394,7 @@ impl RepoSyncService {
             .bind(&repo.branch)
             .bind(last_synced)
             .bind(repo.active)
+            .bind(repo.skip_extensions.as_deref())
             .execute(pool)
             .await
             {
@@ -1353,6 +1418,77 @@ mod tests {
     fn slugify_basic() {
         assert_eq!(slugify("My Cool Repo"), "my-cool-repo");
         assert_eq!(slugify("rustcode"), "rustcode");
+    }
+
+    #[test]
+    fn registered_repo_new_defaults_skip_extensions_to_none() {
+        // None is the "inherit global SCANNER_SKIP_EXTENSIONS" signal
+        // that PR B will consume from the scanner — keeping it the
+        // default for `new()` means existing callers (CLI + tests +
+        // server.rs registration paths) get the previous behaviour
+        // without code changes.
+        let repo = RegisteredRepo::new("rc-test", "/tmp/rc-test");
+        assert!(repo.skip_extensions.is_none());
+    }
+
+    #[test]
+    fn effective_skip_extensions_falls_back_to_global_when_unset() {
+        // The contract PR B will rely on: a repo without an explicit
+        // override returns the caller-supplied global default. Returning
+        // the same slice (not a clone) lets the scanner pass through
+        // without an allocation per file checked.
+        let repo = RegisteredRepo::new("rc-test", "/tmp/rc-test");
+        let global = vec!["png".to_string(), "lock".to_string()];
+        let effective = repo.effective_skip_extensions(&global);
+        assert_eq!(effective, &global[..]);
+    }
+
+    #[test]
+    fn effective_skip_extensions_replaces_global_when_set() {
+        // Replace (not additive) semantics: a repo that sets its own
+        // list opts *out* of the global default entirely. Lets a
+        // lockfile-validation repo opt back in to analyzing `.lock`
+        // files even though they're globally skipped.
+        let mut repo = RegisteredRepo::new("rc-test", "/tmp/rc-test");
+        repo.skip_extensions = Some(vec!["min.js".to_string()]);
+        let global = vec!["png".to_string(), "lock".to_string()];
+        let effective = repo.effective_skip_extensions(&global);
+        assert_eq!(effective, &["min.js".to_string()][..]);
+    }
+
+    #[test]
+    fn effective_skip_extensions_empty_override_opts_out_of_all_skipping() {
+        // A caller setting an explicit empty list is a real signal:
+        // "skip nothing by extension on this repo." Distinct from
+        // None (use global default). The scanner in PR B must treat
+        // an empty slice as "filter passes everything", not as
+        // "fall back to global".
+        let mut repo = RegisteredRepo::new("rc-test", "/tmp/rc-test");
+        repo.skip_extensions = Some(Vec::new());
+        let global = vec!["png".to_string()];
+        let effective = repo.effective_skip_extensions(&global);
+        assert!(effective.is_empty());
+    }
+
+    #[tokio::test]
+    async fn register_preserves_skip_extensions_in_memory() {
+        // In-memory path (no PgPool) — verifies the field survives the
+        // service's `register` -> `get_repo` round trip. The Postgres
+        // round-trip is exercised at integration-test time against the
+        // live DB; this test pins the in-memory contract.
+        let tmp = tempfile::tempdir().expect("failed to create tempdir");
+        let repo_path = tmp.path().to_path_buf();
+
+        let mut repo = RegisteredRepo::new("test-skip-ext", &repo_path);
+        repo.skip_extensions = Some(vec!["png".to_string(), "min.js".to_string()]);
+        let mut svc = RepoSyncService::new();
+        let id = svc.register(repo).await.expect("register failed");
+
+        let loaded = svc.get_repo(&id).expect("registered repo not found");
+        assert_eq!(
+            loaded.skip_extensions.as_deref(),
+            Some(&["png".to_string(), "min.js".to_string()][..])
+        );
     }
 
     // Verify that `register()` writes `.rustcode/.gitignore` containing

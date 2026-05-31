@@ -108,6 +108,32 @@ pub struct AuditRunner {
     config: AuditRunnerConfig,
 }
 
+impl AuditRunnerConfig {
+    /// Apply a per-repo `skip_extensions` override on top of this config.
+    /// `Some(list)` *replaces* `self.skip_extensions` entirely (matching
+    /// the replace-not-additive semantics PR A pinned for the
+    /// `RegisteredRepo.skip_extensions` field). `None` leaves the
+    /// config unchanged — used when the repo has no API registration or
+    /// its override is NULL. An explicit `Some(empty)` opts the repo
+    /// out of all extension-based skipping, distinct from `None`.
+    ///
+    /// Builder-style — returns `self` so call sites that need to
+    /// transform a cloned default config in one expression can chain
+    /// the override. Path-fragment skipping (`skip_paths`) and other
+    /// fields are deliberately unaffected: per-repo intent here is
+    /// only about file extensions, not structural skips like
+    /// `target/` or `.git/`.
+    pub fn with_repo_skip_extensions_override(
+        mut self,
+        repo_override: Option<Vec<String>>,
+    ) -> Self {
+        if let Some(list) = repo_override {
+            self.skip_extensions = list;
+        }
+        self
+    }
+}
+
 impl AuditRunner {
     pub fn new(config: AuditRunnerConfig) -> Self {
         Self { config }
@@ -762,5 +788,60 @@ mod tests {
         let back: AuditRunnerConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.max_llm_files, cfg.max_llm_files);
         assert_eq!(back.skip_extensions.len(), cfg.skip_extensions.len());
+    }
+
+    #[test]
+    fn with_repo_skip_extensions_override_none_leaves_config_untouched() {
+        // None is the "no API registration / NULL override" case from
+        // PR A; the audit must run with the global config verbatim,
+        // matching pre-PR-C behaviour.
+        let baseline = AuditRunnerConfig::default();
+        let overlaid = baseline.clone().with_repo_skip_extensions_override(None);
+        assert_eq!(overlaid.skip_extensions, baseline.skip_extensions);
+        // Other fields must also pass through unchanged — the
+        // override is scoped to skip_extensions only.
+        assert_eq!(overlaid.skip_paths, baseline.skip_paths);
+        assert_eq!(overlaid.max_file_bytes, baseline.max_file_bytes);
+        assert_eq!(overlaid.max_cost_usd, baseline.max_cost_usd);
+    }
+
+    #[test]
+    fn with_repo_skip_extensions_override_some_replaces_skip_extensions() {
+        // Pins PR A's replace-not-additive semantics at the audit
+        // layer. After overlaying ["lock"], the audit must skip
+        // only `.lock` files for this repo — not the global default
+        // set (png, jpg, onnx, etc.).
+        let overlaid = AuditRunnerConfig::default()
+            .with_repo_skip_extensions_override(Some(vec!["lock".to_string()]));
+        assert_eq!(overlaid.skip_extensions, vec!["lock".to_string()]);
+        assert!(
+            !overlaid.skip_extensions.contains(&"png".to_string()),
+            "global default leaked through — override should be a replace, not a union"
+        );
+    }
+
+    #[test]
+    fn with_repo_skip_extensions_override_empty_disables_extension_skipping() {
+        // Some(&[]) is distinct from None per PR A's contract. The
+        // audit's `collect_files` filters by extension via
+        // `skip_extensions.iter().any(...)`; an empty list short-
+        // circuits to "skip nothing by extension," leaving only
+        // `skip_paths` and `max_file_bytes` as filters.
+        let overlaid =
+            AuditRunnerConfig::default().with_repo_skip_extensions_override(Some(Vec::new()));
+        assert!(overlaid.skip_extensions.is_empty());
+    }
+
+    #[test]
+    fn with_repo_skip_extensions_override_does_not_touch_skip_paths() {
+        // Per-repo intent is only about file *extensions*. Path
+        // fragments (`target/`, `node_modules/`, `.git/`, etc.)
+        // are structural skips that the override must never
+        // disturb — same invariant PR B locked for the scanner
+        // (SKIP_DIRS is never overridable).
+        let baseline_paths = AuditRunnerConfig::default().skip_paths;
+        let overlaid =
+            AuditRunnerConfig::default().with_repo_skip_extensions_override(Some(Vec::new()));
+        assert_eq!(overlaid.skip_paths, baseline_paths);
     }
 }

@@ -313,7 +313,10 @@ impl CodeFormatter {
                     total_changed += 1;
                 } else {
                     // In fix mode, non-zero exit is an error
-                    errors.push(format!("cargo fmt failed in {:?}: {}", cargo_dir, output.stderr));
+                    errors.push(format!(
+                        "cargo fmt failed in {:?}: {}",
+                        cargo_dir, output.stderr
+                    ));
                 }
             }
         }

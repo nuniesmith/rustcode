@@ -168,11 +168,15 @@ mod tests {
         let c = serde_json::to_string(&completed).unwrap();
         let f = serde_json::to_string(&failed).unwrap();
         assert_eq!(
-            serde_json::from_str::<StepStatus>(&c).unwrap().is_completed(),
+            serde_json::from_str::<StepStatus>(&c)
+                .unwrap()
+                .is_completed(),
             true
         );
         assert_eq!(
-            serde_json::from_str::<StepStatus>(&f).unwrap().is_completed(),
+            serde_json::from_str::<StepStatus>(&f)
+                .unwrap()
+                .is_completed(),
             false
         );
     }
@@ -188,8 +192,16 @@ mod tests {
         };
         let a = serde_json::to_string(&approved).unwrap();
         let r = serde_json::to_string(&revise).unwrap();
-        assert!(serde_json::from_str::<ReviewOutcome>(&a).unwrap().is_approved());
-        assert!(!serde_json::from_str::<ReviewOutcome>(&r).unwrap().is_approved());
+        assert!(
+            serde_json::from_str::<ReviewOutcome>(&a)
+                .unwrap()
+                .is_approved()
+        );
+        assert!(
+            !serde_json::from_str::<ReviewOutcome>(&r)
+                .unwrap()
+                .is_approved()
+        );
     }
 
     #[test]

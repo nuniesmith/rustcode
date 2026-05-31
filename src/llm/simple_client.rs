@@ -9,7 +9,9 @@
 // raw-reqwest implementation that this module used to export.
 
 use anyhow::{Context as _, Result};
-use api::{InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock};
+use api::{
+    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
+};
 
 // Default model when `XAI_MODEL` env-var is unset. Preserves the value the
 // raw-reqwest predecessor shipped so existing deployments see no change.

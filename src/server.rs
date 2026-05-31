@@ -446,6 +446,12 @@ pub async fn run_server(config: Config) -> Result<()> {
             TaskExecutorOptions {
                 workspace_dir: executor_workspace,
                 dry_run,
+                // Picked up from `RC_PLUGIN_CONFIG_HOME` in
+                // `Config::from_env`. When set, the executor builds
+                // a `plugins::HookRunner` from the registry and fires
+                // `PreToolUse` / `PostToolUse` hooks around every
+                // agent tool call.
+                plugin_config_home: config.task_executor.plugin_config_home.clone(),
             },
         ));
         let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty());
@@ -566,6 +572,31 @@ pub async fn run_server(config: Config) -> Result<()> {
     );
     info!("Health check            http://{}/healthz", socket_addr);
 
+    // RC-CRATES-E: optional MCP tool-bridge listener (placeholder).
+    // Spawn alongside the primary listener so both share the same
+    // tokio runtime. Failures to bind log and continue — the primary
+    // listener still serves traffic even if the MCP port is taken.
+    if config.mcp_server.enabled {
+        let mcp_addr = format!("{}:{}", config.mcp_server.host, config.mcp_server.port);
+        let mcp_router = build_mcp_router();
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(&mcp_addr).await {
+                Ok(listener) => {
+                    info!("MCP placeholder listener on http://{}/", mcp_addr);
+                    if let Err(e) = axum::serve(listener, mcp_router).await {
+                        warn!("MCP server error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "MCP listener failed to bind {}: {} (primary listener continues)",
+                        mcp_addr, e
+                    );
+                }
+            }
+        });
+    }
+
     // Start server
     let listener = tokio::net::TcpListener::bind(&socket_addr)
         .await
@@ -576,6 +607,29 @@ pub async fn run_server(config: Config) -> Result<()> {
         .map_err(|e| AuditError::other(format!("Server error: {}", e)))?;
 
     Ok(())
+}
+
+// RC-CRATES-E placeholder MCP tool-bridge router. Mounts `/healthz`
+// only so the listener can be smoke-tested today. Tool-bridge
+// endpoints wrapping `runtime::McpToolRegistry` will land in a
+// follow-up once the wire-format design (JSON-RPC vs REST) is
+// agreed.
+fn build_mcp_router() -> Router {
+    Router::new()
+        .route("/health", get(mcp_health_check))
+        .route("/healthz", get(mcp_health_check))
+}
+
+// Health endpoint for the MCP listener. Returns the rustcode
+// version and a note that tool-bridge endpoints aren't wired yet
+// so a client probing the surface can detect the placeholder state.
+async fn mcp_health_check() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status": "healthy",
+        "server": "rustcode-mcp",
+        "version": env!("CARGO_PKG_VERSION"),
+        "note": "MCP listener scaffolding only — tool-bridge endpoints over runtime::McpToolRegistry are not yet wired.",
+    }))
 }
 
 // Build a restrictive CORS layer

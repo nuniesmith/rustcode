@@ -84,6 +84,14 @@ pub struct AgentPipeline {
     /// for free. Call `without_consolidation` to turn it back off (useful
     /// for benchmarking the no-learning baseline).
     consolidation_enabled: bool,
+    /// Optional plugin hook runner. When `Some`, every tool call inside
+    /// `execute_step_with_tools` fires `PreToolUse` before dispatch and
+    /// `PostToolUse` (or `PostToolUseFailure`) after. Denials skip the
+    /// underlying tool and surface the hook's message as a tool error;
+    /// hook execution failures (non-zero, non-2 exits) are logged and
+    /// the underlying tool still runs — a broken plugin must not block
+    /// real work. None means hooks are disabled; default at construction.
+    plugin_hooks: Option<Arc<plugins::HookRunner>>,
 }
 
 impl AgentPipeline {
@@ -109,7 +117,28 @@ impl AgentPipeline {
             memory: None,
             memory_top_k: DEFAULT_MEMORY_TOP_K,
             consolidation_enabled: false,
+            plugin_hooks: None,
         }
+    }
+
+    /// Attach a plugin `HookRunner`. With hooks attached, every tool call
+    /// dispatched by `execute_step_with_tools` fires `PreToolUse` before
+    /// the call and `PostToolUse` / `PostToolUseFailure` after. See the
+    /// field doc on `plugin_hooks` for denial / failure semantics.
+    ///
+    /// Construct the runner from a `PluginRegistry`:
+    /// ```ignore
+    /// let manager = plugins::PluginManager::new(
+    ///     plugins::PluginManagerConfig::new(&plugin_config_home),
+    /// );
+    /// let registry = manager.plugin_registry()?;
+    /// let hooks    = plugins::HookRunner::from_registry(&registry)?;
+    /// let pipeline = pipeline.with_plugin_hooks(Arc::new(hooks));
+    /// ```
+    #[must_use]
+    pub fn with_plugin_hooks(mut self, hooks: Arc<plugins::HookRunner>) -> Self {
+        self.plugin_hooks = Some(hooks);
+        self
     }
 
     /// Attach a persistent agent memory store. When set, planner and
@@ -645,17 +674,121 @@ impl AgentPipeline {
             }
 
             // Dispatch each tool call and collect the result blocks for the
-            // next user turn.
+            // next user turn. Plugin hooks fire around each `tools.execute`:
+            // a `PreToolUse` denial short-circuits the call and surfaces
+            // the denial message as a tool error; post-hook messages are
+            // appended to the tool output so the model sees them as
+            // observations on the next turn.
             let mut result_blocks: Vec<InputContentBlock> = Vec::with_capacity(tool_uses.len());
             for (id, name, input) in tool_uses {
+                let input_str = serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string());
+
+                // ── Pre-tool-use hook ────────────────────────────────────
+                let pre_msgs = if let Some(hooks) = self.plugin_hooks.clone() {
+                    let name_owned = name.clone();
+                    let input_owned = input_str.clone();
+                    let pre = tokio::task::spawn_blocking(move || {
+                        hooks.run_pre_tool_use(&name_owned, &input_owned)
+                    })
+                    .await
+                    .unwrap_or_else(|join_err| {
+                        warn!(tool = %name, error = %join_err, "pre-tool-use hook join error");
+                        plugins::HookRunResult::allow(Vec::new())
+                    });
+
+                    if pre.is_denied() {
+                        let msg = pre.messages().join("\n");
+                        let denial_text = format!("[plugin hook denied tool `{name}`] {msg}");
+                        warn!(tool = %name, "PreToolUse hook denied tool call");
+                        tool_calls_made.push(ToolCallRecord {
+                            tool_use_id: id.clone(),
+                            tool_name: name.clone(),
+                            input,
+                            status: ToolCallStatus::Error,
+                            output: truncate(&denial_text, 4096),
+                        });
+                        result_blocks.push(InputContentBlock::ToolResult {
+                            tool_use_id: id,
+                            content: vec![ToolResultContentBlock::Text { text: denial_text }],
+                            is_error: true,
+                        });
+                        continue;
+                    }
+                    if pre.is_failed() {
+                        // Hook crashed — log but proceed. A broken plugin
+                        // must not block real work.
+                        let msg = pre.messages().join("\n");
+                        warn!(tool = %name, hook_msg = %msg, "PreToolUse hook failed; proceeding with tool call");
+                        pre.messages().to_vec()
+                    } else {
+                        pre.messages().to_vec()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                // ── Underlying tool call ─────────────────────────────────
                 let outcome = tools.execute(&name, input.clone()).await;
-                let (output_text, is_error, status) = match outcome {
+                let (mut output_text, is_error, status) = match outcome {
                     Ok(text) => (text, false, ToolCallStatus::Success),
                     Err(err) => {
                         warn!(tool = %name, error = %err, "Tool call failed");
                         (err.to_string(), true, ToolCallStatus::Error)
                     }
                 };
+
+                // ── Post-tool-use hook ───────────────────────────────────
+                let post_msgs = if let Some(hooks) = self.plugin_hooks.clone() {
+                    let name_owned = name.clone();
+                    let input_owned = input_str.clone();
+                    let output_owned = output_text.clone();
+                    let post = if is_error {
+                        tokio::task::spawn_blocking(move || {
+                            hooks.run_post_tool_use_failure(
+                                &name_owned,
+                                &input_owned,
+                                &output_owned,
+                            )
+                        })
+                        .await
+                    } else {
+                        tokio::task::spawn_blocking(move || {
+                            hooks.run_post_tool_use(&name_owned, &input_owned, &output_owned, false)
+                        })
+                        .await
+                    };
+                    match post {
+                        Ok(result) => {
+                            if result.is_failed() {
+                                let msg = result.messages().join("\n");
+                                warn!(tool = %name, hook_msg = %msg, "PostToolUse hook failed; ignoring");
+                            }
+                            result.messages().to_vec()
+                        }
+                        Err(join_err) => {
+                            warn!(tool = %name, error = %join_err, "post-tool-use hook join error");
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                // Prepend pre-hook messages and append post-hook messages
+                // so the model sees them as observations alongside the
+                // tool's own output.
+                if !pre_msgs.is_empty() || !post_msgs.is_empty() {
+                    let mut combined = String::new();
+                    for m in &pre_msgs {
+                        combined.push_str(&format!("[plugin hook] {m}\n"));
+                    }
+                    combined.push_str(&output_text);
+                    for m in &post_msgs {
+                        combined.push_str(&format!("\n[plugin hook] {m}"));
+                    }
+                    output_text = combined;
+                }
+
                 tool_calls_made.push(ToolCallRecord {
                     tool_use_id: id.clone(),
                     tool_name: name.clone(),
@@ -1316,5 +1449,36 @@ mod tests {
         let raw = r#"[{"kind": "nonsense", "content": "x"}]"#;
         let err = parse_consolidation(raw).expect_err("should error");
         assert!(err.to_string().contains("consolidation output"));
+    }
+
+    // ─── Plugin hook wiring ──────────────────────────────────────────────────
+    //
+    // The plugins crate has its own behavioural tests for HookRunner exit
+    // codes (`crates/plugins/src/hooks.rs::tests`). What we verify here is
+    // narrower: the builder stores the runner so `execute_step_with_tools`
+    // will pick it up.
+
+    fn dummy_pipeline() -> AgentPipeline {
+        let client = Arc::new(AnthropicClient::new("test-key"));
+        AgentPipeline::new(client.clone(), client, "claude-test", "claude-test")
+    }
+
+    #[test]
+    fn plugin_hooks_default_to_none() {
+        let p = dummy_pipeline();
+        assert!(
+            p.plugin_hooks.is_none(),
+            "no hooks should be attached by default"
+        );
+    }
+
+    #[test]
+    fn with_plugin_hooks_stores_runner() {
+        let hooks = Arc::new(plugins::HookRunner::default());
+        let p = dummy_pipeline().with_plugin_hooks(hooks);
+        assert!(
+            p.plugin_hooks.is_some(),
+            "with_plugin_hooks should attach a HookRunner",
+        );
     }
 }

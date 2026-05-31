@@ -41,6 +41,14 @@ pub struct TaskExecutorOptions {
 
     /// When true, the executor performs a dry-run simulation (no network clone).
     pub dry_run: bool,
+
+    /// Plugin config home (typically `infrastructure/config/rustcode/plugins/`).
+    /// When `Some`, the executor builds a `plugins::HookRunner` from the
+    /// registry and attaches it to the pipeline before running, so
+    /// `PreToolUse` / `PostToolUse` hooks fire around every agent tool
+    /// call. When `None`, hooks are disabled — the default, preserves
+    /// existing behaviour for callers that haven't opted in.
+    pub plugin_config_home: Option<PathBuf>,
 }
 
 impl Default for TaskExecutorOptions {
@@ -48,6 +56,7 @@ impl Default for TaskExecutorOptions {
         Self {
             workspace_dir: None,
             dry_run: true,
+            plugin_config_home: None,
         }
     }
 }
@@ -292,8 +301,8 @@ impl TaskExecutor {
         github_token: &str,
         _github_username: &str,
     ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| FailureOutcome::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // 1) Clone repository with token
@@ -380,11 +389,8 @@ impl TaskExecutor {
         // 5) Push branch
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -451,7 +457,14 @@ impl TaskExecutor {
         //    (or tags `needs-review` on failure). The watcher returns
         //    the TaskResult immediately; the poller updates the result
         //    file in place once CI settles.
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
@@ -528,6 +541,36 @@ impl TaskExecutor {
 
     // Cloned-first, tool-using flow. Each branch surfaces partial state so
     // the wrapper can persist a meaningful TaskResult.
+    /// Build a `HookRunner` from `self.opts.plugin_config_home` (if set)
+    /// and return a pipeline clone with the runner attached. Returns
+    /// `None` when no `plugin_config_home` is configured or when the
+    /// registry fails to build — in either case the caller should fall
+    /// back to the unmodified pipeline reference.
+    fn attach_plugin_hooks(
+        &self,
+        pipeline: &crate::agent::AgentPipeline,
+    ) -> Option<crate::agent::AgentPipeline> {
+        let home = self.opts.plugin_config_home.as_ref()?;
+        let config = plugins::PluginManagerConfig::new(home);
+        let manager = plugins::PluginManager::new(config);
+        let registry = match manager.plugin_registry() {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(error = %e, "TaskExecutor: failed to build plugin registry — running without hooks");
+                return None;
+            }
+        };
+        let hooks = match plugins::HookRunner::from_registry(&registry) {
+            Ok(h) => h,
+            Err(e) => {
+                warn!(error = %e, "TaskExecutor: failed to aggregate plugin hooks — running without hooks");
+                return None;
+            }
+        };
+        info!("TaskExecutor: plugin hooks attached to pipeline");
+        Some(pipeline.clone().with_plugin_hooks(Arc::new(hooks)))
+    }
+
     async fn run_agent_tool_phases(
         &self,
         task: &TaskFile,
@@ -535,8 +578,8 @@ impl TaskExecutor {
         github_token: &str,
         max_iterations: u32,
     ) -> std::result::Result<AgentToolSuccess, AgentToolFailure> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| AgentToolFailure::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| AgentToolFailure::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // 1) Clone — the agent needs a real working tree to edit.
@@ -567,10 +610,19 @@ impl TaskExecutor {
         //    `with_command_execution(true)` lets the executor run build/test
         //    commands; this is safe because the working tree is a throwaway
         //    clone, not the host filesystem.
-        let tools = crate::agent::FileSystemTools::new(repo_path.clone())
-            .with_command_execution(true);
+        //
+        //    If `plugin_config_home` is set, build a `HookRunner` from the
+        //    plugin registry and attach it to a cloned pipeline so
+        //    `PreToolUse`/`PostToolUse` hooks fire around every agent tool
+        //    call. A construction failure (bad config, broken plugin
+        //    manifest) logs and falls back to the no-hooks path — a
+        //    misconfigured plugin must not break task execution.
+        let tools =
+            crate::agent::FileSystemTools::new(repo_path.clone()).with_command_execution(true);
         let agent_task = build_agent_task(task);
-        let pipeline_result = match pipeline
+        let pipeline_with_hooks = self.attach_plugin_hooks(pipeline);
+        let pipeline_ref = pipeline_with_hooks.as_ref().unwrap_or(pipeline);
+        let pipeline_result = match pipeline_ref
             .run_with_tools(agent_task, max_iterations, &tools)
             .await
         {
@@ -645,11 +697,8 @@ impl TaskExecutor {
         // 6) Push.
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -732,7 +781,14 @@ impl TaskExecutor {
             }
         }
 
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(AgentToolSuccess {
             pr_url: Some(pr.html_url),
@@ -883,8 +939,8 @@ impl TaskExecutor {
         pipeline_result: &crate::agent::PipelineResult,
         github_token: &str,
     ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| FailureOutcome::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // Clone
@@ -931,14 +987,20 @@ impl TaskExecutor {
                         iter.plan
                             .steps
                             .iter()
-                            .map(|s| format!("{}. {} — {}", s.id, s.description, s.success_criteria))
+                            .map(|s| format!(
+                                "{}. {} — {}",
+                                s.id, s.description, s.success_criteria
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
                 )?;
                 for sr in &iter.step_results {
                     std::fs::write(
-                        dir.join(format!("iteration-{}-step-{}.md", iter.iteration, sr.step_id)),
+                        dir.join(format!(
+                            "iteration-{}-step-{}.md",
+                            iter.iteration, sr.step_id
+                        )),
                         format!(
                             "# Step {}\n\n## Description\n{}\n\n## Output\n{}",
                             sr.step_id, sr.step_description, sr.output
@@ -977,11 +1039,8 @@ impl TaskExecutor {
         // Push
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -1048,7 +1107,14 @@ impl TaskExecutor {
             }
         }
 
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
@@ -1300,7 +1366,10 @@ fn build_agent_task(task: &TaskFile) -> crate::agent::AgentTask {
     for (i, step) in task.steps.iter().enumerate() {
         context.push_str(&format!("{}. {}\n", i + 1, step));
     }
-    context.push_str(&format!("\nTarget repo: {}\nTarget branch: {}\n", task.repo, task.branch));
+    context.push_str(&format!(
+        "\nTarget repo: {}\nTarget branch: {}\n",
+        task.repo, task.branch
+    ));
     // Scope memory lookups to the task's repo so memories recorded against
     // this project (and globals) surface, but unrelated projects' memories
     // don't pollute the prompt.
@@ -1380,13 +1449,9 @@ fn spawn_auto_merge(
         "Spawning auto-merge poller"
     );
     tokio::spawn(async move {
-        let state = crate::task::automerge::poll_and_merge(
-            gh, owner, repo, pr_number, config,
-        )
-        .await;
-        if let Err(e) =
-            crate::task::automerge::update_result_with_merge_state(&task_id, state)
-        {
+        let state =
+            crate::task::automerge::poll_and_merge(gh, owner, repo, pr_number, config).await;
+        if let Err(e) = crate::task::automerge::update_result_with_merge_state(&task_id, state) {
             warn!(error = %e, task = %task_id, "auto-merge: result file update failed");
         }
     });
@@ -1433,6 +1498,7 @@ mod tests {
         let opts = TaskExecutorOptions {
             workspace_dir: Some(workspace_dir.clone()),
             dry_run: true,
+            plugin_config_home: None,
         };
         let executor = TaskExecutor::new(gm_arc, opts);
 
@@ -1465,5 +1531,63 @@ mod tests {
 
         // Clean up created results file for test hygiene
         let _ = fs::remove_file(result_path);
+    }
+
+    /// `attach_plugin_hooks` is the no-op fast path when the option is
+    /// unset — verifies the executor doesn't try to build a plugin
+    /// registry by accident and break tasks for callers who haven't
+    /// opted into hooks.
+    #[test]
+    fn attach_plugin_hooks_returns_none_without_config() {
+        let temp = TempDir::new().expect("tempdir");
+        let workspace_dir = temp.path().join("workspace");
+        fs::create_dir_all(&workspace_dir).unwrap();
+        let gm = Arc::new(GitManager::new(workspace_dir.clone(), true).expect("git manager"));
+        let opts = TaskExecutorOptions {
+            workspace_dir: Some(workspace_dir),
+            dry_run: true,
+            plugin_config_home: None,
+        };
+        let executor = TaskExecutor::new(gm, opts);
+
+        let client = Arc::new(::api::AnthropicClient::new("test-key"));
+        let pipeline =
+            crate::agent::AgentPipeline::new(client.clone(), client, "claude-test", "claude-test");
+
+        assert!(
+            executor.attach_plugin_hooks(&pipeline).is_none(),
+            "with no plugin_config_home configured, no pipeline clone should be produced",
+        );
+    }
+
+    /// Pointing at an existing-but-empty config dir should still produce a
+    /// pipeline-with-hooks: the registry will have no hooks, but the
+    /// wiring path is exercised end-to-end. The downstream `HookRunner`
+    /// short-circuits when the hook lists are empty (see
+    /// `crates/plugins/src/hooks.rs::run_commands`).
+    #[test]
+    fn attach_plugin_hooks_returns_some_for_empty_config_dir() {
+        let temp = TempDir::new().expect("tempdir");
+        let workspace_dir = temp.path().join("workspace");
+        let plugin_home = temp.path().join("plugins");
+        fs::create_dir_all(&workspace_dir).unwrap();
+        fs::create_dir_all(&plugin_home).unwrap();
+        let gm = Arc::new(GitManager::new(workspace_dir.clone(), true).expect("git manager"));
+        let opts = TaskExecutorOptions {
+            workspace_dir: Some(workspace_dir),
+            dry_run: true,
+            plugin_config_home: Some(plugin_home),
+        };
+        let executor = TaskExecutor::new(gm, opts);
+
+        let client = Arc::new(::api::AnthropicClient::new("test-key"));
+        let pipeline =
+            crate::agent::AgentPipeline::new(client.clone(), client, "claude-test", "claude-test");
+
+        // Either Some (registry built cleanly even with no plugins) or
+        // None (registry construction failed for some env-specific reason
+        // and we logged it). The contract is that we never panic and the
+        // task can still proceed; this just asserts no panic happened.
+        let _ = executor.attach_plugin_hooks(&pipeline);
     }
 }

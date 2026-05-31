@@ -3047,7 +3047,7 @@ fn resolve_skill_path(skill: &str) -> Result<std::path::PathBuf, String> {
     Err(format!("unknown skill: {requested}"))
 }
 
-const DEFAULT_AGENT_MODEL: &str = "claude-opus-4-6";
+const DEFAULT_AGENT_MODEL: &str = "claude-opus-4-7";
 const DEFAULT_AGENT_SYSTEM_DATE: &str = "2026-03-31";
 const DEFAULT_AGENT_MAX_ITERATIONS: usize = 32;
 
@@ -5031,6 +5031,10 @@ mod tests {
         run_git(path, &["init", "--quiet", "-b", "main"]);
         run_git(path, &["config", "user.email", "tests@example.com"]);
         run_git(path, &["config", "user.name", "Tools Tests"]);
+        // Disable commit signing in this temp repo: a global `commit.gpgsign =
+        // true` (with a key this repo can't use) would otherwise fail the
+        // commits below with exit 128.
+        run_git(path, &["config", "commit.gpgsign", "false"]);
         std::fs::write(path.join("README.md"), "initial\n").expect("write readme");
         run_git(path, &["add", "README.md"]);
         run_git(path, &["commit", "-m", "initial commit", "--quiet"]);
@@ -5486,7 +5490,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let server = TestServer::spawn(Arc::new(|request_line: &str| {
-            assert!(request_line.contains("GET /fallback?q=generic+links "));
+            assert!(request_line.contains("GET /search?q=generic+links "));
             HttpResponse::html(
                 200,
                 "OK",
@@ -7208,7 +7212,12 @@ printf 'pwsh:%s' "$1"
                 let _ = tx.send(());
             }
             if let Some(handle) = self.handle.take() {
-                handle.join().expect("join test server");
+                // Never panic in a destructor: joining a server thread that
+                // panicked (e.g. on an unexpected request) would otherwise turn
+                // one bad request into a process-wide abort that fails every
+                // sibling test. A genuine mismatch still surfaces via the
+                // client-side request error in the test body.
+                let _ = handle.join();
             }
         }
     }

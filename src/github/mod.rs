@@ -9,14 +9,11 @@
 //
 // # Architecture
 //
-// This module follows the "crates vs services" pattern from the architectural
-// research, providing clean abstractions for GitHub operations:
-//
-// - `client`: Low-level GitHub API client (GraphQL + REST)
-// - `models`: Type-safe domain models for GitHub entities
-// - `sync`: Bidirectional synchronization with local database
-// - `webhook`: Event-driven updates from GitHub
-// - `search`: Unified search across repos, issues, PRs
+// The HTTP client side (`client`, `models`, `GitHubError`) lives in the
+// standalone `github-client` crate at `crates/github-client/` and is
+// re-exported here for backwards compatibility. The DB-coupled pieces
+// (`sync`, `background_sync`, `search`, `webhook`) stay in this binary
+// crate since they tie into the application's `PgPool` and queue.
 //
 // # Cost Optimization
 //
@@ -50,65 +47,26 @@
 // ```
 
 pub mod background_sync;
-pub mod client;
-pub mod models;
 pub mod search;
 pub mod sync;
 pub mod webhook;
 
-// Re-export commonly used types for convenience
+// Re-export the HTTP client surface from the standalone crate. Module
+// paths (`crate::github::client`, `crate::github::models`) keep resolving
+// for the in-tree consumers that use the full path.
+pub use github_client::{
+    Commit, CommitStatus, GitHubClient, GitHubConfig, GitHubError, Issue, IssueState, Label,
+    PrState, PullRequest, RateLimitInfo, Repository, RepositoryVisibility, Result, User,
+};
+pub use github_client::{client, models};
+
 pub use background_sync::{
     BackgroundSyncConfig, BackgroundSyncManager, start_background_sync,
     start_background_sync_with_config,
 };
-pub use client::{GitHubClient, GitHubConfig, RateLimitInfo};
-pub use models::{
-    Commit, CommitStatus, Issue, IssueState, Label, PrState, PullRequest, Repository,
-    RepositoryVisibility, User,
-};
 pub use search::{GitHubSearcher, SearchQuery, SearchResult, SearchType};
 pub use sync::{SyncEngine, SyncOptions, SyncResult};
 pub use webhook::{WebhookEvent, WebhookHandler, WebhookPayload};
-
-use thiserror::Error;
-
-// GitHub integration specific errors
-#[derive(Error, Debug)]
-pub enum GitHubError {
-    #[error("GitHub API error: {0}")]
-    ApiError(String),
-
-    #[error("Authentication failed: {0}")]
-    AuthError(String),
-
-    #[error("Rate limit exceeded. Resets at: {reset_at}")]
-    RateLimitExceeded {
-        reset_at: chrono::DateTime<chrono::Utc>,
-    },
-
-    #[error("Resource not found: {resource_type} with id {id}")]
-    NotFound { resource_type: String, id: String },
-
-    #[error("Invalid configuration: {0}")]
-    ConfigError(String),
-
-    #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
-
-    #[error("Database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
-
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-
-    #[error("Invalid GitHub URL: {0}")]
-    InvalidUrl(String),
-
-    #[error("Webhook verification failed")]
-    WebhookVerificationFailed,
-}
-
-pub type Result<T> = std::result::Result<T, GitHubError>;
 
 #[cfg(test)]
 mod tests {

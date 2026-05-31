@@ -120,6 +120,12 @@ pub enum StreamChunk {
         used_fallback: bool,
         prompt_tokens: Option<u32>,
         completion_tokens: Option<u32>,
+        // Anthropic prompt-cache write tokens. Only populated for the
+        // proxy's Claude arm; Ollama and Grok always emit `None`.
+        cache_creation_input_tokens: Option<u32>,
+        // Anthropic prompt-cache read tokens. Only populated for the
+        // proxy's Claude arm; Ollama and Grok always emit `None`.
+        cache_read_input_tokens: Option<u32>,
     },
     // A fatal error terminated the stream.
     Error(String),
@@ -365,6 +371,8 @@ impl OllamaClient {
                             used_fallback: false,
                             prompt_tokens,
                             completion_tokens,
+                            cache_creation_input_tokens: None,
+                            cache_read_input_tokens: None,
                         })
                         .await;
                 }
@@ -411,6 +419,8 @@ impl OllamaClient {
                                 used_fallback: true,
                                 prompt_tokens: Some(resp.prompt_tokens as u32),
                                 completion_tokens: Some(resp.completion_tokens as u32),
+                                cache_creation_input_tokens: None,
+                                cache_read_input_tokens: None,
                             })
                             .await;
                     }

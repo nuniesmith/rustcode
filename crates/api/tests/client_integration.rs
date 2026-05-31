@@ -85,9 +85,12 @@ async fn send_message_posts_json_and_parses_response() {
         request.headers.get("user-agent").map(String::as_str),
         Some("claude-code/0.1.0")
     );
+    // No betas were opted in, so the anthropic-beta header is omitted entirely.
+    // AnthropicRequestProfile::default() carries no betas; they are opt-in via
+    // with_beta(). (See telemetry::request_profile_default_betas_are_empty.)
     assert_eq!(
         request.headers.get("anthropic-beta").map(String::as_str),
-        Some("claude-code-20250219,prompt-caching-scope-2026-01-05")
+        None
     );
     let body: serde_json::Value =
         serde_json::from_str(&request.body).expect("request body should be json");
@@ -98,10 +101,9 @@ async fn send_message_posts_json_and_parses_response() {
     assert!(body.get("stream").is_none());
     assert_eq!(body["tools"][0]["name"], json!("get_weather"));
     assert_eq!(body["tool_choice"]["type"], json!("auto"));
-    assert_eq!(
-        body["betas"],
-        json!(["claude-code-20250219", "prompt-caching-scope-2026-01-05"])
-    );
+    // Betas ride only in the anthropic-beta header; the public Anthropic API
+    // rejects a top-level `betas` body field, so it must never be injected.
+    assert!(body.get("betas").is_none());
 }
 
 #[tokio::test]
@@ -146,9 +148,10 @@ async fn send_message_applies_request_profile_and_records_telemetry() {
 
     let captured = state.lock().await;
     let request = captured.first().expect("server should capture request");
+    // Only the explicitly opted-in beta is sent; defaults carry none.
     assert_eq!(
         request.headers.get("anthropic-beta").map(String::as_str),
-        Some("claude-code-20250219,prompt-caching-scope-2026-01-05,tools-2026-04-01")
+        Some("tools-2026-04-01")
     );
     assert_eq!(
         request.headers.get("user-agent").map(String::as_str),
@@ -157,14 +160,8 @@ async fn send_message_applies_request_profile_and_records_telemetry() {
     let body: serde_json::Value =
         serde_json::from_str(&request.body).expect("request body should be json");
     assert_eq!(body["metadata"]["source"], json!("clawd-code"));
-    assert_eq!(
-        body["betas"],
-        json!([
-            "claude-code-20250219",
-            "prompt-caching-scope-2026-01-05",
-            "tools-2026-04-01"
-        ])
-    );
+    // Betas are header-only (see above); never injected into the JSON body.
+    assert!(body.get("betas").is_none());
 
     let events = sink.events();
     assert_eq!(events.len(), 6);

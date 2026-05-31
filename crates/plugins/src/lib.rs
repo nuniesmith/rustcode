@@ -2028,8 +2028,12 @@ fn run_lifecycle_commands(
             process.arg("/C").arg(command);
             process
         } else {
+            // Non-login shell (`-c`, not `-lc`): command stdout is captured and
+            // parsed, so a login shell sourcing the operator's profile (nvm/pyenv
+            // banners, etc.) would pollute the result. The child still inherits
+            // this process's PATH/env.
             let mut process = Command::new("sh");
-            process.arg("-lc").arg(command);
+            process.arg("-c").arg(command);
             process
         };
         if let Some(root) = &metadata.root {
@@ -2211,11 +2215,19 @@ mod tests {
     use super::*;
 
     fn temp_dir(label: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("time should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("plugins-{label}-{nanos}"))
+        // pid + atomic sequence guarantee uniqueness even when parallel tests
+        // call this within the same clock tick (nanos resolution can be coarse).
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "plugins-{label}-{}-{nanos}-{seq}",
+            std::process::id()
+        ))
     }
 
     fn write_file(path: &Path, contents: &str) {
@@ -3305,9 +3317,15 @@ mod tests {
     fn aggregates_and_executes_plugin_tools() {
         let config_home = temp_dir("tool-home");
         let source_root = temp_dir("tool-source");
+        let bundled_root = temp_dir("tool-bundled");
+        fs::create_dir_all(&bundled_root).expect("create bundled root");
         write_tool_plugin(&source_root, "tool-demo", "1.0.0");
 
-        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        // Isolate bundled_root from the repo's real `bundled/` dir so this test
+        // observes only the installed plugin's tool, not the shipped bundles.
+        let mut config = PluginManagerConfig::new(&config_home);
+        config.bundled_root = Some(bundled_root.clone());
+        let mut manager = PluginManager::new(config);
         manager
             .install(source_root.to_str().expect("utf8 path"))
             .expect("install should succeed");
@@ -3327,6 +3345,7 @@ mod tests {
 
         let _ = fs::remove_dir_all(config_home);
         let _ = fs::remove_dir_all(source_root);
+        let _ = fs::remove_dir_all(bundled_root);
     }
 
     #[test]

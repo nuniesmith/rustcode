@@ -1,14 +1,14 @@
 # code-review Plugin
 
-LLM-powered code review tool that sends a file to Grok 4.20 and returns structured findings.
+LLM-powered code review tool that sends a file to the configured LLM and returns structured findings.
 
 ## Description
 
-The `code-review` plugin integrates with the xAI Grok API to perform automated, multi-agent code review of source files. It analyzes code for quality, security concerns, architectural patterns, and provides actionable improvement recommendations.
+The `code-review` plugin dispatches through rustcode's LLM router to perform automated code review of source files. It analyzes code for quality, security concerns, architectural patterns, and provides actionable improvement recommendations. The active provider depends on rustcode's configuration.
 
 ## Tool: `code_review`
 
-Reviews a source file with Grok 4.20 multi-agent. Returns quality, security, and improvement notes.
+Reviews a source file with the configured LLM. Returns quality, security, and improvement notes.
 
 ### Input Schema
 
@@ -24,7 +24,7 @@ Reviews a source file with Grok 4.20 multi-agent. Returns quality, security, and
     },
     "model": {
       "type": "string",
-      "description": "xAI model override (default: grok-4.20-multi-agent-0309)"
+      "description": "LLM model override; defaults to the runtime's configured review model"
     },
     "focus": {
       "type": "string",
@@ -39,14 +39,14 @@ Reviews a source file with Grok 4.20 multi-agent. Returns quality, security, and
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file_path` | string | ✅ | Path to the source file to review |
-| `model` | string | ❌ | Override the default Grok model (e.g., `grok-4.20-multi-agent-0309`) |
+| `model` | string | ❌ | Override the default review model (provider-specific identifier — pick a slug the configured router accepts) |
 | `focus` | string | ❌ | Review focus area: `security`, `quality`, `architecture`, or `all` |
 
 ### Example Usage
 
 ```bash
 rustcode tool code-review --file-path src/main.rs --focus security
-rustcode tool code-review --file-path lib/handler.rs --model grok-4.20-multi-agent-0309
+rustcode tool code-review --file-path lib/handler.rs
 rustcode tool code-review --file-path tests/integration.rs
 ```
 
@@ -62,13 +62,13 @@ Returns structured findings including:
 ## Configuration
 
 This plugin requires:
-- `XAI_API_KEY` environment variable (xAI Grok API credentials)
+- The configured LLM provider's API key in the environment. The current implementation routes through xAI, so `XAI_API_KEY` is required; the impl is slated to migrate to the Anthropic backend, after which `ANTHROPIC_API_KEY` will apply instead.
 - Read-only file permissions on the target source files
 
 ## Requirements
 
 - Rustcode CLI with API integration enabled
-- Active xAI (Grok) API access
+- API credentials for the configured LLM provider
 - Target file must be readable and parseable
 
 ## Status

@@ -1,8 +1,20 @@
 use api::{ApiError, AuthSource, ProviderClient, ProviderKind, read_xai_base_url};
 use runtime::{test_remove_var, test_set_var};
 
+/// Serialize tests that mutate process-global env vars. Held for the entire
+/// test body (dropped last, after the EnvVarGuards restore state) so a parallel
+/// test can't clobber a var between this test's set and use — the cause of a
+/// flaky XAI_API_KEY race that surfaced once these ran under CI.
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[test]
 fn provider_client_routes_grok_aliases_through_xai() {
+    let _env = env_lock();
     let _xai_api_key = EnvVarGuard::set("XAI_API_KEY", Some("xai-test-key"));
 
     let client = ProviderClient::from_model("grok-mini").expect("grok alias should resolve");
@@ -12,6 +24,7 @@ fn provider_client_routes_grok_aliases_through_xai() {
 
 #[test]
 fn provider_client_reports_missing_xai_credentials_for_grok_models() {
+    let _env = env_lock();
     let _xai_api_key = EnvVarGuard::set("XAI_API_KEY", None);
 
     let error = ProviderClient::from_model("grok-3")
@@ -28,6 +41,7 @@ fn provider_client_reports_missing_xai_credentials_for_grok_models() {
 
 #[test]
 fn provider_client_uses_explicit_anthropic_auth_without_env_lookup() {
+    let _env = env_lock();
     let _anthropic_api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", None);
     let _anthropic_auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", None);
 
@@ -42,6 +56,7 @@ fn provider_client_uses_explicit_anthropic_auth_without_env_lookup() {
 
 #[test]
 fn read_xai_base_url_prefers_env_override() {
+    let _env = env_lock();
     let _xai_base_url = EnvVarGuard::set("XAI_BASE_URL", Some("https://example.xai.test/v1"));
 
     assert_eq!(read_xai_base_url(), "https://example.xai.test/v1");

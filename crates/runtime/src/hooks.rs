@@ -641,8 +641,11 @@ fn shell_command(command: &str) -> CommandWithStdin {
 
     #[cfg(not(windows))]
     let command_builder = {
+        // Non-login shell (`-c`, not `-lc`): hook stdout is captured and parsed,
+        // so a login shell sourcing the operator's profile (nvm/pyenv banners, etc.)
+        // would pollute the result. The child still inherits this process's PATH/env.
         let mut command_builder = Command::new("sh");
-        command_builder.arg("-lc").arg(command);
+        command_builder.arg("-c").arg(command);
         CommandWithStdin::new(command_builder)
     };
 
@@ -689,7 +692,15 @@ impl CommandWithStdin {
     ) -> std::io::Result<CommandExecution> {
         let mut child = self.command.spawn()?;
         if let Some(mut child_stdin) = child.stdin.take() {
-            child_stdin.write_all(stdin)?;
+            // A hook may ignore its stdin and exit before we finish writing,
+            // which surfaces as BrokenPipe (SIGPIPE is ignored process-wide).
+            // That is not a failure to start — capture the hook's output and
+            // exit status regardless.
+            if let Err(error) = child_stdin.write_all(stdin) {
+                if error.kind() != std::io::ErrorKind::BrokenPipe {
+                    return Err(error);
+                }
+            }
         }
 
         loop {

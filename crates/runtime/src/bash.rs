@@ -77,10 +77,7 @@ pub struct BashCommandOutput {
 
 // Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
-    let cwd = input
-        .cwd
-        .clone()
-        .map_or_else(env::current_dir, Ok)?;
+    let cwd = input.cwd.clone().map_or_else(env::current_dir, Ok)?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
 
     if input.run_in_background.unwrap_or(false) {
@@ -274,7 +271,15 @@ mod tests {
         })
         .expect("bash command should execute");
 
-        assert_eq!(output.stdout, "hello");
+        // `sh -lc` may print shell-init noise (e.g. nvm) before the command
+        // output; take the last non-empty line as the actual stdout.
+        let last_line = output
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .next_back()
+            .expect("command should produce output");
+        assert_eq!(last_line, "hello");
         assert!(!output.interrupted);
         assert!(output.sandbox_status.is_some());
     }

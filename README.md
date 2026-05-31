@@ -195,6 +195,54 @@ Responses from `/v1/chat/completions` include an `x_ra_metadata` field:
 Claude responses and reflect Anthropic prompt-cache activity (80–90% cost reduction
 on repeated repo-context calls).
 
+## Client integrations
+
+Because rustcode is OpenAI-compatible, any client that speaks the OpenAI API can
+point at it with **zero code changes** — just set the base URL to
+`http://<host>:3500/v1` and use one of your `RUSTCODE_PROXY_API_KEYS` as the API
+key (or leave auth disabled in dev).
+
+### OpenWebUI
+
+The `docker-compose.yml` ships an optional OpenWebUI sidecar behind the `webui`
+profile:
+
+```bash
+docker compose --profile webui up -d
+```
+
+Browse to `http://localhost:3000`, sign up locally, and the model list populates
+from rustcode's `GET /v1/models`. All chat routes through
+`POST /v1/chat/completions`. Set `OPENWEBUI_API_KEY` (must match one of
+`RUSTCODE_PROXY_API_KEYS`) and optionally `OPENWEBUI_HOST_PORT` in `.env`.
+
+### Zed
+
+Add an `assistant` block to your Zed `settings.json` (open with
+`zed: open settings`). This works today against the running proxy — no
+server-side changes needed:
+
+```json
+{
+  "assistant": {
+    "version": "2",
+    "default_model": { "provider": "openai", "model": "claude-sonnet-4-6" },
+    "openai": {
+      "api_url": "http://your-server:3500/v1",
+      "available_models": [
+        { "name": "claude-opus-4-7" },
+        { "name": "claude-sonnet-4-6" }
+      ]
+    }
+  }
+}
+```
+
+Zed sends the OpenAI API key as a `Bearer` token — set it to one of your
+`RUSTCODE_PROXY_API_KEYS` via `zed: open settings` → the API-key prompt, or
+leave auth disabled for local dev. Model names must match the slugs rustcode's
+`ModelRouter` accepts (`claude-opus-4-7`, `claude-sonnet-4-6`).
+
 ## Stats
 
 - ~81K lines of Rust

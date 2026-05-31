@@ -255,10 +255,7 @@ impl GitManager {
         let askpass_str = askpass_path.display().to_string();
         let target_str = target_path.display().to_string();
         let command = build_git_command(
-            &[
-                ("GIT_ASKPASS", &askpass_str),
-                ("GIT_TERMINAL_PROMPT", "0"),
-            ],
+            &[("GIT_ASKPASS", &askpass_str), ("GIT_TERMINAL_PROMPT", "0")],
             &["clone", "--depth=1", remote_repo_url, &target_str],
         );
         let output = run_git_command(command, None)
@@ -305,10 +302,7 @@ impl GitManager {
         // `cwd: Some(repo_path)` replaces the previous `git -C <path>` invocation.
         let askpass_str = askpass_path.display().to_string();
         let command = build_git_command(
-            &[
-                ("GIT_ASKPASS", &askpass_str),
-                ("GIT_TERMINAL_PROMPT", "0"),
-            ],
+            &[("GIT_ASKPASS", &askpass_str), ("GIT_TERMINAL_PROMPT", "0")],
             &["push", "-u", "origin", branch],
         );
         let output = run_git_command(command, Some(repo_path))

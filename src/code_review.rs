@@ -1,6 +1,8 @@
 // # Code Review Module
 //
 // Automated code review with AI-powered analysis and structured feedback.
+// Backed by Claude (Anthropic API) per the RC-CRATES-D / CLAUDE-A
+// migration plan in TODO.md L832.
 //
 // ## Features
 //
@@ -14,12 +16,11 @@
 //
 // ```rust,no_run
 // use rustcode::code_review::CodeReviewer;
-// use rustcode::db::Database;
 //
 // #[tokio::main]
 // async fn main() -> anyhow::Result<()> {
-//     let db = Database::new("data/rustcode.db").await?;
-//     let reviewer = CodeReviewer::new(db).await?;
+//     // Requires `ANTHROPIC_API_KEY` in the environment.
+//     let reviewer = CodeReviewer::from_env()?;
 //
 //     // Review git diff
 //     let review = reviewer.review_diff(".", None).await?;
@@ -29,12 +30,56 @@
 // }
 // ```
 
-use crate::db::Database;
-use crate::llm::grok_client::{FileScoreResult, GrokClient};
+use crate::llm::grok_client::FileScoreResult;
+use ::api::{AnthropicClient, InputMessage, MessageRequest, OutputContentBlock};
 use anyhow::{Context, Result};
 use runtime::{BashCommandInput, BashCommandOutput, execute_bash, shell_quote};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+// Default Claude model for code review. Opus per project convention
+// (TODO.md L832). Override with `RC_CODE_REVIEW_MODEL`.
+const DEFAULT_CODE_REVIEW_MODEL: &str = "claude-opus-4-7";
+
+// Max tokens for the score response. The JSON payload is small
+// (~10 fields, mostly numbers + a few short string arrays) so 2048
+// is generous without risking truncation.
+const CODE_REVIEW_MAX_TOKENS: u32 = 2048;
+
+// Inline prompt — was previously baked into `GrokClient::score_file`.
+// Kept as a const so the migration can swap providers without
+// touching the prompt shape. `{FILE_PATH}` / `{CONTENT}` get
+// replaced at call time. The schema is intentionally identical to
+// what `GrokClient::score_file` asks for so `FileScoreResult`
+// (still defined in `grok_client.rs`) deserializes either provider's
+// response unchanged.
+const CODE_REVIEW_PROMPT: &str = r#"Analyze this code file and provide a detailed scoring. Return ONLY valid JSON with this structure:
+{
+  "overall_score": 0-100,
+  "security_score": 0-100,
+  "quality_score": 0-100,
+  "complexity_score": 0-100,
+  "maintainability_score": 0-100,
+  "summary": "brief summary",
+  "issues": ["issue1", "issue2"],
+  "suggestions": ["suggestion1", "suggestion2"]
+}
+
+File: {FILE_PATH}
+Content:
+```
+{CONTENT}
+```
+
+Provide scores where:
+- 90-100: Excellent
+- 70-89: Good
+- 50-69: Acceptable
+- 30-49: Needs improvement
+- 0-29: Poor
+
+Focus on: security vulnerabilities, code quality, complexity, and maintainability."#;
 
 // Run a shell command via `runtime::execute_bash` rooted at `cwd`,
 // matching the previous `Command::new(...).current_dir(cwd)` path with
@@ -56,7 +101,8 @@ fn run_in(cwd: &Path, command: String) -> std::io::Result<BashCommandOutput> {
 
 // Code reviewer with AI-powered analysis
 pub struct CodeReviewer {
-    grok_client: GrokClient,
+    client: Arc<AnthropicClient>,
+    model: String,
 }
 
 // Review result for a single file
@@ -145,10 +191,37 @@ pub struct ReviewStats {
 }
 
 impl CodeReviewer {
-    // Create a new code reviewer
-    pub async fn new(db: Database) -> Result<Self> {
-        let grok_client = GrokClient::from_env(db).await?;
-        Ok(Self { grok_client })
+    // Build a code reviewer from environment. Requires
+    // `ANTHROPIC_API_KEY`; optional `RC_CODE_REVIEW_MODEL` overrides
+    // the default Opus slug.
+    //
+    // The previous Grok-backed constructor took a `Database` handle
+    // and recorded API cost rows automatically. That path is not
+    // wired here yet — `MessageResponse.usage` is available on every
+    // call and a follow-up can pipe it through `runtime::pricing_for_model`.
+    // Tracked as a known gap; see PR body.
+    pub fn from_env() -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .context("ANTHROPIC_API_KEY not set (or empty) — required for code review")?;
+        let client = Arc::new(AnthropicClient::new(api_key));
+        let model = std::env::var("RC_CODE_REVIEW_MODEL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_CODE_REVIEW_MODEL.to_string());
+        Ok(Self { client, model })
+    }
+
+    // Construct with an explicit client + model. Useful when the
+    // caller already has an `AnthropicClient` (e.g. a shared one
+    // from `server.rs`) and wants to reuse it for code review
+    // instead of building a second HTTP client.
+    pub fn with_client(client: Arc<AnthropicClient>, model: impl Into<String>) -> Self {
+        Self {
+            client,
+            model: model.into(),
+        }
     }
 
     // Review changes in git diff
@@ -236,14 +309,57 @@ impl CodeReviewer {
             });
         }
 
-        // Use Grok to score the file
-        let score_result = self
-            .grok_client
-            .score_file(path.to_str().unwrap(), &content)
-            .await?;
+        // Ask Claude to score the file.
+        let score_result = self.score_file(path.to_str().unwrap(), &content).await?;
 
         // Convert to review format
         Ok(self.convert_to_file_review(path, score_result, lines_changed))
+    }
+
+    // Send the scoring prompt to Claude and parse the JSON reply.
+    // Returns an error if the API call fails or the response can't be
+    // deserialized into `FileScoreResult`. Cost / usage tracking is
+    // not recorded here — `response.usage` is discarded; a follow-up
+    // will pipe it through `runtime::pricing_for_model`.
+    async fn score_file(&self, file_path: &str, content: &str) -> Result<FileScoreResult> {
+        let prompt = CODE_REVIEW_PROMPT
+            .replace("{FILE_PATH}", file_path)
+            .replace("{CONTENT}", content);
+
+        let request = MessageRequest {
+            model: self.model.clone(),
+            max_tokens: CODE_REVIEW_MAX_TOKENS,
+            messages: vec![InputMessage::user_text(prompt)],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            temperature: None,
+            response_format: None,
+            stream: false,
+        };
+
+        let response = self
+            .client
+            .send_message(&request)
+            .await
+            .context("AnthropicClient::send_message failed for code review")?;
+
+        let text: String = response
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                OutputContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        let json = strip_to_json(&text);
+        serde_json::from_str(json).with_context(|| {
+            format!(
+                "failed to parse FileScoreResult from model response (first 200 chars: {})",
+                truncate(&text, 200)
+            )
+        })
     }
 
     // Convert FileScoreResult to FileReview
@@ -694,5 +810,86 @@ impl std::fmt::Display for IssueSeverity {
             IssueSeverity::Low => write!(f, "LOW"),
             IssueSeverity::Info => write!(f, "INFO"),
         }
+    }
+}
+
+// Extract a `{ ... }` JSON object from a model response that may be
+// wrapped in markdown code fences or prose. Mirrors the helper in
+// `agent::pipeline::strip_to_json`; duplicated here to avoid widening
+// that module's visibility for a single use site.
+fn strip_to_json(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let candidate = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
+        .unwrap_or(trimmed);
+    let start = candidate.find('{');
+    let end = candidate.rfind('}');
+    match (start, end) {
+        (Some(s), Some(e)) if e > s => &candidate[s..=e],
+        _ => candidate,
+    }
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        let mut end = n;
+        while !s.is_char_boundary(end) && end > 0 {
+            end -= 1;
+        }
+        format!("{}…", &s[..end])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_to_json_handles_markdown_fence() {
+        let raw = "```json\n{\"overall_score\": 80}\n```";
+        assert_eq!(strip_to_json(raw), "{\"overall_score\": 80}");
+    }
+
+    #[test]
+    fn strip_to_json_handles_bare_object() {
+        let raw = r#"{"overall_score": 80, "security_score": 70}"#;
+        assert_eq!(strip_to_json(raw), raw);
+    }
+
+    #[test]
+    fn strip_to_json_handles_leading_prose() {
+        let raw = "Here is the analysis:\n{\"overall_score\": 80}\nDone.";
+        assert_eq!(strip_to_json(raw), "{\"overall_score\": 80}");
+    }
+
+    /// Locks the full-payload contract: the prompt asks the model for
+    /// all 8 fields, and the upstream `FileScoreResult` (from
+    /// `llm::grok_client`) deserializes strictly — partial payloads
+    /// fail. If a future model drops one of the optional analytics
+    /// fields without a `#[serde(default)]` on the type, this test
+    /// will surface it before the LLM call would.
+    #[test]
+    fn file_score_result_deserializes_full_payload() {
+        let json = r#"{
+            "overall_score": 85.0,
+            "security_score": 90.0,
+            "quality_score": 80.0,
+            "complexity_score": 60.0,
+            "maintainability_score": 75.0,
+            "summary": "looks fine",
+            "issues": ["uses unwrap"],
+            "suggestions": ["return Result"]
+        }"#;
+        let parsed: FileScoreResult = serde_json::from_str(json).expect("should parse");
+        assert!((parsed.overall_score - 85.0).abs() < f64::EPSILON);
+        assert!((parsed.security_score - 90.0).abs() < f64::EPSILON);
+        assert!((parsed.complexity_score - 60.0).abs() < f64::EPSILON);
+        assert_eq!(parsed.summary, "looks fine");
+        assert_eq!(parsed.issues, vec!["uses unwrap"]);
+        assert_eq!(parsed.suggestions, vec!["return Result"]);
     }
 }

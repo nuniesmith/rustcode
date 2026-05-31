@@ -7,6 +7,208 @@
 > **RC-CRATES-D plugin migration prep completed:** 2026-04-06 — three tools migrated to bundled plugins
 > **Architecture review completed:** 2026-04-07 — Claude provider wiring, two-tier routing, agent loop, and memory system added
 > **CLAUDE-A/B/C resolved:** 2026-05-17 — Claude wired into `dispatch()`, two-tier routing live, prompt cache attached
+> **Repo review + forward backlog added:** 2026-05-31 — see "Active Backlog" below
+
+---
+
+## 🎯 Active Backlog — What's Next (2026-05-31 review)
+
+> **Snapshot:** branch `claude/dreamy-feynman-NM6EQ` == `origin/main` (through PR #68).
+> No open PR. Leaf crates (`api`, `github-client`, `runtime`, `plugins`, `tools`,
+> `telemetry`) compile clean; the `rustcode`/`rag` crates need the ONNX runtime
+> (`ort-sys`) to build, which is blocked in sandboxed CI environments.
+>
+> **Legend:** `[ ]` not started · `[~]` partially done (detail in the priority sections
+> below) · `[x]` done. ⭐ = newly surfaced in the 2026-05-31 review (detail under
+> "P0 — Engineering Health" just below this list).
+>
+> This block is the single forward-looking list. Each item links to its detail
+> section by ID; the long-form history of completed work is preserved unchanged below.
+
+### Tier 0 — Foundations (do first — these unblock or de-risk everything else)
+- [~] ⭐ **CI-A: GitHub Actions pipeline** — landed 2026-05-31 (`.github/workflows/ci.yml`):
+  blocking `fmt` + `clippy` + `test` (7 deterministic leaf crates), plus non-blocking
+  `test-extended` (env-sensitive tools/runtime/rusty-claude-cli) and `build` (full workspace;
+  ort CDN unproven on CI). Makes the async task agent's auto-merge "CI passing" gate
+  (`automerge.rs`) real for the first time. Follow-ups: CI-A.2 make `build` blocking + Postgres
+  test job, CI-A.3 tighten clippy to `-D warnings`, CI-A.4 promote env-sensitive crates into the
+  blocking gate. See the detail under *P0 — Engineering Health*.
+- [ ] ⭐ **CI-B: supply-chain + secret hygiene** — add `cargo-audit` (RUSTSEC advisories) and
+  `cargo-deny` (license/dup/ban) as a scheduled job; this is a security-adjacent tool that
+  clones arbitrary repos and holds tokens, so dependency drift matters.
+- [~] **RC-LLM-VERIFY: run `scripts/smoke_test.sh` against the live stack** and flip the 8
+  `[~]` probes under *P1 — API & Configuration → RC-LLM* to `[x]`. The script is written;
+  it has never been executed against a deployed Claude-enabled stack. Cheap, high-signal.
+
+### Tier 1 — Close out in-flight work (small, mostly mechanical)
+- [~] **RC-API skip-extensions dedupe** — collapse `AutoScanner::fetch_skip_extensions_override`
+  into the free `repo::sync::fetch_repo_skip_extensions` now that PR B + C are both merged
+  (the two helpers are byte-identical). See *P1 — RC-API: Security & Config*.
+- [~] **RC-EXTRACT-A slice 3** — extract a `Storage` trait so `src/indexing.rs` + `src/search.rs`
+  can move into `crates/rag` without dragging in the full DB layer. The gnarly slice; last one
+  blocking the rag crate's independence. See *P2 — Crate Extractions*.
+- [~] **RC-CRATES-C: wire `runtime::ProviderClient` + `worker_boot`** — the `Command::new`
+  subprocess migration across `src/` is 100% done; only the entry-point wiring remains.
+  See *P1 — New Crates Integration*.
+- [~] **RC-CRATES-E: MCP tool-bridge endpoints on :3501** — the placeholder listener is live
+  (`/healthz` only); decide JSON-RPC vs REST and expose `runtime::McpToolRegistry` tools.
+- [ ] ⭐ **CLEANUP-H: finish the SQLite→Postgres migration** — 11 tests are `#[ignore]`'d
+  because `RepoCacheSql` / `ResponseCache` / `CacheMigrator` still embed SQLite in a
+  "postgres-only" build (`src/repo/cache.rs`, `src/cache/{responses,migrate}.rs`). Re-home or
+  delete the SQLite paths so those tests run again. Subsumes / unblocks **RC-CLEANUP-C**.
+- [~] **RC-CLEANUP-C: delete the old file-based repo cache** — structural move done; deletion
+  deferred pending (a) SQL-path production verification, (b) `CacheType`/`RepoCacheEntry` type
+  extraction, (c) `cache/migrate.rs` removal, (d) `cli.rs cache init` decision. Pairs with CLEANUP-H.
+
+### Tier 2 — Features & integrations
+- [ ] ⭐ **AUDIT-CACHE: implement `RedisAuditCache`** — every method in `src/audit/cache.rs` is
+  a `todo!()` stub, so audit-result dedup (the documented "skip re-auditing unchanged files"
+  feature) is non-functional. Structs + trait are fully defined; implement the Redis I/O.
+- [~] **RC-CRATES-B: finish LLM-client migration** — `grok_reasoning.rs` (needs an xAI
+  `/responses` client in the `api` crate) and `ollama_client.rs` (needs Ollama-native
+  `num_ctx`/NDJSON support) are the last 2 of 5. Both need `api`-crate features first.
+- [ ] **CLAW-A/B: OpenClaw integration** — Discord bot (replace passive webhook), build/pull
+  OpenClaw image (resolve the ~760MB-heap OOM first), `@openclaw status` smoke test, register
+  rustcode's own repo for self-RAG. See *P1 — API & Configuration → OpenClaw*.
+- [ ] **OpenClaw LLM wiring (futures app)** — point the trading app at the RC proxy
+  (`RC_BASE_URL`/`RC_API_KEY`/`RC_MODEL`/`RC_REPO_ID`), validate cache-hit metadata + Grok
+  fallback. See *P1 — OpenClaw LLM Wiring*.
+- [ ] **OSS-D: agent persona integration** — adapt the FKS personas into `prompt_tier.rs`
+  system-prompt templates for task-based routing. Prereq for **AGENT-E** (persona memory).
+- [ ] **Promptfoo CI** — `.github/workflows/prompt-eval.yml` running `promptfoo eval` on prompt
+  changes; folds naturally into CI-A once that lands.
+
+### Tier 3 — Larger refactors & longer horizon
+- [~] **RC-API routing-heuristic tuning** — `proxy.dispatch` structured logging is live; this is
+  blocked on aggregating that log stream from a *deployed* stack (Loki/Promtail or a Postgres
+  roll-up) and adjusting `ModelRouter::llm_classify` from observed misclassifications.
+- [ ] **RC-EXTRACT-B: `crates/code-analysis`** — extract the synchronous pre-filter pipeline
+  (`static_analysis`, `parser`, `scoring`, `formatter`). Do after RC-EXTRACT-A slice 3.
+- [ ] **RC-EXTRACT-D: `crates/llm`** — promote the consolidated `src/llm/` into a standalone
+  crate wrapping `crates/api`. Prereq: RC-CLEANUP-A (done) + RC-CRATES-B (the last 2 migrations).
+- [ ] **Split the god-files** — `crates/rusty-claude-cli/src/main.rs` (7.8K LoC),
+  `crates/tools/src/lib.rs` (7.3K), `crates/commands/src/lib.rs` (4.3K),
+  `crates/plugins/src/lib.rs` (3.4K) are single-file crates; break into modules by command group.
+- [ ] ⭐ **TEST-FLAKY: de-flake `mcp_stdio` timing test** — un-ignore the timing-sensitive test in
+  `crates/runtime/src/mcp_stdio.rs` (fix the race or make it deterministic) and remove the dangling
+  "ROADMAP P2.15" reference (no such doc exists — this `TODO.md` is the only roadmap).
+- [ ] **OSS-B: OpenViking** — stand up an instance, ingest docs/strategies, compare retrieval
+  quality vs the current HNSW index.
+- [ ] **AGENT-E: persona-scoped memory** — after OSS-D, store per-persona memories separately.
+
+---
+
+## P0 — Engineering Health (surfaced 2026-05-31)
+
+> New, untracked work found during the 2026-05-31 repo review. These items either gate other
+> work (CI) or represent shipped-but-non-functional surface area (audit cache, ignored tests).
+
+- [~] **CI-A: GitHub Actions pipeline**
+  > **Landed 2026-05-31** in `.github/workflows/ci.yml`. Blocking jobs: `fmt`
+  > (`cargo fmt --all --check`), `clippy` (leaf crates, `--all-targets`),
+  > `test` (the 7 leaf crates whose suites are deterministic: api, commands,
+  > compat-harness, github-client, mock-anthropic-service, plugins, telemetry).
+  > Non-blocking jobs (`continue-on-error`): `test-extended` (tools, runtime,
+  > rusty-claude-cli — environment-sensitive) and `build` (full workspace incl.
+  > rustcode + rag — `ort` downloads the ONNX runtime; its CDN 403s some cloud
+  > IPs). Uses `dtolnay/rust-toolchain@stable` + `Swatinem/rust-cache@v2`, with
+  > `concurrency` cancel-in-progress. `--locked` is intentionally omitted
+  > (Cargo.lock is gitignored).
+  >
+  > Key facts discovered while building it:
+  >   - **No DB needed to build.** sqlx is runtime-mode here (no `query!`
+  >     macros, no `.sqlx` cache), so `cargo build`/`clippy` need no
+  >     `DATABASE_URL`. Only PgPool tests need Postgres → see CI-A.2.
+  >   - **`fmt` was red:** 34 files were never rustfmt'd. Fixed by a one-off
+  >     `cargo fmt --all` commit so the job is green from run one.
+  >   - **`clippy` is intentionally not `-D warnings`.** The workspace opts
+  >     into clippy pedantic+nursery at `warn` (`[workspace.lints]`) and has a
+  >     large backlog (175 warnings in `runtime` alone). The job surfaces
+  >     lints without failing; tightening to `-D warnings` after burning the
+  >     backlog down is a follow-up.
+  >   - **`test` surfaced 3 real api bugs** (fixed in the same PR): a
+  >     prompt-cache temp-dir cleanup panic, stale anthropic-beta assertions,
+  >     and an XAI_API_KEY parallel-test race. See the `test(api):` commit.
+  >   - **The first green run surfaced more, fixed here:** `build` failed on
+  >     the ort CDN 403 (now non-blocking). `test` failed on the `plugins`
+  >     `aggregates_and_executes_plugin_tools` test, which counted the repo's
+  >     real `bundled/` plugins (4 tools, not 1) because it isolated
+  >     `config_home` but not `bundled_root` — fixed by isolating bundled_root.
+  >     Also hardened the two `temp_dir` test helpers (pid + atomic counter)
+  >     against same-clock-tick parallel collisions, and switched hook /
+  >     plugin-command execution from login `sh -lc` to non-login `sh -c` so
+  >     profile banners (nvm/pyenv) no longer pollute captured/parsed output.
+  >   - **Per-crate matrix exposed a real hook-runner race.** Fanning `test`
+  >     out per crate (so a failing crate names itself) pinned a CI-only
+  >     `plugins` failure — invisible in the sandbox, no Actions-log access — to
+  >     a `BrokenPipe` (EPIPE): the hook runner writes the hook input to the
+  >     child's stdin, but a hook that ignores stdin and exits first closes the
+  >     pipe. This is a *production* bug (intermittent "hook failed to start"),
+  >     not just a test issue — fixed in both the `plugins` and `runtime` hook
+  >     runners by tolerating BrokenPipe on the stdin write. Separately, `build`
+  >     compiled the full workspace on a GitHub runner (ort downloaded fine); it
+  >     stays non-blocking (step-level `continue-on-error`) until that download
+  >     is proven stable across runs.
+  >
+  > **Follow-ups:**
+  >   - **CI-A.2** — make `build` blocking + add a DB-backed test job. `build`
+  >     is `continue-on-error` until the `ort-sys` ONNX download is proven on
+  >     GitHub runners (its CDN 403s some cloud IPs; it also 403s the dev
+  >     sandbox, so rustcode/rag can't be validated locally). Then add a
+  >     `postgres:16` service + `DATABASE_URL` + `sql/*.sql` migrations and run
+  >     the rustcode-crate PgPool tests.
+  >   - **CI-A.3** — tighten `clippy` to `-D warnings` once the
+  >     pedantic/nursery backlog is cleared.
+  >   - **CI-A.4** — promote `test-extended` into the blocking `test` matrix as
+  >     each crate is made environment-robust.
+  >     - **`runtime` — DONE (promoted).** Fixed two real bugs the sandbox hid:
+  >       a `TestServer` `Drop` that double-panicked into a process abort
+  >       (`tools`), and — the runtime blocker — re-entrant env-lock *deadlocks*
+  >       in `oauth.rs` / `prompt.rs` (a test held `env_lock()` then called the
+  >       locking `test_set_var`, re-acquiring the same non-reentrant mutex on
+  >       one thread). Also made the bash/git tests tolerant of the dev sandbox's
+  >       quirks (nvm login-shell noise → take the last stdout line; global
+  >       `commit.gpgsign=true` → set `commit.gpgsign false` per temp repo). Full
+  >       suite now 362/0 locally and green per-crate on CI.
+  >     - **`tools` — partial.** Fixed web_search (a stale `/fallback` vs
+  >       `/search` mock assertion that aborted the process) + the git-identity
+  >       gpgsign tests. Remaining before promotion: `enter/exit_plan_mode`
+  >       (Bool(false)), `agent_fake_runner` (Null), `skill_loads_local_skill`
+  >       — investigate whether real or sandbox-coupled.
+  >     - **`rusty-claude-cli`** — not yet examined (integration servers).
+  >   - **CI-B** (below) — add cargo-audit / cargo-deny.
+  >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
+  >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).
+  > This is the prerequisite that makes the async task agent's auto-merge
+  > contract real — `automerge.rs` polls for "CI success" that, until now,
+  > nothing produced.
+
+- [ ] **CI-B: supply-chain + secret hygiene**
+  > Add a scheduled (weekly) job running `cargo audit` (RUSTSEC) and `cargo deny check`
+  > (licenses, duplicate deps, banned crates). Optional: a `gitleaks`/secret-scan step, since the
+  > service handles `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and DB creds.
+
+- [ ] **AUDIT-CACHE: implement `RedisAuditCache`**
+  > `src/audit/cache.rs` defines `AuditCacheConfig`, the cache entry structs, and the trait — but
+  > every `RedisAuditCache` method body is `todo!()` (see the `# TODO(scaffolder): implement`
+  > header in the file). The audit pipeline's content-hash dedup is therefore a no-op. Implement
+  > the Redis I/O against the existing response-cache Redis pool (`allkeys-lru`); key scheme is
+  > already documented in the module header. Add round-trip tests behind a Redis test service
+  > (reuse the CI-A service-container pattern).
+
+- [ ] **CLEANUP-H: finish SQLite→Postgres migration / re-enable ignored tests**
+  > 11 tests carry `#[ignore = "... uses SQLite internally; not available in postgres-only build"]`:
+  >   - `src/repo/cache.rs` ×6 (`RepoCacheSql`)
+  >   - `src/cache/responses.rs` ×2 (`ResponseCache`)
+  >   - `src/cache/migrate.rs` ×3 (`CacheMigrator`)
+  > These are dead coverage left from the partial migration. Decide per type: port the test to
+  > Postgres, or delete the SQLite code path entirely (the latter also closes **RC-CLEANUP-C**,
+  > since `cache/migrate.rs`'s only job — moving file/SQLite cache → SQL — becomes vacuous).
+
+- [ ] **TEST-FLAKY: de-flake the `mcp_stdio` timing test + remove stale roadmap pointer**
+  > `crates/runtime/src/mcp_stdio.rs:~2656` is `#[ignore = "flaky: intermittent timing issues in
+  > CI, see ROADMAP P2.15"]`. There is no `ROADMAP` doc (only this `TODO.md`). Fix the timing race
+  > (or make the assertion deterministic) so it can run under CI-A, and drop the dangling reference.
 
 ---
 
@@ -25,9 +227,20 @@
   > carries an `Option<Arc<AnthropicClient>>` built once at startup, preserving the
   > attached `PromptCache` across requests. `route_from_model_field` now picks the
   > right Claude tier from `claude-*` slugs. `ANTHROPIC_API_KEY` was added to
-  > `.env.example` and `ModelConfig` in `src/config.rs`. Streaming dispatch
-  > synthesises a single-delta stream from `send_message` (native SSE via
-  > `AnthropicClient::stream_message` left as follow-up).
+  > `.env.example` and `ModelConfig` in `src/config.rs`.
+  >
+  > **Native SSE follow-up done 2026-05-25.** The Claude arm of
+  > `handle_streaming` now pumps `AnthropicClient::stream_message` directly
+  > instead of synthesising a single delta from a blocking `send_message`.
+  > Each `StreamEvent::ContentBlockDelta::TextDelta` forwards as a
+  > `StreamChunk::Delta`; `MessageStart`/`MessageDelta` accumulate model + usage;
+  > `MessageStop` (or stream exhaustion) emits `StreamChunk::Done` via the new
+  > `send_claude_done` helper, which keeps cache token counts honest by only
+  > emitting `cache_creation_input_tokens` / `cache_read_input_tokens` when
+  > Anthropic actually reported a nonzero count. Non-text deltas (InputJson,
+  > Thinking, Signature) are dropped to match the non-streaming
+  > `extract_text` contract. Channel buffer widened from 4 to 64 to absorb
+  > real-stream burstiness without back-pressuring the reqwest chunk pump.
 
 - [x] **CLAUDE-B: two-tier routing — Opus 4.7 (planner) vs Sonnet 4.6 (executor)**
   > **Done 2026-05-17.** `ClaudeTier { Planner, Executor }` and `TaskKind::tier()`
@@ -62,8 +275,21 @@
   > cache slot on short prompts that wouldn't qualify). The
   > `prompt-caching-scope-2026-01-05` beta header was already in the default
   > `AnthropicRequestProfile`, so no header change was needed.
-  > Outstanding: streaming path does not yet surface cache token counts (would
-  > require plumbing usage observation through `StreamChunk`).
+  >
+  > **Streaming-path cache tokens done 2026-05-25.** `StreamChunk::Done`
+  > grew `cache_creation_input_tokens: Option<u32>` and
+  > `cache_read_input_tokens: Option<u32>` fields. The proxy's Claude
+  > streaming arm populates them from `resp.usage`; the Ollama and Grok
+  > arms emit `None`. The proxy's accumulator passes both through to the
+  > `CachedProxyResponse` write so streamed responses now hit the local
+  > cache with the same metadata the non-streaming path stores. Both
+  > fields also ride out on the final SSE chunk as
+  > `cache_creation_input_tokens` / `cache_read_input_tokens` extension
+  > fields (skipped when `None` to keep non-Claude streams
+  > OpenAI-shape-compatible), matching the non-streaming path's
+  > `x_ra_metadata` exposure. The native-SSE follow-up (driving
+  > `AnthropicClient::stream_message` instead of the single-delta
+  > `send_message` synth) is still outstanding — see CLAUDE-A's note.
 
 ---
 
@@ -82,21 +308,29 @@
   > format, non-empty steps, etc.
   > Naming-collision cleanup (`src/tasks.rs` vs `src/task/`) is tracked separately under
   > RC-CLEANUP-D.
-- [~] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
-  > **Partial 2026-05-17.** `TaskExecutor::execute_real` clones, branches, writes one
-  > placeholder file per step, commits, runs the per-language test runner against the
-  > working tree, pushes, and opens the PR. The placeholder files are still literal
-  > "Step: ..." text; **LLM-driven step execution is the remaining gap** and will
-  > likely be done by wiring `AnthropicClient` tool-use with `write_file` / `edit_file`
-  > / `run_command` tools once `AGENT-A` lands.
+- [x] **TASK-C:** Task executor — for each step, call appropriate tool (LLM scaffold, file create/edit, run tests, commit)
+  > **Done 2026-05-25.** `TaskExecutor::execute_with_agent_tools`
+  > (`src/task_executor.rs:480`) drives the agent pipeline
+  > (`src/agent/pipeline.rs`, 1,320 lines) through plan → execute → review,
+  > wiring Anthropic tool-use to `FileSystemTools::{write_file, edit_file,
+  > read_file, run_command}` (`src/agent/tools.rs`). Clone, branch,
+  > per-language test, commit, push, PR-open, label all live in the same
+  > path. The placeholder-text path on `execute_real` is the no-agent
+  > fallback — kept intentionally; surfaced in survey 2026-05-25.
+  > Landed across `41833cd` (TASK-A/B/C/E + partial D/F) and `fde3657`
+  > (auto-merge poller closing TASK-D + TASK-F).
 - [x] **TASK-C:** Per-language test runner: `cargo check` / `cargo test` for Rust; `pytest -x` for Python; `npm run build` for TS
   > **Done.** `task_executor::run_tests_for_workspace` calls `TestRunner::detect_project_types`
   > then `run_tests_for_type` for each detected type. Aggregated pass/fail flag drives
   > the abort decision before push; the human-readable summary is attached to the last
   > `StepResult::test_output` and the PR body.
-- [~] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
-  > **Partial 2026-05-17.** PR creation + label application now live in `execute_real`.
-  > `GitHubClient::add_labels` was added and is invoked after PR open.
+- [x] **TASK-D:** GitHub PR creation — use existing `github::client` to: create branch, push commits, open PR with task description + step log
+  > **Done 2026-05-25.** `GitHubClient::create_pull_request`
+  > (`src/github/client.rs:589`) + `add_labels` (`src/github/client.rs:636`)
+  > are invoked from all three executor paths (`materialize_and_push`,
+  > `run_agent_tool_phases`, `execute_real`). Branch is created locally
+  > via `git checkout -b` then pushed with a token-injected remote URL.
+  > Auto-merge is covered by the bullet below — together they close TASK-D.
 - [x] **TASK-D:** Auto-merge logic: if all CI checks pass and `auto_merge: true`, merge the PR
   > **Done 2026-05-18.**
   > - `src/task/automerge.rs::poll_and_merge` polls the PR's combined
@@ -144,13 +378,12 @@
 - [x] **TASK-E:** Task result file — write `tasks/results/{id}.json` with outcome, PR URL, test results, any errors
   > **Done.** `write_result_file` is now the single sink; both `execute_dry_run` and
   > `execute_real` go through it on every code path (success and failure).
-- [~] **TASK-F:** Failed task handling — if any step fails or tests fail, tag PR `needs-review` and write error details to result file; never auto-merge
-  > **Partial 2026-05-17.** Failure now always produces a result file with `status = "failed"`
-  > and the error message. Auto-merge isn't wired yet (see TASK-D) so there's no risk of
-  > merging on failure. **Remaining:** if a PR was already opened before tests failed (e.g.
-  > we push first, then a separate CI run reports failure), apply a `needs-review` label —
-  > today we abort before push when tests fail, so the only way to get here is via the
-  > auto-merge poller, which lands with the rest of TASK-D.
+  <!-- TASK-F was duplicated here in an earlier revision; the canonical
+       bullet is the [x] entry a few lines above, which covers both the
+       pre-push (tests fail before push) and post-push (auto-merge poller
+       sees CI failure) halves. Survey 2026-05-25 confirmed both paths
+       are live in `automerge.rs` + `task_executor.rs`. -->
+
 
 ---
 
@@ -413,18 +646,117 @@
 ## P1 — API & Configuration
 
 ### RC-LLM: Routing & Proxy Validation
-- [ ] Verify `rc-app` starts and serves `/v1/chat/completions` with only `ANTHROPIC_API_KEY` set (no Ollama) on live stack — replaces the old `XAI_API_KEY`-only smoke test
-- [ ] Verify `ModelRouter` routes `TaskKind::ScaffoldStub` → Sonnet and `TaskKind::ArchitecturalReason` → Opus after CLAUDE-B lands
-- [ ] Verify fallback: if `ANTHROPIC_API_KEY` absent but `XAI_API_KEY` present, router falls back to Grok gracefully
-- [ ] Test `curl` end-to-end: auth header, `model=auto` classifies correctly, multi-turn context preservation
-- [ ] Test `x_repo_id` injection: register a repo, send domain-specific question, confirm `rag_chunks_used > 0`
-- [ ] Test prompt cache: send identical request twice, confirm `cache_read_input_tokens > 0` in second response `x_ra_metadata`
-- [ ] Test cache: send identical request twice, confirm `cached: true` on second response
-- [ ] Test auth: request without `Authorization` header → 401
+- [~] Verify `rc-app` starts and serves `/v1/chat/completions` with only `ANTHROPIC_API_KEY` set (no Ollama) on live stack — replaces the old `XAI_API_KEY`-only smoke test
+- [~] Verify `ModelRouter` routes `TaskKind::ScaffoldStub` → Sonnet and `TaskKind::ArchitecturalReason` → Opus after CLAUDE-B lands
+- [~] Verify fallback: if `ANTHROPIC_API_KEY` absent but `XAI_API_KEY` present, router falls back to Grok gracefully
+- [~] Test `curl` end-to-end: auth header, `model=auto` classifies correctly, multi-turn context preservation
+- [~] Test `x_repo_id` injection: register a repo, send domain-specific question, confirm `rag_chunks_used > 0`
+- [~] Test prompt cache: send identical request twice, confirm `cache_read_input_tokens > 0` in second response `x_ra_metadata`
+- [~] Test cache: send identical request twice, confirm `cached: true` on second response
+- [~] Test auth: request without `Authorization` header → 401
+  > **Script done 2026-05-25.** All 8 verification items are bundled
+  > in `scripts/smoke_test.sh` as named probes (`health`,
+  > `claude_default`, `scaffold_task`, `arch_task`, `grok_fallback`,
+  > `multi_turn`, `repo_rag`, `prompt_cache`, `response_cache`,
+  > `auth_401`). Each probe prints `PASS` / `FAIL` / `SKIP` with a
+  > one-line reason; the script exits with the count of failures.
+  > `SKIP` is used for probes whose precondition we can't introspect
+  > from the client (e.g. `grok_fallback` skips on a Claude-enabled
+  > stack rather than failing; `auth_401` skips if `RUSTCODE_PROXY_API_KEYS`
+  > is unset server-side and auth is disabled). `ONLY=` and `SKIP=`
+  > env vars let you run a subset.
+  >
+  > Usage:
+  > ```
+  > RUSTCODE_URL=https://your-stack RUSTCODE_API_KEY=... \
+  >     ./scripts/smoke_test.sh
+  > ```
+  > Outstanding: the items stay `[~]` until they've been *executed*
+  > against the live deployed stack and the run captured. Flip them
+  > to `[x]` once you've run it post-deploy.
 
 ### RC-API: Security & Config
-- [ ] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
-- [ ] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
+- [~] Make skip-extensions configurable per-repo — `skip_extensions: Vec<String>` in repo config struct; pass through `AutoScanner` and `StaticAnalysis` call sites
+  > **Split into three PRs.** The TODO bullet understated the work: no
+  > per-repo config struct existed, `AutoScanner` uses a hardcoded
+  > `SKIP_SUFFIXES` (not the configurable global), and `StaticAnalyzer`
+  > doesn't filter by extension at all.
+  >
+  > **PR A (2026-05-25) — data model + persistence + API.** Done.
+  > `RegisteredRepo` gains `skip_extensions: Option<Vec<String>>` with
+  > replace-semantics (per-repo *replaces* global, lets a repo opt back
+  > in to globally-skipped extensions). Migration 024 adds `TEXT[] NULL`
+  > column. `RegisterRepoRequest`/`get_repo` carry the field.
+  > `RegisteredRepo::effective_skip_extensions(global_default)` returns
+  > the override or the global as a slice without allocation. Unit
+  > tests cover the None/Some(list)/Some(empty) three-way contract and
+  > the in-memory register-then-get round trip.
+  >
+  > **PR B (2026-05-25) — wire into `AutoScanner`.** Done.
+  > `should_skip_path_with` / `should_analyze_file_with` are new
+  > variants accepting `Option<&[String]>`; the existing static
+  > methods delegate with `None` so the legacy behaviour is
+  > byte-for-byte unchanged (locked by
+  > `should_skip_path_with_none_matches_static_method`). Stacked on
+  > PR A's branch — the SQL helper references the `skip_extensions`
+  > column from migration 024. The scanner resolves the override
+  > once per scan via `fetch_skip_extensions_override` (one indexed
+  > SELECT against `registered_repos` by `local_path`; treats the
+  > lookup as advisory — never blocks a scan if the DB query
+  > fails). The override is threaded through `get_changed_files`,
+  > `get_files_from_recent_commits`, and
+  > `analyze_changed_files_with_progress` to all five historical
+  > `should_skip_path` / `should_analyze_file` call sites.
+  > `SKIP_DIRS` is never overridable (always-skipped paths like
+  > `node_modules/`, `target/`, `.git/`). The match accepts
+  > extensions with or without a leading dot so per-repo (`"png"`)
+  > and `SKIP_SUFFIXES` (`".png"`) representations both work.
+  >
+  > **PR C (2026-05-25) — wire into audit runner.** Done. Stacked on
+  > PR B. `AuditRunnerConfig::with_repo_skip_extensions_override` and
+  > `FullAuditConfig::with_repo_skip_extensions_override` are
+  > builder-style overlays that replace `skip_extensions` (replace,
+  > not augment — matches PR A's contract). `AuditState` gains a
+  > `db_pool: Option<PgPool>` populated from `Database::pool()` in
+  > `from_env`; `handle_audit_post` consults
+  > `repo::sync::fetch_repo_skip_extensions` per-audit before
+  > spawning the runner. Both the LLM-assisted (`with_grok`) and
+  > static-only paths honour the overlay — the static-only branch
+  > now uses `AuditRunner::new(overlaid_config)` instead of
+  > `with_defaults()` so the override survives.
+  >
+  > Note: PR B's `AutoScanner::fetch_skip_extensions_override` and
+  > PR C's free `repo::sync::fetch_repo_skip_extensions` are
+  > structurally identical (~10-line SQL helper). Kept separate so
+  > PR B could land independently. A follow-up dedupe (have
+  > `AutoScanner` delegate to the free function) is trivial once
+  > both have merged.
+- [~] Routing heuristic tuning — after CLAUDE-B deploys, measure Opus vs Sonnet classification quality and adjust `ModelRouter::llm_classify` system prompt; log `task_kind` per request to make this measurable
+  > **Measurement prerequisite done 2026-05-25.** `src/api/proxy.rs` now
+  > emits a structured `event = "proxy.dispatch"` log line at the end of
+  > every successful request (cache hit, dispatch, and streaming `Done`
+  > paths) with `task_kind`, `target` (`local`/`remote`/`claude`),
+  > `model`, prompt / completion / cache token counts, `rag_chunks_used`,
+  > `repo_context_injected`, `repo_id`, `cached`, `streaming`, and
+  > `used_fallback`. Field names are stable surface for downstream
+  > metrics — see `target_kind_label_emits_stable_strings_per_variant`.
+  >
+  > **Error-path symmetry done 2026-05-25.** `DispatchOutcome` now carries
+  > an explicit `error: Option<String>` field (populated only by
+  > `DispatchOutcome::error`), and `handle_chat_completions` branches on
+  > it: on a backend failure it emits a matching `event =
+  > "proxy.dispatch_error"` warn-level event (task_kind, target, model,
+  > error, repo_id, streaming) and skips the cache write — poisoning the
+  > cache with error responses would replay failures on every duplicate
+  > request for the TTL. The streaming SSE pump emits the same event on
+  > `StreamChunk::Error`. Downstream queries can compute
+  > `dispatch_error_rate = count(proxy.dispatch_error) /
+  > (count(proxy.dispatch) + count(proxy.dispatch_error))` grouped by
+  > `task_kind`/`target`.
+  >
+  > Outstanding: aggregate the log stream once deployed (probably via
+  > Loki/Promtail or a tail-and-roll-up Postgres job) and adjust the
+  > classifier prompt based on observed misclassifications.
 - [x] Add `ANTHROPIC_API_KEY`, `RC_PLANNER_MODEL`, `RC_EXECUTOR_MODEL` to `.env.example` and README config table
   > Already done. Verified 2026-05-23: `.env.example` has
   > `ANTHROPIC_API_KEY=` (uncommented), `# RC_PLANNER_MODEL=claude-opus-4-7`
@@ -719,32 +1051,64 @@
   > executor pieces gated on RC-CRATES-C by lines 242 and 356 above are
   > fully unblocked.
 
-- [ ] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
+- [x] **RC-CRATES-D: wire `tools` + `plugins` for tool execution**
   > `tools::AgentOutput` and `tools::detect_lane_completion` are now exported.
   >
   > **Preparation step completed (2026-04-06):**
   > - Migrated three plugin manifests from project root `.toml` files to bundled plugin structure:
   >   - `crates/plugins/bundled/todo-scan/` — TodoScanner plugin for repository TODO/FIXME/HACK marker scanning
-  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization (update model ref from Grok → Sonnet after CLAUDE-A)
-  >   - `crates/plugins/bundled/code-review/` — Automated code review (update model ref from Grok → Opus after CLAUDE-A)
+  >   - `crates/plugins/bundled/file-summary/` — LLM-powered file summarization
+  >   - `crates/plugins/bundled/code-review/` — Automated code review
   > - Converted all manifests from TOML to JSON format per project plugin standard
   > - Added comprehensive README.md documentation for each plugin
   > - All three plugins follow the same layout as `example-bundled` and `sample-hooks`
   >
-  > **Next:** wire `plugins::PluginLifecycle` into the task executor (TASK-C) / `AgentPipeline`
-  > (AGENT-D) so that bundled plugins run pre/post hooks around each step.
-  > Update `file-summary` and `code-review` plugin manifests to reference Claude models once CLAUDE-A is done.
+  > **Hook wiring landed via PRs #57, #58, #60, #61 (2026-05-25 → 2026-05-27):**
+  > - PR #57 added `plugin_hooks: Option<Arc<plugins::HookRunner>>` to `AgentPipeline`
+  >   (`src/agent/pipeline.rs:94`) and an `attach_plugin_hooks` helper on
+  >   `TaskExecutor` (`src/task_executor.rs:545`). Tool dispatch in
+  >   `execute_step_with_tools` now fires `PreToolUse` before and
+  >   `PostToolUse`/`PostToolUseFailure` after every `tools.execute()` call via
+  >   `tokio::task::spawn_blocking`. Denial (exit 2) skips the tool and surfaces
+  >   the hook message as a `tool_result` with `is_error: true`; non-zero/non-2
+  >   exits log a warning and proceed.
+  > - PR #60 added `RC_PLUGIN_CONFIG_HOME` to `Config::from_env`
+  >   (`src/config.rs`) and threaded it through `server.rs` into the
+  >   `TaskExecutorOptions` literal so the runtime can locate enabled plugin
+  >   directories.
+  > - PR #58 retitled the bundled `file-summary` and `code-review` manifests as
+  >   provider-neutral (LLM-agnostic) descriptions.
+  > - PR #61 migrated `src/code_review.rs` from `GrokClient` to
+  >   `AnthropicClient`, defaulting to `claude-opus-4-7` and reading
+  >   `RC_CODE_REVIEW_MODEL` for overrides.
 
-- [ ] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
+- [~] **RC-CRATES-E: `--server` flag for MCP-style tool endpoint on :3501**
   > Add `--mcp-server` flag to `src/bin/server.rs`. When set, start a second Axum
   > listener on port 3501 serving `runtime::mcp_tool_bridge`.
   > The claw binary Login/Logout subcommands also need runtime OAuth wiring
   > (stubs left in `crates/rusty-claude-cli/src/main.rs` with TODO comments).
+  >
+  > **Placeholder listener landed 2026-05-26:** the listener bound to
+  > `RC_MCP_HOST:RC_MCP_PORT` (defaults `127.0.0.1:3501`), gated on
+  > `RC_MCP_SERVER_ENABLED=true`. Currently mounts only `/healthz` —
+  > tool-bridge endpoints over `runtime::McpToolRegistry` are deferred
+  > until the wire format (JSON-RPC vs REST) is agreed. The "CLI flag"
+  > framing was downscoped to an env var to match the existing
+  > `src/bin/server.rs` config-from-env convention (no clap dep).
+  >
+  > **TODO claim correction:** the "Login/Logout stubs in
+  > `crates/rusty-claude-cli/src/main.rs` with TODO comments" line above
+  > is stale — `run_login` / `run_logout` at lines 816-871 are full
+  > production OAuth implementations, not stubs. If the original intent
+  > was "expose OAuth code-exchange endpoints on the server so other
+  > clients can use the token store," track that as a separate task.
 
-- [ ] **RC-CRATES-F: `claw-cli` binary in Docker image**
+- [x] **RC-CRATES-F: `claw-cli` binary in Docker image**
   > `crates/rusty-claude-cli` builds the claw binary. Add a second stage to the
   > rustcode Dockerfile copying `target/release/claw` into the image.
-  > Verify: `docker run rustcode claw --help`
+  > Verify: `docker run --rm --entrypoint claw rustcode:latest --help`
+  > (Note: `docker run rustcode claw --help` does not work because `claw` is
+  > passed as an arg to the `rustcode` entrypoint, not invoked directly.)
 
 - [x] **RC-CRATES-G: integration test suite covering both Claude and Grok paths**
   > `crates/mock-anthropic-service` is the test harness — already a dev-dep of rusty-claude-cli.
@@ -1140,12 +1504,32 @@
   > Entirely synchronous, no network or DB deps. Could also be used by
   > `crates/runtime`'s bash validation or `crates/plugins`.
 
-- [ ] **RC-EXTRACT-C: `crates/github-client` — GitHub API client**
-  > Candidates: `src/github/client.rs`, `src/github/models.rs`, `src/github/search.rs`
+- [x] **RC-EXTRACT-C: `crates/github-client` — GitHub API client**
+  > Done 2026-05-30. Extracted scope ended up smaller than the original
+  > candidate list — `search.rs` was incorrectly grouped with the HTTP
+  > side: `GitHubSearcher` carries a `PgPool` and executes raw `sqlx`
+  > queries, so it's database-coupled and stays in `src/github/`.
   >
-  > The pure HTTP client side is self-contained. Leave the sync logic
-  > (`github/sync.rs`, `github/background_sync.rs`, `github/webhook.rs`) in `src/`
-  > since it ties into the DB and queue.
+  > New crate `crates/github-client/` contains: `client.rs`
+  > (`GitHubClient`, `GitHubConfig`, `RateLimitInfo`), `models.rs` (all
+  > the domain types: `Commit`, `Issue`, `PullRequest`, etc.), and
+  > `error.rs` (lifted `GitHubError` + `Result` out of `src/github/mod.rs`).
+  > Deps: `chrono`, `reqwest`, `serde`, `serde_json`, `sqlx` (only because
+  > `GitHubError` carries a `DatabaseError(#[from] sqlx::Error)` variant),
+  > `thiserror`, `tokio`, `tracing`, `urlencoding`.
+  >
+  > `src/github/mod.rs` re-exports the `client` and `models` modules
+  > themselves plus every public type, so existing consumer paths
+  > (`crate::github::GitHubClient`, `crate::github::client::GitHubClient`,
+  > `crate::github::models::Repository`, etc.) keep working with zero
+  > call-site changes. Sibling modules `sync.rs`, `background_sync.rs`,
+  > `search.rs`, `webhook.rs` remain in `src/github/`.
+  >
+  > Verification: `cargo build -p github-client` ✓; `cargo test -p github-client`
+  > — 8/8 pass; `cargo check --workspace --tests --exclude rustcode
+  > --exclude rag` clean. The `rustcode` bin can't be built in this sandbox
+  > (ort-sys CDN block); all consumer imports were verified by hand against
+  > the re-export surface.
 
 - [ ] **RC-EXTRACT-D: `crates/llm` — unified LLM client surface**
   > Prerequisite: RC-CLEANUP-A and RC-CRATES-B fully done.
@@ -1161,45 +1545,50 @@
 > Rustcode is already OpenAI-compatible — OpenWebUI needs zero code changes.
 > This is purely infrastructure/config work.
 
-- [ ] **DEPLOY-A: Docker Compose with OpenWebUI sidecar**
-  > Add `docker-compose.yml` at repo root:
-  > ```yaml
-  > services:
-  >   rustcode:
-  >     build: .
-  >     ports: ["3500:3500"]
-  >     env_file: .env
-  >   openwebui:
-  >     image: ghcr.io/open-webui/open-webui:main
-  >     ports: ["3000:8080"]
-  >     environment:
-  >       OPENAI_API_BASE_URL: http://rustcode:3500/v1
-  >       OPENAI_API_KEY: "${RC_PROXY_API_KEY}"
-  >     depends_on: [rustcode]
-  > ```
-  > OpenWebUI will pull the model list from `GET /v1/models` and route all chat through rustcode.
-  > Users get the full chat interface + history storage with no extra backend work.
+- [x] **DEPLOY-A: Docker Compose with OpenWebUI sidecar**
+  > Done 2026-05-28: `docker-compose.yml` already had the rustcode + postgres
+  > services; added an `openwebui` service behind the `webui` profile so it's
+  > opt-in. Launch with:
+  >
+  >   `docker compose --profile webui up -d`
+  >
+  > Browse to `http://localhost:${OPENWEBUI_HOST_PORT:-3000}`, sign up locally,
+  > and OpenWebUI pulls the model list from rustcode at `GET /v1/models` —
+  > routing all chat through `POST /v1/chat/completions`. The bearer token is
+  > `OPENWEBUI_API_KEY` (must match one of the keys in
+  > `RUSTCODE_PROXY_API_KEYS`, or both empty for dev-mode auth bypass).
+  > New env vars documented in `.env.example`.
 
-- [ ] **DEPLOY-B: Zed IDE config documentation**
-  > Document the Zed `assistant` config block in README:
-  > ```json
-  > "assistant": {
-  >   "version": "2",
-  >   "default_model": { "provider": "openai", "model": "claude-sonnet-4-6" },
-  >   "openai": {
-  >     "api_url": "http://your-server:3500/v1",
-  >     "available_models": [{ "name": "claude-opus-4-7" }, { "name": "claude-sonnet-4-6" }]
-  >   }
-  > }
-  > ```
+- [x] **DEPLOY-B: Zed IDE config documentation**
+  > Done 2026-05-28: added a "Client integrations" section to `README.md`
+  > documenting both the Zed `assistant` config block and the OpenWebUI
+  > sidecar (DEPLOY-A). The Zed block points `openai.api_url` at
+  > `http://your-server:3500/v1` with `claude-opus-4-7` / `claude-sonnet-4-6`
+  > model slugs and notes that the API key maps to `RUSTCODE_PROXY_API_KEYS`.
   > Works today against the existing proxy — no code changes needed.
 
-- [ ] **DEPLOY-C: model slug verification**
+- [x] **DEPLOY-C: model slug verification**
   > Before hardcoding in CLAUDE-B, confirm exact Anthropic model slugs via:
   > `curl https://api.anthropic.com/v1/models -H "x-api-key: $ANTHROPIC_API_KEY"`
   > Update `crates/api/src/providers/mod.rs` aliases (`"opus"`, `"sonnet"`) to match.
-  > Currently set to `claude-opus-4-6` / `claude-sonnet-4-6` — update to `claude-opus-4-7`
-  > if that slug is confirmed live.
+  >
+  > **Done 2026-05-28:** `crates/api/src/providers/mod.rs` already resolved
+  > `opus → claude-opus-4-7`, but a stale unit test
+  > (`api::client::tests::resolves_existing_and_grok_aliases`) still asserted
+  > `claude-opus-4-6` — main was RED. Standardized the opus slug to
+  > `claude-opus-4-7` across all 13 remaining references (the api alias test,
+  > the claw CLI's own `resolve_model_alias` + its test, `DEFAULT_MODEL`,
+  > `--model` arg default, `tools::DEFAULT_AGENT_MODEL`, and assorted test
+  > fixtures / a routing comment). `sonnet` was already uniformly
+  > `claude-sonnet-4-6`. `runtime::pricing_for_model` matches on the `"opus"`
+  > substring so cost tracking is unaffected by the version bump.
+  >
+  > Live `/v1/models` confirmation still can't run from CI (no key), but the
+  > workspace had already adopted `claude-opus-4-7` in the core resolver,
+  > `code_review.rs`, and the README — this change just removes the stragglers.
+  > Note: `crates/api/src/providers/mod.rs` resolves `haiku` to
+  > `claude-haiku-4-5-20251213` while the runtime pricing test uses
+  > `...20251001`; left untouched (out of opus/sonnet scope, no failing test).
 
 ---
 
@@ -1207,6 +1596,10 @@
 
 - [ ] OSS-B: OpenViking — stand up Docker instance, ingest FKS docs/strategies, compare retrieval quality vs current HNSW
 - [ ] CI/CD re-enable: move `ci-cd.yml` back to `.github/workflows/` after OpenClaw OOM fix + Tailscale second-device verification
+  > **Superseded by CI-A (2026-05-31 review):** no `ci-cd.yml` exists in the repo anymore, so
+  > there is nothing to "move back" — CI must be created from scratch. Track under **CI-A** in
+  > *P0 — Engineering Health*. This line stays only as a pointer to the original intent
+  > (Tailscale second-device verification was the historical blocker).
 - [ ] Split `crates/commands/src/lib.rs` (140K, skipped in pack as too large) — it's currently a single-file crate with no internal module structure; break into submodules by command group
 - [ ] Split `crates/rusty-claude-cli/src/main.rs` (272K, skipped in pack) — same issue
 - [x] **MEM-E: memory dashboard** — `GET /api/v1/memory` endpoint listing stored entries with importance scores; `DELETE /api/v1/memory/:id` for manual pruning; expose in OpenWebUI via a custom tool

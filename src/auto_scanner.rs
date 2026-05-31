@@ -26,8 +26,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
+use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 
 // Run `git <args>` inside `repo_path` via `runtime::execute_bash`.
 //
@@ -479,6 +479,28 @@ impl AutoScanner {
             }
         }
 
+        // Resolve the per-repo `skip_extensions` override once per scan.
+        // The DB lookup is one indexed SELECT keyed on `local_path`; cheap
+        // relative to the git diff walk that follows. We log-and-fall-back
+        // to global behaviour if the lookup itself fails (treat the
+        // registered_repos table as advisory — never block a scan on it).
+        //
+        // The lookup itself lives in `repo::sync::fetch_repo_skip_extensions`
+        // — same query the audit endpoint uses, so both surfaces honour
+        // the override identically without two copies of the SELECT.
+        let skip_override: Option<Vec<String>> =
+            match crate::repo::sync::fetch_repo_skip_extensions(&self.pool, &repo_path).await {
+                Ok(override_opt) => override_opt,
+                Err(e) => {
+                    warn!(
+                        repo = %repo.id,
+                        error = %e,
+                        "Failed to fetch per-repo skip_extensions; falling back to global SKIP_SUFFIXES"
+                    );
+                    None
+                }
+            };
+
         // Check for changes (both committed and uncommitted)
         let current_head = self.get_head_hash(&repo_path)?;
         let changed_files = self
@@ -486,6 +508,7 @@ impl AutoScanner {
                 &repo_path,
                 repo.last_commit_hash.as_deref(),
                 current_head.as_deref(),
+                skip_override.as_deref(),
             )
             .await?;
 
@@ -531,7 +554,13 @@ impl AutoScanner {
 
         // Analyze changed files with progress tracking
         let result = self
-            .analyze_changed_files_with_progress(&repo.id, repo_name, &repo_path, &changed_files)
+            .analyze_changed_files_with_progress(
+                &repo.id,
+                repo_name,
+                &repo_path,
+                &changed_files,
+                skip_override.as_deref(),
+            )
             .await;
 
         match result {
@@ -713,6 +742,12 @@ impl AutoScanner {
         repo_path: &Path,
         last_commit_hash: Option<&str>,
         current_head: Option<&str>,
+        // Per-repo `skip_extensions` override (replaces SKIP_SUFFIXES
+        // when set; see `should_skip_path_with`). The caller resolves
+        // this once at scan-start via
+        // `repo::sync::fetch_repo_skip_extensions` so we don't requery
+        // per file.
+        skip_override: Option<&[String]>,
     ) -> Result<Vec<PathBuf>> {
         use std::collections::HashSet;
 
@@ -721,10 +756,7 @@ impl AutoScanner {
         // 1. Check for committed changes since last known hash
         if let (Some(old_hash), Some(new_hash)) = (last_commit_hash, current_head) {
             if old_hash != new_hash {
-                let output = run_git_in(
-                    repo_path,
-                    &["diff", "--name-status", old_hash, new_hash],
-                );
+                let output = run_git_in(repo_path, &["diff", "--name-status", old_hash, new_hash]);
 
                 match output {
                     Ok(out) if out.return_code_interpretation.is_none() => {
@@ -740,7 +772,7 @@ impl AutoScanner {
                             }
                             // For renames (R100), the new path is the last element
                             let file_path = parts.last().unwrap().trim();
-                            if Self::should_analyze_file(file_path) {
+                            if Self::should_analyze_file_with(file_path, skip_override) {
                                 let full_path = repo_path.join(file_path);
                                 if full_path.exists() {
                                     changed_set.insert(full_path);
@@ -768,7 +800,11 @@ impl AutoScanner {
                             &new_hash[..8.min(new_hash.len())],
                             out.stderr.trim()
                         );
-                        self.get_files_from_recent_commits(repo_path, &mut changed_set)?;
+                        self.get_files_from_recent_commits(
+                            repo_path,
+                            &mut changed_set,
+                            skip_override,
+                        )?;
                     }
                     Err(e) => {
                         warn!("Failed to run git diff: {}", e);
@@ -781,7 +817,7 @@ impl AutoScanner {
                 "First scan for {} - checking recent commits",
                 repo_path.display()
             );
-            self.get_files_from_recent_commits(repo_path, &mut changed_set)?;
+            self.get_files_from_recent_commits(repo_path, &mut changed_set, skip_override)?;
         }
 
         // 2. Also check for uncommitted changes (working tree + staged)
@@ -802,7 +838,7 @@ impl AutoScanner {
                     continue;
                 }
 
-                if Self::should_analyze_file(file_path) {
+                if Self::should_analyze_file_with(file_path, skip_override) {
                     let full_path = repo_path.join(file_path);
                     if full_path.exists() {
                         changed_set.insert(full_path);
@@ -821,19 +857,23 @@ impl AutoScanner {
         &self,
         repo_path: &Path,
         changed_set: &mut std::collections::HashSet<PathBuf>,
+        // Same per-repo override semantics as `get_changed_files` —
+        // see `should_skip_path_with`.
+        skip_override: Option<&[String]>,
     ) -> Result<()> {
         // Try to get files changed in the last 5 commits first.
         // This may fail for repos that have fewer than 5 commits (e.g. HEAD~5
         // doesn't exist), so we fall back to listing every tracked file in HEAD.
-        let diff_output =
-            run_git_in(repo_path, &["diff", "--name-only", "HEAD~5", "HEAD"]);
+        let diff_output = run_git_in(repo_path, &["diff", "--name-only", "HEAD~5", "HEAD"]);
 
         let used_diff = match diff_output {
             Ok(ref out) if out.return_code_interpretation.is_none() => {
                 let mut found = false;
                 for line in out.stdout.lines() {
                     let file_path = line.trim();
-                    if !file_path.is_empty() && Self::should_analyze_file(file_path) {
+                    if !file_path.is_empty()
+                        && Self::should_analyze_file_with(file_path, skip_override)
+                    {
                         let full_path = repo_path.join(file_path);
                         if full_path.exists() {
                             changed_set.insert(full_path);
@@ -862,14 +902,15 @@ impl AutoScanner {
                 "First-scan fallback: listing all tracked files in HEAD for {}",
                 repo_path.display()
             );
-            let ls_output =
-                run_git_in(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]);
+            let ls_output = run_git_in(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]);
 
             match ls_output {
                 Ok(out) if out.return_code_interpretation.is_none() => {
                     for line in out.stdout.lines() {
                         let file_path = line.trim();
-                        if !file_path.is_empty() && Self::should_analyze_file(file_path) {
+                        if !file_path.is_empty()
+                            && Self::should_analyze_file_with(file_path, skip_override)
+                        {
                             let full_path = repo_path.join(file_path);
                             if full_path.exists() {
                                 changed_set.insert(full_path);
@@ -921,6 +962,26 @@ impl AutoScanner {
     // Check if a file should be skipped based on path patterns.
     // This catches generated/bundled/vendored code that wastes API budget.
     fn should_skip_path(file_path: &str) -> bool {
+        Self::should_skip_path_with(file_path, None)
+    }
+
+    /// Per-repo-aware variant of `should_skip_path`. When
+    /// `repo_skip_extensions` is `None` the global `SKIP_SUFFIXES`
+    /// constant is used (preserving the historical behaviour). When
+    /// `Some(list)` the per-repo list **replaces** `SKIP_SUFFIXES`
+    /// entirely — including the empty-list case (`Some(&[])`), which
+    /// disables all extension-based skipping for that repo. The
+    /// directory-pattern check (`SKIP_DIRS`) is never overridden — those
+    /// are paths like `node_modules/`, `target/`, `.git/` that should
+    /// always be skipped regardless of per-repo intent.
+    ///
+    /// Extensions can be supplied with or without a leading dot
+    /// (`"png"` and `".png"` both match `*.png`). PR A stored them
+    /// without a dot to match `default_skip_extensions()` in
+    /// `src/config.rs`; the historical `SKIP_SUFFIXES` constant uses
+    /// leading dots. Normalisation here lets both representations
+    /// coexist without forcing one canonical form on the caller.
+    fn should_skip_path_with(file_path: &str, repo_skip_extensions: Option<&[String]>) -> bool {
         // Normalize to forward slashes for consistent matching
         let normalized = file_path.replace('\\', "/");
         // Ensure we match directory components properly by wrapping in slashes
@@ -930,17 +991,39 @@ impl AutoScanner {
             format!("/{}", normalized)
         };
 
-        // Check directory patterns
+        // Check directory patterns (never per-repo overridable).
         for dir in SKIP_DIRS {
             if with_leading.contains(dir) {
                 return true;
             }
         }
 
-        // Check suffix patterns (minified files, sourcemaps, etc.)
-        for suffix in SKIP_SUFFIXES {
-            if normalized.ends_with(suffix) {
-                return true;
+        // Check suffix patterns — per-repo list replaces the global one
+        // when set, otherwise fall back to SKIP_SUFFIXES.
+        match repo_skip_extensions {
+            Some(per_repo) => {
+                for ext in per_repo {
+                    // `ends_with` would match `foo.lock` against suffix
+                    // `lock` (no dot), which is correct, but it would
+                    // also match `nolock` against `lock` — so we always
+                    // compare against a dotted form to anchor on the
+                    // extension boundary.
+                    let dotted: String = if ext.starts_with('.') {
+                        ext.clone()
+                    } else {
+                        format!(".{}", ext)
+                    };
+                    if normalized.ends_with(&dotted) {
+                        return true;
+                    }
+                }
+            }
+            None => {
+                for suffix in SKIP_SUFFIXES {
+                    if normalized.ends_with(suffix) {
+                        return true;
+                    }
+                }
             }
         }
 
@@ -949,7 +1032,14 @@ impl AutoScanner {
 
     // Combined filter: is it a code file AND not in a skip path?
     fn should_analyze_file(file_path: &str) -> bool {
-        Self::is_analyzable_file(file_path) && !Self::should_skip_path(file_path)
+        Self::should_analyze_file_with(file_path, None)
+    }
+
+    /// Per-repo-aware variant of `should_analyze_file`. See
+    /// `should_skip_path_with` for the override semantics.
+    fn should_analyze_file_with(file_path: &str, repo_skip_extensions: Option<&[String]>) -> bool {
+        Self::is_analyzable_file(file_path)
+            && !Self::should_skip_path_with(file_path, repo_skip_extensions)
     }
 
     // Analyze changed files with progress tracking and cost budget enforcement.
@@ -960,6 +1050,12 @@ impl AutoScanner {
         repo_name: &str,
         repo_path: &Path,
         files: &[PathBuf],
+        // Per-repo `skip_extensions` override used by the pre-filter pass
+        // below. `get_changed_files` already filters with the same
+        // override, but files can enter this method from other paths
+        // (uncommitted-changes path, callers that bypass the diff walk),
+        // so this defensive pre-filter must use the same override.
+        skip_override: Option<&[String]>,
     ) -> Result<(i64, i64, bool)> {
         // Compute and store cache hash in DB if not already set
         let cache_hash = RepoCacheSql::compute_repo_hash(repo_path);
@@ -984,7 +1080,7 @@ impl AutoScanner {
             .iter()
             .filter(|f| {
                 let path_str = f.to_string_lossy();
-                if Self::should_skip_path(&path_str) {
+                if Self::should_skip_path_with(&path_str, skip_override) {
                     let rel = f.strip_prefix(repo_path).unwrap_or(f);
                     info!(
                         "Pre-filter: skipping {} — matches skip pattern",
@@ -2567,6 +2663,130 @@ mod tests {
         // "distribution" in a path should NOT be caught by "/dist/" pattern
         assert!(!AutoScanner::should_skip_path("src/distribution/calc.py"));
         assert!(!AutoScanner::should_skip_path("lib/distribution/normal.rs"));
+    }
+
+    #[test]
+    fn should_skip_path_with_none_matches_static_method() {
+        // Contract: passing `None` for the per-repo override is exactly
+        // equivalent to the historical static-method behaviour. If this
+        // ever drifts, every call site that hasn't migrated yet would
+        // start filtering differently.
+        for path in [
+            "src/main.rs",
+            "src/app.min.js",
+            "dist/bundle.js",
+            "package-lock.lock",
+            "node_modules/lodash/index.js",
+        ] {
+            assert_eq!(
+                AutoScanner::should_skip_path_with(path, None),
+                AutoScanner::should_skip_path(path),
+                "drift for {}",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn should_skip_path_with_per_repo_replaces_global_suffixes() {
+        // Per-repo override `["lock"]` means "skip only `.lock` files
+        // for this repo". `.min.js` (which the global SKIP_SUFFIXES
+        // catches) must NOT be skipped because the per-repo list
+        // replaces — not augments — the global list.
+        let per_repo = vec!["lock".to_string()];
+        let override_ref: Option<&[String]> = Some(&per_repo);
+        assert!(AutoScanner::should_skip_path_with(
+            "package-lock.lock",
+            override_ref
+        ));
+        assert!(!AutoScanner::should_skip_path_with(
+            "src/app.min.js",
+            override_ref
+        ));
+    }
+
+    #[test]
+    fn should_skip_path_with_directory_patterns_are_never_overridden() {
+        // SKIP_DIRS (node_modules/, target/, .git/, etc.) are
+        // *always* skipped regardless of the per-repo override.
+        // Putting an empty list as the override (opt out of all
+        // extension-skipping) must NOT re-enable analysis of files in
+        // node_modules — that path is structural, not a matter of
+        // taste.
+        let override_ref: Option<&[String]> = Some(&[]);
+        assert!(AutoScanner::should_skip_path_with(
+            "node_modules/lodash/index.js",
+            override_ref
+        ));
+        assert!(AutoScanner::should_skip_path_with(
+            "target/debug/build/main.rs",
+            override_ref
+        ));
+    }
+
+    #[test]
+    fn should_skip_path_with_empty_override_disables_suffix_skipping() {
+        // Per-repo `Some(&[])` is a distinct signal from `None` —
+        // PR A's contract. The scanner must treat it as "filter
+        // passes everything by extension"; only SKIP_DIRS still
+        // applies.
+        let override_ref: Option<&[String]> = Some(&[]);
+        assert!(!AutoScanner::should_skip_path_with(
+            "src/app.min.js",
+            override_ref
+        ));
+        assert!(!AutoScanner::should_skip_path_with(
+            "package-lock.lock",
+            override_ref
+        ));
+    }
+
+    #[test]
+    fn should_skip_path_with_accepts_both_dotted_and_undotted_extensions() {
+        // PR A stored per-repo extensions without a leading dot to
+        // match `default_skip_extensions()` in src/config.rs; the
+        // historical SKIP_SUFFIXES uses leading dots. The scanner
+        // accepts both forms so neither side has to canonicalise.
+        let undotted = vec!["png".to_string()];
+        let dotted = vec![".png".to_string()];
+        assert!(AutoScanner::should_skip_path_with(
+            "logo.png",
+            Some(&undotted)
+        ));
+        assert!(AutoScanner::should_skip_path_with(
+            "logo.png",
+            Some(&dotted)
+        ));
+        // The dotted form must still anchor on the extension boundary
+        // — i.e. `lock` must not match `nolock.js`.
+        let just_lock = vec!["lock".to_string()];
+        assert!(!AutoScanner::should_skip_path_with(
+            "src/nolock.js",
+            Some(&just_lock)
+        ));
+    }
+
+    #[test]
+    fn should_analyze_file_with_combines_filters() {
+        // Sanity: `should_analyze_file_with` keeps the "must be code
+        // file AND not skipped" combination. A per-repo override that
+        // doesn't list `.rs` must still let `.rs` files through.
+        let per_repo = vec!["png".to_string()];
+        let override_ref = Some(per_repo.as_slice());
+        assert!(AutoScanner::should_analyze_file_with(
+            "src/main.rs",
+            override_ref
+        ));
+        assert!(!AutoScanner::should_analyze_file_with(
+            "logo.png",
+            override_ref
+        ));
+        // Non-code files (e.g. README.md) are still filtered out by
+        // `is_analyzable_file` even when not in the skip list.
+        assert!(!AutoScanner::should_analyze_file_with(
+            "README.md",
+            override_ref
+        ));
     }
 
     #[test]
