@@ -641,8 +641,11 @@ fn shell_command(command: &str) -> CommandWithStdin {
 
     #[cfg(not(windows))]
     let command_builder = {
+        // Non-login shell (`-c`, not `-lc`): hook stdout is captured and parsed,
+        // so a login shell sourcing the operator's profile (nvm/pyenv banners, etc.)
+        // would pollute the result. The child still inherits this process's PATH/env.
         let mut command_builder = Command::new("sh");
-        command_builder.arg("-lc").arg(command);
+        command_builder.arg("-c").arg(command);
         CommandWithStdin::new(command_builder)
     };
 

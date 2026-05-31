@@ -26,11 +26,13 @@
 > section by ID; the long-form history of completed work is preserved unchanged below.
 
 ### Tier 0 — Foundations (do first — these unblock or de-risk everything else)
-- [~] ⭐ **CI-A: GitHub Actions pipeline** — landed 2026-05-31 (`.github/workflows/ci.yml`:
-  `fmt` + `clippy` + `test` + full-workspace `build`). Makes the async task agent's auto-merge
-  "CI passing" gate (`automerge.rs`) real for the first time. Follow-ups: CI-A.2 Postgres-backed
-  test job, CI-A.3 tighten clippy to `-D warnings`, CI-A.4 de-fragilize login-shell tests. See
-  the detail under *P0 — Engineering Health*.
+- [~] ⭐ **CI-A: GitHub Actions pipeline** — landed 2026-05-31 (`.github/workflows/ci.yml`):
+  blocking `fmt` + `clippy` + `test` (7 deterministic leaf crates), plus non-blocking
+  `test-extended` (env-sensitive tools/runtime/rusty-claude-cli) and `build` (full workspace;
+  ort CDN unproven on CI). Makes the async task agent's auto-merge "CI passing" gate
+  (`automerge.rs`) real for the first time. Follow-ups: CI-A.2 make `build` blocking + Postgres
+  test job, CI-A.3 tighten clippy to `-D warnings`, CI-A.4 promote env-sensitive crates into the
+  blocking gate. See the detail under *P0 — Engineering Health*.
 - [ ] ⭐ **CI-B: supply-chain + secret hygiene** — add `cargo-audit` (RUSTSEC advisories) and
   `cargo-deny` (license/dup/ban) as a scheduled job; this is a security-adjacent tool that
   clones arbitrary repos and holds tokens, so dependency drift matters.
@@ -102,11 +104,14 @@
 > work (CI) or represent shipped-but-non-functional surface area (audit cache, ignored tests).
 
 - [~] **CI-A: GitHub Actions pipeline**
-  > **Landed 2026-05-31** in `.github/workflows/ci.yml` (4 jobs): `fmt`
+  > **Landed 2026-05-31** in `.github/workflows/ci.yml`. Blocking jobs: `fmt`
   > (`cargo fmt --all --check`), `clippy` (leaf crates, `--all-targets`),
-  > `test` (leaf crates), `build` (full workspace incl. rustcode + rag — `ort`
-  > downloads the ONNX runtime on the hosted runner). Uses
-  > `dtolnay/rust-toolchain@stable` + `Swatinem/rust-cache@v2`, with
+  > `test` (the 7 leaf crates whose suites are deterministic: api, commands,
+  > compat-harness, github-client, mock-anthropic-service, plugins, telemetry).
+  > Non-blocking jobs (`continue-on-error`): `test-extended` (tools, runtime,
+  > rusty-claude-cli — environment-sensitive) and `build` (full workspace incl.
+  > rustcode + rag — `ort` downloads the ONNX runtime; its CDN 403s some cloud
+  > IPs). Uses `dtolnay/rust-toolchain@stable` + `Swatinem/rust-cache@v2`, with
   > `concurrency` cancel-in-progress. `--locked` is intentionally omitted
   > (Cargo.lock is gitignored).
   >
@@ -124,19 +129,34 @@
   >   - **`test` surfaced 3 real api bugs** (fixed in the same PR): a
   >     prompt-cache temp-dir cleanup panic, stale anthropic-beta assertions,
   >     and an XAI_API_KEY parallel-test race. See the `test(api):` commit.
+  >   - **The first green run surfaced more, fixed here:** `build` failed on
+  >     the ort CDN 403 (now non-blocking). `test` failed on the `plugins`
+  >     `aggregates_and_executes_plugin_tools` test, which counted the repo's
+  >     real `bundled/` plugins (4 tools, not 1) because it isolated
+  >     `config_home` but not `bundled_root` — fixed by isolating bundled_root.
+  >     Also hardened the two `temp_dir` test helpers (pid + atomic counter)
+  >     against same-clock-tick parallel collisions, and switched hook /
+  >     plugin-command execution from login `sh -lc` to non-login `sh -c` so
+  >     profile banners (nvm/pyenv) no longer pollute captured/parsed output.
   >
   > **Follow-ups:**
-  >   - **CI-A.2** — DB-backed test job: `postgres:16` service + `DATABASE_URL`
-  >     + apply `sql/*.sql` migrations, then run the rustcode-crate PgPool
-  >     tests. Deferred because the rustcode crate can't compile in the dev
-  >     sandbox (ort CDN), so it couldn't be validated locally.
+  >   - **CI-A.2** — make `build` blocking + add a DB-backed test job. `build`
+  >     is `continue-on-error` until the `ort-sys` ONNX download is proven on
+  >     GitHub runners (its CDN 403s some cloud IPs; it also 403s the dev
+  >     sandbox, so rustcode/rag can't be validated locally). Then add a
+  >     `postgres:16` service + `DATABASE_URL` + `sql/*.sql` migrations and run
+  >     the rustcode-crate PgPool tests.
   >   - **CI-A.3** — tighten `clippy` to `-D warnings` once the
   >     pedantic/nursery backlog is cleared.
-  >   - **CI-A.4** — login-shell test fragility: `plugins`/`runtime` tests
-  >     spawn `sh -lc` (login shell) and assert exact subprocess stdout, so
-  >     any profile that prints to stdout pollutes them (the dev sandbox's
-  >     profile prints "nvm"). Make those tests tolerant of profile noise (or
-  >     run hooks under a non-login shell — a deliberate behavior call).
+  >   - **CI-A.4** — promote `test-extended` (tools, runtime, rusty-claude-cli)
+  >     into the blocking `test` job once their suites are environment-robust.
+  >     Known fragilities: `tools` web_search spins up a loopback mock server a
+  >     proxy can intercept (→ request error → server-thread panic → process
+  >     abort, which fails ~7 sibling tests as collateral); `runtime` oauth
+  >     tests serialize on a process-global env lock that can hang; the
+  >     `rusty-claude-cli` integration tests spin up servers. (The login-shell
+  >     *output* pollution is already fixed — hooks/plugin-commands now run
+  >     under non-login `sh -c`.)
   >   - **CI-B** (below) — add cargo-audit / cargo-deny.
   >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
   >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).
