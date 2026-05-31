@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 fn prompt_cache_stub(_c: &mut Criterion) {
     // Placeholder benchmark for prompt caching

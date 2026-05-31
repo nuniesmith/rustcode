@@ -32,10 +32,10 @@
 // # }
 // ```
 
-use rag::{ChunkConfig, chunk_document};
 use crate::db::{create_chunks, get_document, mark_document_indexed, store_embedding};
-use rag::{EmbeddingConfig, EmbeddingGenerator};
 use anyhow::{Context, Result};
+use rag::{ChunkConfig, chunk_document};
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;

@@ -588,7 +588,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn completion_cache_round_trip_persists_recent_response() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -599,11 +598,14 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
-        // SAFETY: We hold the env_lock() guard throughout, preventing races
-        unsafe {
-            std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
-            std::env::remove_var("CLAUDE_CONFIG_HOME");
-        }
+        // Point the cache at an isolated temp dir for the whole test. The
+        // previous code set the var then *immediately removed it*, so the cache
+        // wrote to the real default config home and the temp_root cleanup below
+        // panicked with NotFound. test_set_var serializes the mutation safely.
+        test_set_var(
+            "CLAUDE_CONFIG_HOME",
+            temp_root.to_str().expect("temp path is valid UTF-8"),
+        );
         let cache = PromptCache::new("unit-test-session");
         let request = sample_request("cache me");
         let response = sample_response(42, 12, "cached");
@@ -626,11 +628,11 @@ mod tests {
             .expect("stats should persist");
         assert_eq!(persisted.completion_cache_hits, 1);
 
-        std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
+        test_remove_var("CLAUDE_CONFIG_HOME");
+        std::fs::remove_dir_all(&temp_root).ok();
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn distinct_requests_do_not_collide_in_completion_cache() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -641,11 +643,14 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
-        // SAFETY: We hold the env_lock() guard throughout, preventing races
-        unsafe {
-            std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
-            std::env::remove_var("CLAUDE_CONFIG_HOME");
-        }
+        // Point the cache at an isolated temp dir for the whole test. The
+        // previous code set the var then *immediately removed it*, so the cache
+        // wrote to the real default config home and the temp_root cleanup below
+        // panicked with NotFound. test_set_var serializes the mutation safely.
+        test_set_var(
+            "CLAUDE_CONFIG_HOME",
+            temp_root.to_str().expect("temp path is valid UTF-8"),
+        );
         let cache = PromptCache::new("distinct-request-session");
         let first_request = sample_request("first");
         let second_request = sample_request("second");
@@ -655,11 +660,11 @@ mod tests {
 
         assert!(cache.lookup_completion(&second_request).is_none());
 
-        std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
+        test_remove_var("CLAUDE_CONFIG_HOME");
+        std::fs::remove_dir_all(&temp_root).ok();
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn expired_completion_entries_are_not_reused() {
         let _guard = test_env_lock();
         let temp_root = std::env::temp_dir().join(format!(
@@ -670,11 +675,14 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ));
-        // SAFETY: We hold the env_lock() guard throughout, preventing races
-        unsafe {
-            std::env::set_var("CLAUDE_CONFIG_HOME", &temp_root);
-            std::env::remove_var("CLAUDE_CONFIG_HOME");
-        }
+        // Point the cache at an isolated temp dir for the whole test. The
+        // previous code set the var then *immediately removed it*, so the cache
+        // wrote to the real default config home and the temp_root cleanup below
+        // panicked with NotFound. test_set_var serializes the mutation safely.
+        test_set_var(
+            "CLAUDE_CONFIG_HOME",
+            temp_root.to_str().expect("temp path is valid UTF-8"),
+        );
         let cache = PromptCache::with_config(PromptCacheConfig {
             session_id: "expired-session".to_string(),
             completion_ttl: Duration::ZERO,
@@ -690,7 +698,8 @@ mod tests {
         assert_eq!(stats.completion_cache_hits, 0);
         assert_eq!(stats.completion_cache_misses, 1);
 
-        std::fs::remove_dir_all(temp_root).expect("cleanup temp root");
+        test_remove_var("CLAUDE_CONFIG_HOME");
+        std::fs::remove_dir_all(&temp_root).ok();
     }
 
     #[test]

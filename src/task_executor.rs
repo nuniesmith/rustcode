@@ -301,8 +301,8 @@ impl TaskExecutor {
         github_token: &str,
         _github_username: &str,
     ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| FailureOutcome::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // 1) Clone repository with token
@@ -389,11 +389,8 @@ impl TaskExecutor {
         // 5) Push branch
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -460,7 +457,14 @@ impl TaskExecutor {
         //    (or tags `needs-review` on failure). The watcher returns
         //    the TaskResult immediately; the poller updates the result
         //    file in place once CI settles.
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
@@ -574,8 +578,8 @@ impl TaskExecutor {
         github_token: &str,
         max_iterations: u32,
     ) -> std::result::Result<AgentToolSuccess, AgentToolFailure> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| AgentToolFailure::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| AgentToolFailure::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // 1) Clone — the agent needs a real working tree to edit.
@@ -613,8 +617,8 @@ impl TaskExecutor {
         //    call. A construction failure (bad config, broken plugin
         //    manifest) logs and falls back to the no-hooks path — a
         //    misconfigured plugin must not break task execution.
-        let tools = crate::agent::FileSystemTools::new(repo_path.clone())
-            .with_command_execution(true);
+        let tools =
+            crate::agent::FileSystemTools::new(repo_path.clone()).with_command_execution(true);
         let agent_task = build_agent_task(task);
         let pipeline_with_hooks = self.attach_plugin_hooks(pipeline);
         let pipeline_ref = pipeline_with_hooks.as_ref().unwrap_or(pipeline);
@@ -693,11 +697,8 @@ impl TaskExecutor {
         // 6) Push.
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -780,7 +781,14 @@ impl TaskExecutor {
             }
         }
 
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(AgentToolSuccess {
             pr_url: Some(pr.html_url),
@@ -931,8 +939,8 @@ impl TaskExecutor {
         pipeline_result: &crate::agent::PipelineResult,
         github_token: &str,
     ) -> std::result::Result<SuccessOutcome, FailureOutcome> {
-        let (owner, repo_name) = parse_owner_repo(&task.repo)
-            .map_err(|e| FailureOutcome::early(&task.steps, e))?;
+        let (owner, repo_name) =
+            parse_owner_repo(&task.repo).map_err(|e| FailureOutcome::early(&task.steps, e))?;
         let remote_url = format!("https://github.com/{}/{}.git", owner, repo_name);
 
         // Clone
@@ -979,14 +987,20 @@ impl TaskExecutor {
                         iter.plan
                             .steps
                             .iter()
-                            .map(|s| format!("{}. {} — {}", s.id, s.description, s.success_criteria))
+                            .map(|s| format!(
+                                "{}. {} — {}",
+                                s.id, s.description, s.success_criteria
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
                 )?;
                 for sr in &iter.step_results {
                     std::fs::write(
-                        dir.join(format!("iteration-{}-step-{}.md", iter.iteration, sr.step_id)),
+                        dir.join(format!(
+                            "iteration-{}-step-{}.md",
+                            iter.iteration, sr.step_id
+                        )),
                         format!(
                             "# Step {}\n\n## Description\n{}\n\n## Output\n{}",
                             sr.step_id, sr.step_description, sr.output
@@ -1025,11 +1039,8 @@ impl TaskExecutor {
         // Push
         let repo_path_push = repo_path.clone();
         let branch_for_push = branch.clone();
-        let auth_push_url = remote_url.replacen(
-            "https://",
-            &format!("https://{}@", github_token),
-            1,
-        );
+        let auth_push_url =
+            remote_url.replacen("https://", &format!("https://{}@", github_token), 1);
         if let Err(e) = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             run_git(
                 &repo_path_push,
@@ -1096,7 +1107,14 @@ impl TaskExecutor {
             }
         }
 
-        spawn_auto_merge(gh_client.clone(), &task.id, task.auto_merge, owner, repo_name, pr.number);
+        spawn_auto_merge(
+            gh_client.clone(),
+            &task.id,
+            task.auto_merge,
+            owner,
+            repo_name,
+            pr.number,
+        );
 
         Ok(SuccessOutcome {
             pr_url: Some(pr.html_url),
@@ -1348,7 +1366,10 @@ fn build_agent_task(task: &TaskFile) -> crate::agent::AgentTask {
     for (i, step) in task.steps.iter().enumerate() {
         context.push_str(&format!("{}. {}\n", i + 1, step));
     }
-    context.push_str(&format!("\nTarget repo: {}\nTarget branch: {}\n", task.repo, task.branch));
+    context.push_str(&format!(
+        "\nTarget repo: {}\nTarget branch: {}\n",
+        task.repo, task.branch
+    ));
     // Scope memory lookups to the task's repo so memories recorded against
     // this project (and globals) surface, but unrelated projects' memories
     // don't pollute the prompt.
@@ -1428,13 +1449,9 @@ fn spawn_auto_merge(
         "Spawning auto-merge poller"
     );
     tokio::spawn(async move {
-        let state = crate::task::automerge::poll_and_merge(
-            gh, owner, repo, pr_number, config,
-        )
-        .await;
-        if let Err(e) =
-            crate::task::automerge::update_result_with_merge_state(&task_id, state)
-        {
+        let state =
+            crate::task::automerge::poll_and_merge(gh, owner, repo, pr_number, config).await;
+        if let Err(e) = crate::task::automerge::update_result_with_merge_state(&task_id, state) {
             warn!(error = %e, task = %task_id, "auto-merge: result file update failed");
         }
     });
@@ -1534,12 +1551,8 @@ mod tests {
         let executor = TaskExecutor::new(gm, opts);
 
         let client = Arc::new(::api::AnthropicClient::new("test-key"));
-        let pipeline = crate::agent::AgentPipeline::new(
-            client.clone(),
-            client,
-            "claude-test",
-            "claude-test",
-        );
+        let pipeline =
+            crate::agent::AgentPipeline::new(client.clone(), client, "claude-test", "claude-test");
 
         assert!(
             executor.attach_plugin_hooks(&pipeline).is_none(),
@@ -1568,12 +1581,8 @@ mod tests {
         let executor = TaskExecutor::new(gm, opts);
 
         let client = Arc::new(::api::AnthropicClient::new("test-key"));
-        let pipeline = crate::agent::AgentPipeline::new(
-            client.clone(),
-            client,
-            "claude-test",
-            "claude-test",
-        );
+        let pipeline =
+            crate::agent::AgentPipeline::new(client.clone(), client, "claude-test", "claude-test");
 
         // Either Some (registry built cleanly even with no plugins) or
         // None (registry construction failed for some env-specific reason

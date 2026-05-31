@@ -292,8 +292,11 @@ fn shell_command(command: &str) -> CommandWithStdin {
         command_builder.arg(command);
         CommandWithStdin::new(command_builder)
     } else {
+        // Non-login shell (`-c`, not `-lc`): hook stdout is captured and parsed,
+        // so a login shell sourcing the operator's profile (nvm/pyenv banners, etc.)
+        // would pollute the result. The child still inherits this process's PATH/env.
         let mut command_builder = Command::new("sh");
-        command_builder.arg("-lc").arg(command);
+        command_builder.arg("-c").arg(command);
         CommandWithStdin::new(command_builder)
     };
 
@@ -337,7 +340,15 @@ impl CommandWithStdin {
         let mut child = self.command.spawn()?;
         if let Some(mut child_stdin) = child.stdin.take() {
             use std::io::Write as _;
-            child_stdin.write_all(stdin)?;
+            // A hook may ignore its stdin and exit before we finish writing,
+            // which surfaces as BrokenPipe (SIGPIPE is ignored process-wide).
+            // That is not a failure to start — capture the hook's output and
+            // exit status regardless.
+            if let Err(error) = child_stdin.write_all(stdin) {
+                if error.kind() != std::io::ErrorKind::BrokenPipe {
+                    return Err(error);
+                }
+            }
         }
         child.wait_with_output()
     }
@@ -352,11 +363,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(label: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("plugins-hook-runner-{label}-{nanos}"))
+        // pid + atomic sequence guarantee uniqueness even when parallel tests
+        // call this within the same clock tick (nanos resolution can be coarse).
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "plugins-hook-runner-{label}-{}-{nanos}-{seq}",
+            std::process::id()
+        ))
     }
 
     fn write_hook_plugin(

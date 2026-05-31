@@ -77,10 +77,7 @@ pub struct BashCommandOutput {
 
 // Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
-    let cwd = input
-        .cwd
-        .clone()
-        .map_or_else(env::current_dir, Ok)?;
+    let cwd = input.cwd.clone().map_or_else(env::current_dir, Ok)?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
 
     if input.run_in_background.unwrap_or(false) {

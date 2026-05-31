@@ -19,6 +19,4 @@ pub use embeddings::{
     Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
 };
 pub use file_language::FileLanguage;
-pub use vector_index::{
-    DistanceMetric, IndexConfig, SearchResult, VectorIndex,
-};
+pub use vector_index::{DistanceMetric, IndexConfig, SearchResult, VectorIndex};

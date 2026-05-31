@@ -10,9 +10,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::types::*;
-use rag::EmbeddingGenerator;
 use crate::indexing::IndexingConfig;
 use crate::search::{SearchConfig, SearchFilters, SearchQuery, SemanticSearcher};
+use rag::EmbeddingGenerator;
 use sqlx::PgPool;
 
 // ============================================================================

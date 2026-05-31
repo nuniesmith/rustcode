@@ -1303,9 +1303,7 @@ pub async fn run_clippy(project_path: &Path) -> ClippyResult {
     let project_path = project_path.to_path_buf();
     let output = tokio::task::spawn_blocking(move || {
         execute_bash(BashCommandInput {
-            command: String::from(
-                "cargo clippy --message-format=json --all-targets --quiet",
-            ),
+            command: String::from("cargo clippy --message-format=json --all-targets --quiet"),
             timeout: None,
             description: None,
             run_in_background: Some(false),
@@ -1436,10 +1434,7 @@ pub async fn run_clippy(project_path: &Path) -> ClippyResult {
 
 // Check how recently a file was modified in git
 pub fn check_file_staleness(repo_path: &Path, file_path: &str) -> Option<i64> {
-    let command = format!(
-        "git log -1 --format=%ct -- {}",
-        shell_quote(file_path),
-    );
+    let command = format!("git log -1 --format=%ct -- {}", shell_quote(file_path),);
     let output = execute_bash(BashCommandInput {
         command,
         timeout: None,

@@ -796,9 +796,7 @@ mod tests {
         // PR A; the audit must run with the global config verbatim,
         // matching pre-PR-C behaviour.
         let baseline = AuditRunnerConfig::default();
-        let overlaid = baseline
-            .clone()
-            .with_repo_skip_extensions_override(None);
+        let overlaid = baseline.clone().with_repo_skip_extensions_override(None);
         assert_eq!(overlaid.skip_extensions, baseline.skip_extensions);
         // Other fields must also pass through unchanged — the
         // override is scoped to skip_extensions only.
@@ -829,8 +827,8 @@ mod tests {
         // `skip_extensions.iter().any(...)`; an empty list short-
         // circuits to "skip nothing by extension," leaving only
         // `skip_paths` and `max_file_bytes` as filters.
-        let overlaid = AuditRunnerConfig::default()
-            .with_repo_skip_extensions_override(Some(Vec::new()));
+        let overlaid =
+            AuditRunnerConfig::default().with_repo_skip_extensions_override(Some(Vec::new()));
         assert!(overlaid.skip_extensions.is_empty());
     }
 
@@ -842,8 +840,8 @@ mod tests {
         // disturb — same invariant PR B locked for the scanner
         // (SKIP_DIRS is never overridable).
         let baseline_paths = AuditRunnerConfig::default().skip_paths;
-        let overlaid = AuditRunnerConfig::default()
-            .with_repo_skip_extensions_override(Some(Vec::new()));
+        let overlaid =
+            AuditRunnerConfig::default().with_repo_skip_extensions_override(Some(Vec::new()));
         assert_eq!(overlaid.skip_paths, baseline_paths);
     }
 }

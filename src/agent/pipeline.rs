@@ -744,7 +744,11 @@ impl AgentPipeline {
                     let output_owned = output_text.clone();
                     let post = if is_error {
                         tokio::task::spawn_blocking(move || {
-                            hooks.run_post_tool_use_failure(&name_owned, &input_owned, &output_owned)
+                            hooks.run_post_tool_use_failure(
+                                &name_owned,
+                                &input_owned,
+                                &output_owned,
+                            )
                         })
                         .await
                     } else {
@@ -1462,7 +1466,10 @@ mod tests {
     #[test]
     fn plugin_hooks_default_to_none() {
         let p = dummy_pipeline();
-        assert!(p.plugin_hooks.is_none(), "no hooks should be attached by default");
+        assert!(
+            p.plugin_hooks.is_none(),
+            "no hooks should be attached by default"
+        );
     }
 
     #[test]

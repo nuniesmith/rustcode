@@ -30,7 +30,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
 use crate::agent::{
-    AgentPipeline, AgentPipelineError, AgentTask, DEFAULT_MAX_ITERATIONS, Plan, PipelineEvent,
+    AgentPipeline, AgentPipelineError, AgentTask, DEFAULT_MAX_ITERATIONS, PipelineEvent, Plan,
     ReviewOutcome, StepExecutionResult,
 };
 use crate::api::proxy::{OaiError, ProxyState};
@@ -201,8 +201,8 @@ pub async fn handle_agent_run(
     // scope on the AgentTask stays `None` and memory lookups search across
     // every project plus globals.
     if let Some(memory) = state.repo_state.agent_memory.as_ref() {
-        pipeline_builder = pipeline_builder
-            .with_memory(Arc::clone(memory), crate::agent::DEFAULT_MEMORY_TOP_K);
+        pipeline_builder =
+            pipeline_builder.with_memory(Arc::clone(memory), crate::agent::DEFAULT_MEMORY_TOP_K);
         // `with_memory` enables session consolidation by default; honour
         // the same `RC_MEMORY_CONSOLIDATION=false` opt-out the watcher
         // path respects.
@@ -246,21 +246,24 @@ pub async fn handle_agent_run(
 
     let trailer = stream::once(async move {
         match result_rx.await {
-            Ok(Some((phase, message))) => Some(encode_frame(&AgentSseEvent::Error {
-                phase,
-                message,
-            })),
+            Ok(Some((phase, message))) => {
+                Some(encode_frame(&AgentSseEvent::Error { phase, message }))
+            }
             _ => None,
         }
     })
     .filter_map(|opt| async move { opt });
 
-    let merged = event_stream.chain(trailer).map(|data| {
-        Ok::<Event, Infallible>(Event::default().data(data))
-    });
+    let merged = event_stream
+        .chain(trailer)
+        .map(|data| Ok::<Event, Infallible>(Event::default().data(data)));
 
     Sse::new(merged)
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("ping"))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("ping"),
+        )
         .into_response()
 }
 

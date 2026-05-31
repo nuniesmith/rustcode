@@ -39,8 +39,8 @@
 // }
 // ```
 
-use crate::context::rag::{Context, ContextBuilder};
 use crate::cache::responses::ResponseCache;
+use crate::context::rag::{Context, ContextBuilder};
 use anyhow::{Context as AnyhowContext, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

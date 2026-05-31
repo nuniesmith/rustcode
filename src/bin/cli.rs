@@ -21,8 +21,8 @@ use rustcode::db::{
 // through `rustcode` at the top level — see `src/lib.rs`. `CacheSetParams`
 // is name-overloaded between the two caches, so we go through the submodule
 // path for the SQL variant and rename it locally.
-use rustcode::{CacheType, RepoCache, RepoCacheSql};
 use rustcode::repo::cache::CacheSetParams as SqlCacheSetParams;
+use rustcode::{CacheType, RepoCache, RepoCacheSql};
 
 // Todo pipeline imports
 use rustcode::todo::{

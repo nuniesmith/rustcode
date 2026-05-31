@@ -7,6 +7,200 @@
 > **RC-CRATES-D plugin migration prep completed:** 2026-04-06 — three tools migrated to bundled plugins
 > **Architecture review completed:** 2026-04-07 — Claude provider wiring, two-tier routing, agent loop, and memory system added
 > **CLAUDE-A/B/C resolved:** 2026-05-17 — Claude wired into `dispatch()`, two-tier routing live, prompt cache attached
+> **Repo review + forward backlog added:** 2026-05-31 — see "Active Backlog" below
+
+---
+
+## 🎯 Active Backlog — What's Next (2026-05-31 review)
+
+> **Snapshot:** branch `claude/dreamy-feynman-NM6EQ` == `origin/main` (through PR #68).
+> No open PR. Leaf crates (`api`, `github-client`, `runtime`, `plugins`, `tools`,
+> `telemetry`) compile clean; the `rustcode`/`rag` crates need the ONNX runtime
+> (`ort-sys`) to build, which is blocked in sandboxed CI environments.
+>
+> **Legend:** `[ ]` not started · `[~]` partially done (detail in the priority sections
+> below) · `[x]` done. ⭐ = newly surfaced in the 2026-05-31 review (detail under
+> "P0 — Engineering Health" just below this list).
+>
+> This block is the single forward-looking list. Each item links to its detail
+> section by ID; the long-form history of completed work is preserved unchanged below.
+
+### Tier 0 — Foundations (do first — these unblock or de-risk everything else)
+- [~] ⭐ **CI-A: GitHub Actions pipeline** — landed 2026-05-31 (`.github/workflows/ci.yml`):
+  blocking `fmt` + `clippy` + `test` (7 deterministic leaf crates), plus non-blocking
+  `test-extended` (env-sensitive tools/runtime/rusty-claude-cli) and `build` (full workspace;
+  ort CDN unproven on CI). Makes the async task agent's auto-merge "CI passing" gate
+  (`automerge.rs`) real for the first time. Follow-ups: CI-A.2 make `build` blocking + Postgres
+  test job, CI-A.3 tighten clippy to `-D warnings`, CI-A.4 promote env-sensitive crates into the
+  blocking gate. See the detail under *P0 — Engineering Health*.
+- [ ] ⭐ **CI-B: supply-chain + secret hygiene** — add `cargo-audit` (RUSTSEC advisories) and
+  `cargo-deny` (license/dup/ban) as a scheduled job; this is a security-adjacent tool that
+  clones arbitrary repos and holds tokens, so dependency drift matters.
+- [~] **RC-LLM-VERIFY: run `scripts/smoke_test.sh` against the live stack** and flip the 8
+  `[~]` probes under *P1 — API & Configuration → RC-LLM* to `[x]`. The script is written;
+  it has never been executed against a deployed Claude-enabled stack. Cheap, high-signal.
+
+### Tier 1 — Close out in-flight work (small, mostly mechanical)
+- [~] **RC-API skip-extensions dedupe** — collapse `AutoScanner::fetch_skip_extensions_override`
+  into the free `repo::sync::fetch_repo_skip_extensions` now that PR B + C are both merged
+  (the two helpers are byte-identical). See *P1 — RC-API: Security & Config*.
+- [~] **RC-EXTRACT-A slice 3** — extract a `Storage` trait so `src/indexing.rs` + `src/search.rs`
+  can move into `crates/rag` without dragging in the full DB layer. The gnarly slice; last one
+  blocking the rag crate's independence. See *P2 — Crate Extractions*.
+- [~] **RC-CRATES-C: wire `runtime::ProviderClient` + `worker_boot`** — the `Command::new`
+  subprocess migration across `src/` is 100% done; only the entry-point wiring remains.
+  See *P1 — New Crates Integration*.
+- [~] **RC-CRATES-E: MCP tool-bridge endpoints on :3501** — the placeholder listener is live
+  (`/healthz` only); decide JSON-RPC vs REST and expose `runtime::McpToolRegistry` tools.
+- [ ] ⭐ **CLEANUP-H: finish the SQLite→Postgres migration** — 11 tests are `#[ignore]`'d
+  because `RepoCacheSql` / `ResponseCache` / `CacheMigrator` still embed SQLite in a
+  "postgres-only" build (`src/repo/cache.rs`, `src/cache/{responses,migrate}.rs`). Re-home or
+  delete the SQLite paths so those tests run again. Subsumes / unblocks **RC-CLEANUP-C**.
+- [~] **RC-CLEANUP-C: delete the old file-based repo cache** — structural move done; deletion
+  deferred pending (a) SQL-path production verification, (b) `CacheType`/`RepoCacheEntry` type
+  extraction, (c) `cache/migrate.rs` removal, (d) `cli.rs cache init` decision. Pairs with CLEANUP-H.
+
+### Tier 2 — Features & integrations
+- [ ] ⭐ **AUDIT-CACHE: implement `RedisAuditCache`** — every method in `src/audit/cache.rs` is
+  a `todo!()` stub, so audit-result dedup (the documented "skip re-auditing unchanged files"
+  feature) is non-functional. Structs + trait are fully defined; implement the Redis I/O.
+- [~] **RC-CRATES-B: finish LLM-client migration** — `grok_reasoning.rs` (needs an xAI
+  `/responses` client in the `api` crate) and `ollama_client.rs` (needs Ollama-native
+  `num_ctx`/NDJSON support) are the last 2 of 5. Both need `api`-crate features first.
+- [ ] **CLAW-A/B: OpenClaw integration** — Discord bot (replace passive webhook), build/pull
+  OpenClaw image (resolve the ~760MB-heap OOM first), `@openclaw status` smoke test, register
+  rustcode's own repo for self-RAG. See *P1 — API & Configuration → OpenClaw*.
+- [ ] **OpenClaw LLM wiring (futures app)** — point the trading app at the RC proxy
+  (`RC_BASE_URL`/`RC_API_KEY`/`RC_MODEL`/`RC_REPO_ID`), validate cache-hit metadata + Grok
+  fallback. See *P1 — OpenClaw LLM Wiring*.
+- [ ] **OSS-D: agent persona integration** — adapt the FKS personas into `prompt_tier.rs`
+  system-prompt templates for task-based routing. Prereq for **AGENT-E** (persona memory).
+- [ ] **Promptfoo CI** — `.github/workflows/prompt-eval.yml` running `promptfoo eval` on prompt
+  changes; folds naturally into CI-A once that lands.
+
+### Tier 3 — Larger refactors & longer horizon
+- [~] **RC-API routing-heuristic tuning** — `proxy.dispatch` structured logging is live; this is
+  blocked on aggregating that log stream from a *deployed* stack (Loki/Promtail or a Postgres
+  roll-up) and adjusting `ModelRouter::llm_classify` from observed misclassifications.
+- [ ] **RC-EXTRACT-B: `crates/code-analysis`** — extract the synchronous pre-filter pipeline
+  (`static_analysis`, `parser`, `scoring`, `formatter`). Do after RC-EXTRACT-A slice 3.
+- [ ] **RC-EXTRACT-D: `crates/llm`** — promote the consolidated `src/llm/` into a standalone
+  crate wrapping `crates/api`. Prereq: RC-CLEANUP-A (done) + RC-CRATES-B (the last 2 migrations).
+- [ ] **Split the god-files** — `crates/rusty-claude-cli/src/main.rs` (7.8K LoC),
+  `crates/tools/src/lib.rs` (7.3K), `crates/commands/src/lib.rs` (4.3K),
+  `crates/plugins/src/lib.rs` (3.4K) are single-file crates; break into modules by command group.
+- [ ] ⭐ **TEST-FLAKY: de-flake `mcp_stdio` timing test** — un-ignore the timing-sensitive test in
+  `crates/runtime/src/mcp_stdio.rs` (fix the race or make it deterministic) and remove the dangling
+  "ROADMAP P2.15" reference (no such doc exists — this `TODO.md` is the only roadmap).
+- [ ] **OSS-B: OpenViking** — stand up an instance, ingest docs/strategies, compare retrieval
+  quality vs the current HNSW index.
+- [ ] **AGENT-E: persona-scoped memory** — after OSS-D, store per-persona memories separately.
+
+---
+
+## P0 — Engineering Health (surfaced 2026-05-31)
+
+> New, untracked work found during the 2026-05-31 repo review. These items either gate other
+> work (CI) or represent shipped-but-non-functional surface area (audit cache, ignored tests).
+
+- [~] **CI-A: GitHub Actions pipeline**
+  > **Landed 2026-05-31** in `.github/workflows/ci.yml`. Blocking jobs: `fmt`
+  > (`cargo fmt --all --check`), `clippy` (leaf crates, `--all-targets`),
+  > `test` (the 7 leaf crates whose suites are deterministic: api, commands,
+  > compat-harness, github-client, mock-anthropic-service, plugins, telemetry).
+  > Non-blocking jobs (`continue-on-error`): `test-extended` (tools, runtime,
+  > rusty-claude-cli — environment-sensitive) and `build` (full workspace incl.
+  > rustcode + rag — `ort` downloads the ONNX runtime; its CDN 403s some cloud
+  > IPs). Uses `dtolnay/rust-toolchain@stable` + `Swatinem/rust-cache@v2`, with
+  > `concurrency` cancel-in-progress. `--locked` is intentionally omitted
+  > (Cargo.lock is gitignored).
+  >
+  > Key facts discovered while building it:
+  >   - **No DB needed to build.** sqlx is runtime-mode here (no `query!`
+  >     macros, no `.sqlx` cache), so `cargo build`/`clippy` need no
+  >     `DATABASE_URL`. Only PgPool tests need Postgres → see CI-A.2.
+  >   - **`fmt` was red:** 34 files were never rustfmt'd. Fixed by a one-off
+  >     `cargo fmt --all` commit so the job is green from run one.
+  >   - **`clippy` is intentionally not `-D warnings`.** The workspace opts
+  >     into clippy pedantic+nursery at `warn` (`[workspace.lints]`) and has a
+  >     large backlog (175 warnings in `runtime` alone). The job surfaces
+  >     lints without failing; tightening to `-D warnings` after burning the
+  >     backlog down is a follow-up.
+  >   - **`test` surfaced 3 real api bugs** (fixed in the same PR): a
+  >     prompt-cache temp-dir cleanup panic, stale anthropic-beta assertions,
+  >     and an XAI_API_KEY parallel-test race. See the `test(api):` commit.
+  >   - **The first green run surfaced more, fixed here:** `build` failed on
+  >     the ort CDN 403 (now non-blocking). `test` failed on the `plugins`
+  >     `aggregates_and_executes_plugin_tools` test, which counted the repo's
+  >     real `bundled/` plugins (4 tools, not 1) because it isolated
+  >     `config_home` but not `bundled_root` — fixed by isolating bundled_root.
+  >     Also hardened the two `temp_dir` test helpers (pid + atomic counter)
+  >     against same-clock-tick parallel collisions, and switched hook /
+  >     plugin-command execution from login `sh -lc` to non-login `sh -c` so
+  >     profile banners (nvm/pyenv) no longer pollute captured/parsed output.
+  >   - **Per-crate matrix exposed a real hook-runner race.** Fanning `test`
+  >     out per crate (so a failing crate names itself) pinned a CI-only
+  >     `plugins` failure — invisible in the sandbox, no Actions-log access — to
+  >     a `BrokenPipe` (EPIPE): the hook runner writes the hook input to the
+  >     child's stdin, but a hook that ignores stdin and exits first closes the
+  >     pipe. This is a *production* bug (intermittent "hook failed to start"),
+  >     not just a test issue — fixed in both the `plugins` and `runtime` hook
+  >     runners by tolerating BrokenPipe on the stdin write. Separately, `build`
+  >     compiled the full workspace on a GitHub runner (ort downloaded fine); it
+  >     stays non-blocking (step-level `continue-on-error`) until that download
+  >     is proven stable across runs.
+  >
+  > **Follow-ups:**
+  >   - **CI-A.2** — make `build` blocking + add a DB-backed test job. `build`
+  >     is `continue-on-error` until the `ort-sys` ONNX download is proven on
+  >     GitHub runners (its CDN 403s some cloud IPs; it also 403s the dev
+  >     sandbox, so rustcode/rag can't be validated locally). Then add a
+  >     `postgres:16` service + `DATABASE_URL` + `sql/*.sql` migrations and run
+  >     the rustcode-crate PgPool tests.
+  >   - **CI-A.3** — tighten `clippy` to `-D warnings` once the
+  >     pedantic/nursery backlog is cleared.
+  >   - **CI-A.4** — promote `test-extended` (tools, runtime, rusty-claude-cli)
+  >     into the blocking `test` job once their suites are environment-robust.
+  >     Known fragilities: `tools` web_search spins up a loopback mock server a
+  >     proxy can intercept (→ request error → server-thread panic → process
+  >     abort, which fails ~7 sibling tests as collateral); `runtime` oauth
+  >     tests serialize on a process-global env lock that can hang; the
+  >     `rusty-claude-cli` integration tests spin up servers. (The login-shell
+  >     *output* pollution is already fixed — hooks/plugin-commands now run
+  >     under non-login `sh -c`.)
+  >   - **CI-B** (below) — add cargo-audit / cargo-deny.
+  >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
+  >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).
+  > This is the prerequisite that makes the async task agent's auto-merge
+  > contract real — `automerge.rs` polls for "CI success" that, until now,
+  > nothing produced.
+
+- [ ] **CI-B: supply-chain + secret hygiene**
+  > Add a scheduled (weekly) job running `cargo audit` (RUSTSEC) and `cargo deny check`
+  > (licenses, duplicate deps, banned crates). Optional: a `gitleaks`/secret-scan step, since the
+  > service handles `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and DB creds.
+
+- [ ] **AUDIT-CACHE: implement `RedisAuditCache`**
+  > `src/audit/cache.rs` defines `AuditCacheConfig`, the cache entry structs, and the trait — but
+  > every `RedisAuditCache` method body is `todo!()` (see the `# TODO(scaffolder): implement`
+  > header in the file). The audit pipeline's content-hash dedup is therefore a no-op. Implement
+  > the Redis I/O against the existing response-cache Redis pool (`allkeys-lru`); key scheme is
+  > already documented in the module header. Add round-trip tests behind a Redis test service
+  > (reuse the CI-A service-container pattern).
+
+- [ ] **CLEANUP-H: finish SQLite→Postgres migration / re-enable ignored tests**
+  > 11 tests carry `#[ignore = "... uses SQLite internally; not available in postgres-only build"]`:
+  >   - `src/repo/cache.rs` ×6 (`RepoCacheSql`)
+  >   - `src/cache/responses.rs` ×2 (`ResponseCache`)
+  >   - `src/cache/migrate.rs` ×3 (`CacheMigrator`)
+  > These are dead coverage left from the partial migration. Decide per type: port the test to
+  > Postgres, or delete the SQLite code path entirely (the latter also closes **RC-CLEANUP-C**,
+  > since `cache/migrate.rs`'s only job — moving file/SQLite cache → SQL — becomes vacuous).
+
+- [ ] **TEST-FLAKY: de-flake the `mcp_stdio` timing test + remove stale roadmap pointer**
+  > `crates/runtime/src/mcp_stdio.rs:~2656` is `#[ignore = "flaky: intermittent timing issues in
+  > CI, see ROADMAP P2.15"]`. There is no `ROADMAP` doc (only this `TODO.md`). Fix the timing race
+  > (or make the assertion deterministic) so it can run under CI-A, and drop the dangling reference.
 
 ---
 
@@ -1394,6 +1588,10 @@
 
 - [ ] OSS-B: OpenViking — stand up Docker instance, ingest FKS docs/strategies, compare retrieval quality vs current HNSW
 - [ ] CI/CD re-enable: move `ci-cd.yml` back to `.github/workflows/` after OpenClaw OOM fix + Tailscale second-device verification
+  > **Superseded by CI-A (2026-05-31 review):** no `ci-cd.yml` exists in the repo anymore, so
+  > there is nothing to "move back" — CI must be created from scratch. Track under **CI-A** in
+  > *P0 — Engineering Health*. This line stays only as a pointer to the original intent
+  > (Tailscale second-device verification was the historical blocker).
 - [ ] Split `crates/commands/src/lib.rs` (140K, skipped in pack as too large) — it's currently a single-file crate with no internal module structure; break into submodules by command group
 - [ ] Split `crates/rusty-claude-cli/src/main.rs` (272K, skipped in pack) — same issue
 - [x] **MEM-E: memory dashboard** — `GET /api/v1/memory` endpoint listing stored entries with importance scores; `DELETE /api/v1/memory/:id` for manual pruning; expose in OpenWebUI via a custom tool

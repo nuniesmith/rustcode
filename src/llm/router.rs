@@ -8,7 +8,9 @@
 // is replaced by `max_tokens: 16` which the compat endpoint translates back to
 // the same Ollama option.
 
-use api::{InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock};
+use api::{
+    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -236,10 +238,7 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             &prompt[..prompt.len().min(400)] // cap to keep the request tiny
         );
 
-        let base_url = format!(
-            "{}/v1",
-            self.config.local_base_url.trim_end_matches('/')
-        );
+        let base_url = format!("{}/v1", self.config.local_base_url.trim_end_matches('/'));
         let client = OpenAiCompatClient::new("", OpenAiCompatConfig::openai())
             .with_base_url(base_url)
             // Best-effort classifier; the keyword fallback handles failures, so
@@ -260,22 +259,19 @@ RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
             stream: false,
         };
 
-        let response = match tokio::time::timeout(
-            Duration::from_secs(8),
-            client.send_message(&request),
-        )
-        .await
-        {
-            Ok(Ok(response)) => response,
-            Ok(Err(e)) => {
-                debug!(error = %e, "LLM classifier: Ollama request failed — using keywords");
-                return None;
-            }
-            Err(_) => {
-                debug!("LLM classifier: Ollama request timed out — using keywords");
-                return None;
-            }
-        };
+        let response =
+            match tokio::time::timeout(Duration::from_secs(8), client.send_message(&request)).await
+            {
+                Ok(Ok(response)) => response,
+                Ok(Err(e)) => {
+                    debug!(error = %e, "LLM classifier: Ollama request failed — using keywords");
+                    return None;
+                }
+                Err(_) => {
+                    debug!("LLM classifier: Ollama request timed out — using keywords");
+                    return None;
+                }
+            };
 
         let label = response
             .content

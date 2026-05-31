@@ -979,8 +979,8 @@ mod tests {
         chat_completions_endpoint, flatten_system_blocks, normalize_finish_reason,
         openai_tool_choice, parse_tool_arguments,
     };
-    use crate::types::{CacheControl, SystemBlock};
     use crate::error::ApiError;
+    use crate::types::{CacheControl, SystemBlock};
     use crate::types::{
         InputContentBlock, InputMessage, MessageRequest, ToolChoice, ToolDefinition,
         ToolResultContentBlock,
@@ -1233,9 +1233,6 @@ mod tests {
 
         // Empty input collapses to None so the system message is omitted.
         assert_eq!(flatten_system_blocks(None), None);
-        assert_eq!(
-            flatten_system_blocks(Some(&[SystemBlock::text("")])),
-            None
-        );
+        assert_eq!(flatten_system_blocks(Some(&[SystemBlock::text("")])), None);
     }
 }

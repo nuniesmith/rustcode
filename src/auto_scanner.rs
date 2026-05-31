@@ -26,8 +26,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 use crate::db::scan_events;
+use crate::llm::usage::costs::{CostTracker, StaticDecisionRecord};
 
 // Run `git <args>` inside `repo_path` via `runtime::execute_bash`.
 //
@@ -756,10 +756,7 @@ impl AutoScanner {
         // 1. Check for committed changes since last known hash
         if let (Some(old_hash), Some(new_hash)) = (last_commit_hash, current_head) {
             if old_hash != new_hash {
-                let output = run_git_in(
-                    repo_path,
-                    &["diff", "--name-status", old_hash, new_hash],
-                );
+                let output = run_git_in(repo_path, &["diff", "--name-status", old_hash, new_hash]);
 
                 match output {
                     Ok(out) if out.return_code_interpretation.is_none() => {
@@ -867,8 +864,7 @@ impl AutoScanner {
         // Try to get files changed in the last 5 commits first.
         // This may fail for repos that have fewer than 5 commits (e.g. HEAD~5
         // doesn't exist), so we fall back to listing every tracked file in HEAD.
-        let diff_output =
-            run_git_in(repo_path, &["diff", "--name-only", "HEAD~5", "HEAD"]);
+        let diff_output = run_git_in(repo_path, &["diff", "--name-only", "HEAD~5", "HEAD"]);
 
         let used_diff = match diff_output {
             Ok(ref out) if out.return_code_interpretation.is_none() => {
@@ -906,8 +902,7 @@ impl AutoScanner {
                 "First-scan fallback: listing all tracked files in HEAD for {}",
                 repo_path.display()
             );
-            let ls_output =
-                run_git_in(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]);
+            let ls_output = run_git_in(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]);
 
             match ls_output {
                 Ok(out) if out.return_code_interpretation.is_none() => {
@@ -1042,10 +1037,7 @@ impl AutoScanner {
 
     /// Per-repo-aware variant of `should_analyze_file`. See
     /// `should_skip_path_with` for the override semantics.
-    fn should_analyze_file_with(
-        file_path: &str,
-        repo_skip_extensions: Option<&[String]>,
-    ) -> bool {
+    fn should_analyze_file_with(file_path: &str, repo_skip_extensions: Option<&[String]>) -> bool {
         Self::is_analyzable_file(file_path)
             && !Self::should_skip_path_with(file_path, repo_skip_extensions)
     }

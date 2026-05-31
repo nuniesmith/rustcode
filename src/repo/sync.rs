@@ -3,8 +3,8 @@
 // Handles repo registration, tree snapshots, TODO extraction, and .rustcode/ cache management
 
 use crate::db::store_embedding;
-use rag::{EmbeddingConfig, EmbeddingGenerator};
 use crate::research::worker::refresh_rag_index;
+use rag::{EmbeddingConfig, EmbeddingGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
