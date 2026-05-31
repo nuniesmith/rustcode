@@ -6737,6 +6737,7 @@ UU conflicted.rs",
         git(&["init", "--quiet"], &root);
         git(&["config", "user.email", "tests@example.com"], &root);
         git(&["config", "user.name", "Rusty Claude Tests"], &root);
+        git(&["config", "commit.gpgsign", "false"], &root);
         fs::write(root.join("tracked.txt"), "hello\n").expect("write file");
         git(&["add", "tracked.txt"], &root);
         git(&["commit", "-m", "init", "--quiet"], &root);
@@ -6755,6 +6756,7 @@ UU conflicted.rs",
         git(&["init", "--quiet"], &root);
         git(&["config", "user.email", "tests@example.com"], &root);
         git(&["config", "user.name", "Rusty Claude Tests"], &root);
+        git(&["config", "commit.gpgsign", "false"], &root);
         fs::write(root.join("tracked.txt"), "hello\n").expect("write file");
         git(&["add", "tracked.txt"], &root);
         git(&["commit", "-m", "init", "--quiet"], &root);
@@ -6780,6 +6782,7 @@ UU conflicted.rs",
         git(&["init", "--quiet"], &root);
         git(&["config", "user.email", "tests@example.com"], &root);
         git(&["config", "user.name", "Rusty Claude Tests"], &root);
+        git(&["config", "commit.gpgsign", "false"], &root);
         fs::write(root.join(".gitignore"), ".omx/\nignored.txt\n").expect("write gitignore");
         fs::write(root.join("tracked.txt"), "hello\n").expect("write tracked");
         git(&["add", ".gitignore", "tracked.txt"], &root);
@@ -6805,6 +6808,7 @@ UU conflicted.rs",
         git(&["init", "--quiet"], &root);
         git(&["config", "user.email", "tests@example.com"], &root);
         git(&["config", "user.name", "Rusty Claude Tests"], &root);
+        git(&["config", "commit.gpgsign", "false"], &root);
         fs::write(root.join("tracked.txt"), "hello\n").expect("write tracked");
         git(&["add", "tracked.txt"], &root);
         git(&["commit", "-m", "init", "--quiet"], &root);

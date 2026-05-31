@@ -170,12 +170,20 @@
   >       quirks (nvm login-shell noise → take the last stdout line; global
   >       `commit.gpgsign=true` → set `commit.gpgsign false` per temp repo). Full
   >       suite now 362/0 locally and green per-crate on CI.
-  >     - **`tools` — partial.** Fixed web_search (a stale `/fallback` vs
-  >       `/search` mock assertion that aborted the process) + the git-identity
-  >       gpgsign tests. Remaining before promotion: `enter/exit_plan_mode`
-  >       (Bool(false)), `agent_fake_runner` (Null), `skill_loads_local_skill`
-  >       — investigate whether real or sandbox-coupled.
-  >     - **`rusty-claude-cli`** — not yet examined (integration servers).
+  >     - **`tools` — DONE (promoted).** Fixed web_search (stale `/fallback` vs
+  >       `/search` mock assertion → server-thread panic → `TestServer::Drop`
+  >       double-panic → process abort), enter/exit plan-mode (built a temp
+  >       workspace but never `set_current_dir` into it → operated on the real
+  >       cwd), `skill` (poison-tolerant env lock), and made the nvm/python/gpgsign
+  >       tests sandbox-tolerant. Last blocker — `agent_fake_runner` asserting a
+  >       structured `currentBlocker.failureClass` while the manifest field was
+  >       `Option<String>` — resolved by making `current_blocker`
+  >       `Option<LaneEventBlocker>` (serializes `{failureClass, detail}`, matching
+  >       `laneEvents`; only in-repo consumer uses `.is_some()`). Suite 59/0.
+  >     - **`rusty-claude-cli` — still test-extended.** Fixed its gpgsign git-diff
+  >       tests, but `mock_parity_harness` reads `mock_parity_scenarios.json` (repo
+  >       root) which is **absent / untracked** — a long-broken test masked because
+  >       cli is non-blocking. Restore the fixture (or skip the test) to promote.
   >   - **CI-B** (below) — add cargo-audit / cargo-deny.
   >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
   >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).
