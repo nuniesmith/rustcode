@@ -20,6 +20,17 @@ license    = "MIT"
 repository = "https://github.com/nuniesmith/rustcode"
 publish    = false
 
+# cargo-binstall: fetch the prebuilt binaries published by
+# .github/workflows/release.yml instead of compiling. Usage:
+#   cargo binstall --git https://github.com/nuniesmith/rustcode rustcode
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 # ============================================================================
 # Workspace — active only when rustcode/ is the workspace root (standalone).
 # Ignored when nested inside FKS.

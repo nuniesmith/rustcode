@@ -1,0 +1,129 @@
+name: release
+
+# Builds prebuilt binaries when `scripts/release.sh` pushes a `vX.Y.Z` tag (or
+# on manual dispatch), then attaches the archives to the matching GitHub
+# Release. Paired with the `[package.metadata.binstall]` blocks in the crate
+# manifests so `cargo binstall --git <repo> <crate>` finds these assets.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            rustflags: "-C link-arg=-Wl,-rpath,$ORIGIN"
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+            rustflags: "-C link-arg=-Wl,-rpath,@loader_path"
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar.gz
+            rustflags: "-C link-arg=-Wl,-rpath,@loader_path"
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            rustflags: ""
+    env:
+      TARGET: ${{ matrix.target }}
+      FMT: ${{ matrix.archive }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version from tag
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "TAG=${REF}" >> "$GITHUB_ENV"
+          echo "VERSION=${REF#v}" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake pkg-config libssl-dev
+
+      - name: Build release binaries
+        shell: bash
+        run: cargo build --release --locked --target "$TARGET" -p rustcode -p rusty-claude-cli
+
+      - name: Package archives + checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          BINDIR="target/${TARGET}/release"
+          EXT=""
+          case "$TARGET" in *windows*) EXT=".exe";; esac
+          mkdir -p dist
+
+          pkg() {
+            crate="$1"; shift
+            name="${crate}-${VERSION}-${TARGET}"
+            rm -rf "stage/$name"
+            mkdir -p "stage/$name"
+            for bin in "$@"; do
+              cp "$BINDIR/${bin}${EXT}" "stage/$name/${bin}${EXT}"
+            done
+            # Best effort: bundle the ONNX Runtime shared lib if the build emitted
+            # one next to the binaries (fastembed/ort). Harmless when statically linked.
+            find "$BINDIR" -maxdepth 1 \( -name 'libonnxruntime*' -o -name 'onnxruntime*.dll' \) \
+              -exec cp {} "stage/$name/" \; || true
+            cp README.md LICENSE "stage/$name/" || true
+            if [ "$FMT" = "zip" ]; then
+              ( cd stage && 7z a -tzip "../dist/${name}.zip" "$name" >/dev/null )
+            else
+              tar czf "dist/${name}.tar.gz" -C stage "$name"
+            fi
+            echo "packaged dist/${name}.${FMT}"
+          }
+
+          pkg rustcode rustcode rustcode-cli github-sync-daemon
+          pkg rusty-claude-cli claw
+
+          ( cd dist
+            for f in *; do
+              case "$f" in *.sha256) continue;; esac
+              if command -v sha256sum >/dev/null 2>&1; then sha256sum "$f" > "$f.sha256"
+              else shasum -a 256 "$f" > "$f.sha256"; fi
+            done )
+          ls -l dist
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: dist/*
+          fail_on_unmatched_files: true

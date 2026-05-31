@@ -3,7 +3,19 @@ name = "rusty-claude-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+
+# cargo-binstall: fetch prebuilt binaries published by
+# .github/workflows/release.yml. Usage:
+#   cargo binstall --git https://github.com/nuniesmith/rustcode rusty-claude-cli
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [[bin]]
 name = "claw"

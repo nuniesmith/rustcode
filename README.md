@@ -43,7 +43,54 @@ Request → ModelRouter::classify_prompt_async()
 Anthropic is the primary path when `ANTHROPIC_API_KEY` is set. Grok and Ollama are
 fallbacks; either can be enabled independently.
 
-## Quick start
+## Install
+
+### Prebuilt binaries (no compiling)
+
+Tagged releases publish prebuilt binaries for Linux, macOS, and Windows on the
+[Releases page](https://github.com/nuniesmith/rustcode/releases). Download and
+extract an archive, or let [cargo-binstall](https://github.com/cargo-bins/cargo-binstall)
+fetch them for you:
+
+```bash
+cargo binstall --git https://github.com/nuniesmith/rustcode rustcode          # server + helpers
+cargo binstall --git https://github.com/nuniesmith/rustcode rusty-claude-cli  # claw CLI
+```
+
+### From source
+
+Compile and install with Cargo. Requires a recent stable Rust toolchain (1.85+
+for the 2024 edition) and a C compiler for the native dependencies; the first
+build compiles everything from source.
+
+```bash
+# Server + helper binaries (installs `rustcode`, `rustcode-cli`, `github-sync-daemon`)
+cargo install --git https://github.com/nuniesmith/rustcode --locked rustcode
+
+# Interactive CLI (installs `claw`)
+cargo install --git https://github.com/nuniesmith/rustcode --locked rusty-claude-cli
+
+# Pin to a released tag instead of the default branch
+cargo install --git https://github.com/nuniesmith/rustcode --tag v0.1.0 --locked rustcode
+
+# Just the server binary, nothing else
+cargo install --git https://github.com/nuniesmith/rustcode --locked --bin rustcode rustcode
+```
+
+Then configure and run:
+
+```bash
+cp .env.example .env     # set ANTHROPIC_API_KEY (or XAI_API_KEY) and DATABASE_URL
+rustcode --server        # start the server
+claw                     # start the interactive CLI
+```
+
+> **Not on crates.io.** The names `rustcode`, `api`, `runtime`, `tools`,
+> `plugins`, `rag`, and `telemetry` are all already taken on crates.io, so
+> rustcode is distributed via `cargo install --git`. Cut a new tagged release
+> with `./scripts/release.sh patch|minor|major`.
+
+## Build from source
 
 ```bash
 # Clone and build
