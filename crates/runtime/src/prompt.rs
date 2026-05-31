@@ -505,7 +505,6 @@ mod tests {
         render_instruction_content, render_instruction_files, truncate_instruction_content,
     };
     use crate::config::ConfigLoader;
-    use crate::{test_remove_var, test_set_var};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -661,6 +660,11 @@ mod tests {
             .current_dir(&root)
             .status()
             .expect("git config name should run");
+        std::process::Command::new("git")
+            .args(["config", "commit.gpgsign", "false"])
+            .current_dir(&root)
+            .status()
+            .expect("git config gpgsign should run");
         fs::write(root.join("tracked.txt"), "hello\n").expect("write tracked file");
         std::process::Command::new("git")
             .args(["add", "tracked.txt"])
@@ -685,6 +689,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn load_system_prompt_reads_claude_files_and_config() {
         let root = temp_dir();
         fs::create_dir_all(root.join(".claw")).expect("claw dir");
@@ -700,11 +705,16 @@ mod tests {
         let previous = std::env::current_dir().expect("cwd");
         let original_home = std::env::var("HOME").ok();
         let original_claw_home = std::env::var("CLAW_CONFIG_HOME").ok();
-        test_set_var("HOME", root.to_string_lossy().as_ref());
-        test_set_var(
-            "CLAW_CONFIG_HOME",
-            root.join("missing-home").to_string_lossy().as_ref(),
-        );
+        // SAFETY: `_guard` holds the process-wide env lock for this test, so
+        // these direct env mutations are race-free. test_set_var would
+        // re-acquire that same non-reentrant lock on this thread and deadlock.
+        unsafe {
+            std::env::set_var("HOME", root.to_string_lossy().as_ref());
+            std::env::set_var(
+                "CLAW_CONFIG_HOME",
+                root.join("missing-home").to_string_lossy().as_ref(),
+            );
+        }
         std::env::set_current_dir(&root).expect("change cwd");
         let prompt = super::load_system_prompt(&root, "2026-03-31", "linux", "6.8")
             .expect("system prompt should load")
@@ -714,15 +724,18 @@ mod tests {
 ",
             );
         std::env::set_current_dir(previous).expect("restore cwd");
-        if let Some(value) = original_home {
-            test_set_var("HOME", &value);
-        } else {
-            test_remove_var("HOME");
-        }
-        if let Some(value) = original_claw_home {
-            test_set_var("CLAW_CONFIG_HOME", &value);
-        } else {
-            test_remove_var("CLAW_CONFIG_HOME");
+        // SAFETY: still holding `_guard` (the process-wide env lock).
+        unsafe {
+            if let Some(value) = original_home {
+                std::env::set_var("HOME", &value);
+            } else {
+                std::env::remove_var("HOME");
+            }
+            if let Some(value) = original_claw_home {
+                std::env::set_var("CLAW_CONFIG_HOME", &value);
+            } else {
+                std::env::remove_var("CLAW_CONFIG_HOME");
+            }
         }
 
         assert!(prompt.contains("Project rules"));

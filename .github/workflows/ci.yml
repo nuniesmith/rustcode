@@ -82,8 +82,8 @@ jobs:
     # Blocking gate, fanned out per crate so a failing crate names itself in the
     # check title (e.g. `test (api)`). `fail-fast: false` runs every crate even
     # when one fails. The two ONNX crates (rustcode, rag) compile in `build`; the
-    # three environment-sensitive crates (tools, runtime, rusty-claude-cli) run
-    # in the non-blocking `test-extended` job below. Network/API-key tests are
+    # remaining environment-sensitive crates (tools, rusty-claude-cli) run in the
+    # non-blocking `test-extended` job below. Network/API-key tests are
     # #[ignore]'d in-tree; Postgres tests live in rustcode (DB job, CI-A.2).
     strategy:
       fail-fast: false
@@ -95,6 +95,7 @@ jobs:
           - github-client
           - mock-anthropic-service
           - plugins
+          - runtime
           - telemetry
     steps:
       - uses: actions/checkout@v4
@@ -111,11 +112,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Non-blocking via step-level continue-on-error → the job stays GREEN even
       # when these fail (job-level continue-on-error would still report a failed
-      # check). These suites depend on the runner environment (loopback HTTP a
-      # proxy can intercept, a process-global env lock, integration servers).
-      # Run for visibility; promoting them into the blocking `test` job once
-      # hardened is tracked as CI-A.4.
-      - run: cargo test -p tools -p runtime -p rusty-claude-cli
+      # check). `runtime` graduated into the blocking `test` matrix once its
+      # re-entrant env-lock deadlocks were fixed; `tools` and `rusty-claude-cli`
+      # remain here (tools still has a few env-coupled tests; cli spins up
+      # integration servers). Promoting the rest is tracked as CI-A.4.
+      - run: cargo test -p tools -p rusty-claude-cli
         continue-on-error: true
 
   build:

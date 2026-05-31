@@ -463,7 +463,6 @@ mod tests {
         generate_pkce_pair, generate_state, load_oauth_credentials, loopback_redirect_uri,
         parse_oauth_callback_query, parse_oauth_callback_request_target, save_oauth_credentials,
     };
-    use crate::{test_remove_var, test_set_var};
 
     fn sample_config() -> OAuthConfig {
         OAuthConfig {
@@ -546,10 +545,19 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn oauth_credentials_round_trip_and_clear_preserves_other_fields() {
+        // Hold the env lock for the whole test so the CLAW_CONFIG_HOME we set
+        // stays put while we touch the credentials file (prompt.rs tests mutate
+        // the same var). We set/remove it directly rather than via
+        // test_set_var/test_remove_var, which would re-acquire this same
+        // non-reentrant lock on this thread and deadlock.
         let _guard = env_lock();
         let config_home = temp_config_home();
-        test_set_var("CLAW_CONFIG_HOME", config_home.to_string_lossy().as_ref());
+        // SAFETY: `_guard` holds the process-wide env lock for this test.
+        unsafe {
+            std::env::set_var("CLAW_CONFIG_HOME", config_home.to_string_lossy().as_ref());
+        }
         let path = credentials_path().expect("credentials path");
         std::fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
         std::fs::write(&path, "{\"other\":\"value\"}\n").expect("seed credentials");
@@ -575,7 +583,10 @@ mod tests {
         assert!(cleared.contains("\"other\": \"value\""));
         assert!(!cleared.contains("\"oauth\""));
 
-        test_remove_var("CLAW_CONFIG_HOME");
+        // SAFETY: `_guard` still holds the process-wide env lock.
+        unsafe {
+            std::env::remove_var("CLAW_CONFIG_HOME");
+        }
         std::fs::remove_dir_all(config_home).expect("cleanup temp dir");
     }
 
