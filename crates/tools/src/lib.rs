@@ -120,7 +120,7 @@ pub struct AgentOutput {
     // If set, describes what is currently blocking the lane from progressing.
     // Must be [`None`] for lane-completion detection to succeed.
     #[serde(rename = "currentBlocker", skip_serializing_if = "Option::is_none")]
-    pub current_blocker: Option<String>,
+    pub current_blocker: Option<LaneEventBlocker>,
     // If set, describes the fatal error that caused this run to fail.
     // Must be [`None`] for lane-completion detection to succeed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3325,7 +3325,7 @@ fn persist_agent_terminal_state(
     let mut next_manifest = manifest.clone();
     next_manifest.status = status.to_string();
     next_manifest.completed_at = Some(iso8601_now());
-    next_manifest.current_blocker = blocker.as_ref().map(|b| b.to_string());
+    next_manifest.current_blocker = blocker.clone();
     next_manifest.error = error;
     if let Some(blocker) = blocker {
         next_manifest

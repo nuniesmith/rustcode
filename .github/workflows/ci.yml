@@ -97,6 +97,7 @@ jobs:
           - plugins
           - runtime
           - telemetry
+          - tools
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -111,12 +112,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Non-blocking via step-level continue-on-error → the job stays GREEN even
-      # when these fail (job-level continue-on-error would still report a failed
-      # check). `runtime` graduated into the blocking `test` matrix once its
-      # re-entrant env-lock deadlocks were fixed; `tools` and `rusty-claude-cli`
-      # remain here (tools still has a few env-coupled tests; cli spins up
-      # integration servers). Promoting the rest is tracked as CI-A.4.
-      - run: cargo test -p tools -p rusty-claude-cli
+      # when it fails (job-level continue-on-error would still report a failed
+      # check). `runtime` and `tools` graduated into the blocking `test` matrix
+      # once their deadlocking / env-coupled tests were fixed. `rusty-claude-cli`
+      # remains here: its `mock_parity_harness` test reads a
+      # `mock_parity_scenarios.json` fixture that is absent from the repo, so it
+      # fails until that fixture is restored. Promoting it is tracked as CI-A.4.
+      - run: cargo test -p rusty-claude-cli
         continue-on-error: true
 
   build:
