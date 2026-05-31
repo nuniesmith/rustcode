@@ -1,0 +1,96 @@
+# CI — format, lint, test, and build the rustcode workspace.
+#
+# Why this exists
+# ---------------
+# The async task agent's auto-merge path (`automerge.rs`) gates on "CI checks
+# passing", but the repository had NO CI at all until this workflow. These jobs
+# give that gate something real to wait on. (Tracked as CI-A in TODO.md.)
+#
+# Design notes
+# ------------
+#   * Build needs NO database. sqlx is used in *runtime* mode here — there are
+#     no `query!`/`query_as!` compile-time macros and no committed `.sqlx`
+#     cache — so `cargo build` resolves without DATABASE_URL. Only tests that
+#     open a PgPool need Postgres; those run in a follow-up DB job (CI-A.2).
+#   * The `rustcode` and `rag` crates pull `fastembed -> ort -> ort-sys`, which
+#     downloads an ONNX Runtime binary at build time. GitHub-hosted runners
+#     have network access, so the `build` job compiles the full workspace.
+#     The `fmt` / `clippy` / `test` jobs scope to the leaf crates so they stay
+#     green even in sandboxes that block the ort CDN.
+#   * Cargo.lock is gitignored, so `--locked` is intentionally NOT used;
+#     CI resolves a fresh lockfile each run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy (leaf crates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # rustcode + rag are excluded here (ONNX runtime); they are compile-checked
+      # by the `build` job.
+      #
+      # NOTE: intentionally NOT `-D warnings`. The workspace opts into
+      # clippy::pedantic + nursery at `warn` level (see [workspace.lints] in
+      # Cargo.toml) and carries a large pre-existing warning backlog. This job
+      # surfaces lints in the log and fails only on hard errors. Burning down
+      # the backlog and tightening to `-D warnings` is tracked as a follow-up
+      # (TODO: CI-A).
+      - run: cargo clippy --workspace --exclude rustcode --exclude rag --all-targets
+
+  test:
+    name: test (leaf crates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Runs unit, integration, and doc tests for every crate except the two
+      # ONNX-dependent ones. Tests gated behind network/API keys are #[ignore]'d
+      # in-tree and skipped automatically. Postgres-backed tests live in the
+      # rustcode crate and run in the follow-up DB job (CI-A.2).
+      - run: cargo test --workspace --exclude rustcode --exclude rag
+
+  build:
+    name: build (full workspace)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Compiles rustcode + rag as well; `ort` downloads the ONNX Runtime here.
+      # This is the job that proves the main binary actually builds — something
+      # no sandboxed dev environment could verify before CI existed.
+      - run: cargo build --workspace

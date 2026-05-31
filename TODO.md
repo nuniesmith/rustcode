@@ -26,11 +26,11 @@
 > section by ID; the long-form history of completed work is preserved unchanged below.
 
 ### Tier 0 — Foundations (do first — these unblock or de-risk everything else)
-- [ ] ⭐ **CI-A: stand up a GitHub Actions pipeline** — `.github/workflows/` does not exist
-  today. Minimum: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` on the
-  buildable crates, plus a `sqlx`/Postgres service for DB-touching tests. The async task
-  agent's auto-merge path gates on "CI checks passing" (`automerge.rs`) — that contract is
-  currently vacuous because nothing runs. **Highest leverage item in the repo.**
+- [~] ⭐ **CI-A: GitHub Actions pipeline** — landed 2026-05-31 (`.github/workflows/ci.yml`:
+  `fmt` + `clippy` + `test` + full-workspace `build`). Makes the async task agent's auto-merge
+  "CI passing" gate (`automerge.rs`) real for the first time. Follow-ups: CI-A.2 Postgres-backed
+  test job, CI-A.3 tighten clippy to `-D warnings`, CI-A.4 de-fragilize login-shell tests. See
+  the detail under *P0 — Engineering Health*.
 - [ ] ⭐ **CI-B: supply-chain + secret hygiene** — add `cargo-audit` (RUSTSEC advisories) and
   `cargo-deny` (license/dup/ban) as a scheduled job; this is a security-adjacent tool that
   clones arbitrary repos and holds tokens, so dependency drift matters.
@@ -101,19 +101,48 @@
 > New, untracked work found during the 2026-05-31 repo review. These items either gate other
 > work (CI) or represent shipped-but-non-functional surface area (audit cache, ignored tests).
 
-- [ ] **CI-A: GitHub Actions pipeline**
-  > No `.github/` directory exists anywhere in the repo — there is currently **zero CI**.
-  > The TODO's P3 "re-enable `ci-cd.yml`" line is stale; the file is not present, so this is a
-  > *create*, not a *restore*.
-  > Suggested first workflow (`.github/workflows/ci.yml`):
-  >   - `fmt`: `cargo fmt --all --check`
-  >   - `clippy`: `cargo clippy --workspace --exclude rustcode --exclude rag -- -D warnings`
-  >     (the two excluded crates need `ort-sys`/ONNX, which can't fetch in default CI — either
-  >     cache the runtime or gate them behind a self-hosted/cached runner job)
-  >   - `test`: `cargo test --workspace --exclude rustcode --exclude rag`, with a `postgres:16`
-  >     service container + `DATABASE_URL` for the DB-touching suites
-  > This is the prerequisite that makes the async task agent's auto-merge contract real — today
-  > `automerge.rs` polls for "CI success" that nothing produces.
+- [~] **CI-A: GitHub Actions pipeline**
+  > **Landed 2026-05-31** in `.github/workflows/ci.yml` (4 jobs): `fmt`
+  > (`cargo fmt --all --check`), `clippy` (leaf crates, `--all-targets`),
+  > `test` (leaf crates), `build` (full workspace incl. rustcode + rag — `ort`
+  > downloads the ONNX runtime on the hosted runner). Uses
+  > `dtolnay/rust-toolchain@stable` + `Swatinem/rust-cache@v2`, with
+  > `concurrency` cancel-in-progress. `--locked` is intentionally omitted
+  > (Cargo.lock is gitignored).
+  >
+  > Key facts discovered while building it:
+  >   - **No DB needed to build.** sqlx is runtime-mode here (no `query!`
+  >     macros, no `.sqlx` cache), so `cargo build`/`clippy` need no
+  >     `DATABASE_URL`. Only PgPool tests need Postgres → see CI-A.2.
+  >   - **`fmt` was red:** 34 files were never rustfmt'd. Fixed by a one-off
+  >     `cargo fmt --all` commit so the job is green from run one.
+  >   - **`clippy` is intentionally not `-D warnings`.** The workspace opts
+  >     into clippy pedantic+nursery at `warn` (`[workspace.lints]`) and has a
+  >     large backlog (175 warnings in `runtime` alone). The job surfaces
+  >     lints without failing; tightening to `-D warnings` after burning the
+  >     backlog down is a follow-up.
+  >   - **`test` surfaced 3 real api bugs** (fixed in the same PR): a
+  >     prompt-cache temp-dir cleanup panic, stale anthropic-beta assertions,
+  >     and an XAI_API_KEY parallel-test race. See the `test(api):` commit.
+  >
+  > **Follow-ups:**
+  >   - **CI-A.2** — DB-backed test job: `postgres:16` service + `DATABASE_URL`
+  >     + apply `sql/*.sql` migrations, then run the rustcode-crate PgPool
+  >     tests. Deferred because the rustcode crate can't compile in the dev
+  >     sandbox (ort CDN), so it couldn't be validated locally.
+  >   - **CI-A.3** — tighten `clippy` to `-D warnings` once the
+  >     pedantic/nursery backlog is cleared.
+  >   - **CI-A.4** — login-shell test fragility: `plugins`/`runtime` tests
+  >     spawn `sh -lc` (login shell) and assert exact subprocess stdout, so
+  >     any profile that prints to stdout pollutes them (the dev sandbox's
+  >     profile prints "nvm"). Make those tests tolerant of profile noise (or
+  >     run hooks under a non-login shell — a deliberate behavior call).
+  >   - **CI-B** (below) — add cargo-audit / cargo-deny.
+  >   - Consider committing `Cargo.lock` (un-gitignore it) for reproducible
+  >     CI builds, since the workspace ships binaries (`rustcode`, `claw`).
+  > This is the prerequisite that makes the async task agent's auto-merge
+  > contract real — `automerge.rs` polls for "CI success" that, until now,
+  > nothing produced.
 
 - [ ] **CI-B: supply-chain + secret hygiene**
   > Add a scheduled (weekly) job running `cargo audit` (RUSTSEC) and `cargo deny check`
