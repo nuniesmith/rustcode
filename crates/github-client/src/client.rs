@@ -226,6 +226,16 @@ impl GitHubClient {
             HeaderValue::from_static("2022-11-28"),
         );
 
+        // Install the ring rustls provider before building the client (reqwest
+        // uses rustls-no-provider). Idempotent; also covers tests, which build a
+        // client without running a binary main().
+        {
+            use std::sync::Once;
+            static ONCE: Once = Once::new();
+            ONCE.call_once(|| {
+                let _ = rustls::crypto::ring::default_provider().install_default();
+            });
+        }
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .default_headers(headers)

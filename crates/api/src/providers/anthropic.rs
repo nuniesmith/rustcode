@@ -130,6 +130,7 @@ pub struct AnthropicClient {
 impl AnthropicClient {
     #[must_use]
     pub fn new(api_key: impl Into<String>) -> Self {
+        crate::ensure_crypto_provider();
         Self {
             http: reqwest::Client::new(),
             auth: AuthSource::ApiKey(api_key.into()),
@@ -146,6 +147,7 @@ impl AnthropicClient {
 
     #[must_use]
     pub fn from_auth(auth: AuthSource) -> Self {
+        crate::ensure_crypto_provider();
         Self {
             http: reqwest::Client::new(),
             auth,

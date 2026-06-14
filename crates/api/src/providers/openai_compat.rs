@@ -80,6 +80,7 @@ impl OpenAiCompatClient {
     }
     #[must_use]
     pub fn new(api_key: impl Into<String>, config: OpenAiCompatConfig) -> Self {
+        crate::ensure_crypto_provider();
         Self {
             http: reqwest::Client::new(),
             api_key: api_key.into(),
