@@ -7,6 +7,11 @@ use rustcode::config::Config;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install ring as the process-default rustls CryptoProvider before any TLS
+    // client is built. reqwest uses rustls-no-provider (ring, matching sqlx);
+    // this avoids the default aws-lc-rs, whose aws-lc-sys C build fails in Docker.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     dotenvy::dotenv().ok();
 
     let config = Config::load().map_err(|e| anyhow::anyhow!("Config load failed: {e}"))?;
