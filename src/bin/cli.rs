@@ -435,25 +435,6 @@ enum CacheAction {
         #[arg(short, long)]
         all: bool,
     },
-
-    // Migrate cache from JSON to `SQLite`
-    Migrate {
-        // Source path (JSON cache directory)
-        #[arg(short, long)]
-        source: Option<String>,
-
-        // Destination path (`SQLite` database file)
-        #[arg(short, long)]
-        destination: Option<String>,
-
-        // Create backup before migration
-        #[arg(short, long)]
-        backup: bool,
-
-        // Verify migration after completion
-        #[arg(short, long)]
-        verify: bool,
-    },
 }
 
 #[derive(Subcommand)]
@@ -522,7 +503,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::TestApi => handle_test_api(&pool).await?,
         Commands::Docs { action } => handle_docs_action(&pool, action).await?,
         Commands::Refactor { action } => handle_refactor_action(&pool, action).await?,
-        Commands::Cache { action } => handle_cache_action(action).await?,
+        Commands::Cache { action } => handle_cache_action(&pool, action).await?,
         Commands::Github { action } => handle_github_command(action, &pool).await?,
         Commands::Todo { action } => handle_todo_command(action, &pool).await?,
     }
@@ -1685,9 +1666,9 @@ async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> 
 
     match action {
         RefactorAction::Analyze { file } => {
-            // Use SQLite cache organized by repo in XDG cache directory
+            // Postgres-backed analysis cache, scoped to this repo.
             let repo_path = std::env::current_dir()?;
-            let cache = RepoCacheSql::new_for_repo(&repo_path).await?;
+            let cache = RepoCacheSql::new_for_repo(pool.clone(), &repo_path).await?;
             let repo_path_str = repo_path.to_string_lossy().to_string();
 
             // Read file content for cache checking
@@ -1857,9 +1838,9 @@ async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::
 
     match action {
         DocsAction::Module { file, output } => {
-            // Use SQLite cache organized by repo in XDG cache directory
+            // Postgres-backed analysis cache, scoped to this repo.
             let repo_path = std::env::current_dir()?;
-            let cache = RepoCacheSql::new_for_repo(&repo_path).await?;
+            let cache = RepoCacheSql::new_for_repo(pool.clone(), &repo_path).await?;
             let repo_path_str = repo_path.to_string_lossy().to_string();
 
             // Read file content for cache checking
@@ -1937,7 +1918,7 @@ async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::
 // Cache Handlers
 // ============================================================================
 
-async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
+async fn handle_cache_action(pool: &sqlx::PgPool, action: CacheAction) -> anyhow::Result<()> {
     match action {
         CacheAction::Init { path } => {
             let repo_path = path.unwrap_or_else(|| ".".to_string());
@@ -1954,45 +1935,25 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
         }
 
         CacheAction::Status { path } => {
-            // Use SQLite cache for stats
+            // Postgres-backed analysis cache, scoped to this repo.
             let repo_path = if let Some(p) = path {
                 PathBuf::from(p)
             } else {
                 std::env::current_dir()?
             };
 
-            let cache = RepoCacheSql::new_for_repo(&repo_path).await?;
+            let cache = RepoCacheSql::new_for_repo(pool.clone(), &repo_path).await?;
             let stats = cache.stats().await?;
 
             // Use default budget config ($3/month)
             let budget_config = rustcode::BudgetConfig::default();
 
-            // Compute cache location
-            use sha2::{Digest, Sha256};
             let canonical_path = repo_path
                 .canonicalize()
                 .unwrap_or_else(|_| repo_path.clone());
-            let mut hasher = Sha256::new();
-            hasher.update(canonical_path.to_string_lossy().as_bytes());
-            let hash = hasher.finalize();
-            let repo_hash = format!("{hash:x}")[..8].to_string();
 
-            let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
-                PathBuf::from(cache_home)
-            } else if let Some(home) = dirs::home_dir() {
-                home.join(".cache")
-            } else {
-                PathBuf::from(".")
-            };
-            let cache_location = cache_dir
-                .join("rustcode")
-                .join("repos")
-                .join(&repo_hash)
-                .join("cache.db");
-
-            println!("📦 SQLite Cache Summary");
+            println!("📦 Cache Summary (Postgres)");
             println!("  Repository: {}", canonical_path.display());
-            println!("  Cache Location: {}", cache_location.display());
             println!();
 
             // Group by cache type
@@ -2045,14 +2006,14 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
             cache_type,
             all,
         } => {
-            // Use SQLite cache
+            // Postgres-backed analysis cache, scoped to this repo.
             let repo_path = if let Some(p) = path {
                 PathBuf::from(p)
             } else {
                 std::env::current_dir()?
             };
 
-            let cache = RepoCacheSql::new_for_repo(&repo_path).await?;
+            let cache = RepoCacheSql::new_for_repo(pool.clone(), &repo_path).await?;
 
             if all {
                 let removed = cache.clear_all().await?;
@@ -2081,99 +2042,6 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
                 );
             } else {
                 eprintln!("{} Specify --all or --cache-type", "✗".red());
-            }
-        }
-
-        CacheAction::Migrate {
-            source,
-            destination,
-            backup,
-            verify,
-        } => {
-            use rustcode::CacheMigrator;
-
-            // Determine source and destination paths
-            let source_path = source.unwrap_or_else(|| {
-                let home = dirs::home_dir().expect("Could not find home directory");
-                home.join(".rustcode/cache/repos")
-                    .to_string_lossy()
-                    .to_string()
-            });
-
-            let dest_path = destination.unwrap_or_else(|| {
-                let home = dirs::home_dir().expect("Could not find home directory");
-                home.join(".rustcode/cache.db")
-                    .to_string_lossy()
-                    .to_string()
-            });
-
-            println!("{} Starting cache migration", "🔄".blue());
-            println!("  Source: {source_path}");
-            println!("  Destination: {dest_path}");
-            println!();
-
-            // Create migrator
-            let migrator = CacheMigrator::new(&source_path, &dest_path).await?;
-
-            // Create backup if requested
-            if backup {
-                let backup_path = format!("{source_path}.backup");
-                println!("{} Creating backup at {}", "💾".blue(), backup_path);
-                migrator.backup(&backup_path)?;
-                println!("{} Backup created\n", "✓".green());
-            }
-
-            // Run migration with progress
-            println!("{} Migrating entries...", "🔄".blue());
-            let result = migrator
-                .migrate(|progress| {
-                    if progress.migrated % 10 == 0 || progress.migrated == progress.total {
-                        println!(
-                            "  Progress: {}/{} ({} failed)",
-                            progress.migrated, progress.total, progress.failed
-                        );
-                    }
-                })
-                .await?;
-
-            println!();
-            println!("{} Migration complete!", "✓".green());
-            println!("  Total entries: {}", result.total_entries);
-            println!("  Migrated: {}", result.total_migrated);
-            println!("  Failed: {}", result.total_failed);
-            println!("  Source size: {} bytes", result.source_size);
-            println!("  Destination size: {} bytes", result.destination_size);
-            println!(
-                "  Space saved: {} bytes ({:.1}%)",
-                result.space_saved,
-                if result.source_size > 0 {
-                    (result.space_saved as f64 / result.source_size as f64) * 100.0
-                } else {
-                    0.0
-                }
-            );
-
-            if !result.failures.is_empty() {
-                println!();
-                println!("{} Failed migrations:", "⚠️".yellow());
-                for failure in result.failures.iter().take(5) {
-                    println!("  - {}: {}", failure.file_path, failure.error);
-                }
-                if result.failures.len() > 5 {
-                    println!("  ... and {} more", result.failures.len() - 5);
-                }
-            }
-
-            // Verify if requested
-            if verify {
-                println!();
-                println!("{} Verifying migration...", "🔍".blue());
-                let valid = migrator.verify().await?;
-                if valid {
-                    println!("{} Verification passed!", "✓".green());
-                } else {
-                    println!("{} Verification failed - entry count mismatch", "✗".red());
-                }
             }
         }
     }

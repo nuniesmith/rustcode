@@ -1066,7 +1066,7 @@ impl AutoScanner {
             .await
             .ok();
 
-        let cache = RepoCacheSql::new_for_repo(repo_path).await?;
+        let cache = RepoCacheSql::new_for_repo(self.pool.clone(), repo_path).await?;
         let mut files_analyzed = 0i64;
         let mut issues_found = 0i64;
         let mut cumulative_cost = 0.0f64;
@@ -1780,7 +1780,7 @@ impl AutoScanner {
         repo_name: &str,
         repo_path: &Path,
     ) -> Result<usize> {
-        let cache = RepoCacheSql::new_for_repo(repo_path).await?;
+        let cache = RepoCacheSql::new_for_repo(self.pool.clone(), repo_path).await?;
         let all_entries = cache.get_all_entries().await?;
 
         if all_entries.is_empty() {

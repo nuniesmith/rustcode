@@ -1,45 +1,47 @@
-// # SQLite-based Repository Cache
+// # Postgres-backed Repository Cache
 //
-// Provides a robust, queryable cache for LLM analysis results using SQLite.
+// Provides a robust, queryable cache for LLM analysis results, backed by the
+// shared Postgres pool (the `cache_entries` / `cache_stats` tables defined in
+// `sql/025_cache_tables.sql`).
 //
 // ## Features
 //
-// - SQLite storage with indices for fast queries
-// - Compressed JSON storage using zstd
+// - Postgres storage with indices for fast queries
+// - Compressed JSON storage using zstd (stored as BYTEA)
 // - Multi-factor cache keys (file hash + model + prompt + schema)
 // - Token usage tracking and cost estimation
 // - Advanced queries (by repo, model, prompt, date range)
 // - Cache eviction policies (LRU, size-based, cost-aware)
-// - Migration from JSON file-based cache
+//
+// Rows are scoped by `repo_path`. Construct with [`RepoCacheSql::new_for_repo`]
+// to scope repo-wide queries (`stats`, `get_all_entries`, `clear_*`) to a single
+// repository; [`RepoCacheSql::new`] leaves the cache unscoped (operates across
+// every repo in the table).
 //
 // ## Usage
 //
 // ```rust,no_run
-// use rustcode::{RepoCacheSql}; use rustcode::repo::cache::CacheSetParams;
+// use rustcode::RepoCacheSql;
+// use rustcode::repo::cache::CacheSetParams;
 // use rustcode::CacheType;
 //
-// #[tokio::main]
-// async fn main() -> anyhow::Result<()> {
-//     let cache = RepoCacheSql::new_for_repo("/path/to/repo").await?;
+// # async fn run(pool: sqlx::PgPool) -> anyhow::Result<()> {
+// let cache = RepoCacheSql::new_for_repo(pool, "/path/to/repo").await?;
 //
-//     // Check cache
-//     let content = "fn main() {}";
-//     if let Some(entry) = cache.get(
-//         CacheType::Refactor,
-//         "src/main.rs",
-//         content,
-//         "xai",
-//         "grok-beta",
-//         None,
-//         None
-//     ).await? {
-//         println!("Cache hit!");
-//         return Ok(());
-//     }
+// // Check cache
+// let content = "fn main() {}";
+// if let Some(_entry) = cache
+//     .get(CacheType::Refactor, "src/main.rs", content, "xai", "grok-beta", None, None)
+//     .await?
+// {
+//     println!("Cache hit!");
+//     return Ok(());
+// }
 //
-//     // Store result
-//     let result = serde_json::json!({"score": 95});
-//     cache.set(CacheSetParams {
+// // Store result
+// let result = serde_json::json!({"score": 95});
+// cache
+//     .set(CacheSetParams {
 //         cache_type: CacheType::Refactor,
 //         repo_path: "/path/to/repo",
 //         file_path: "src/main.rs",
@@ -50,25 +52,25 @@
 //         tokens_used: Some(150),
 //         prompt_hash: None,
 //         schema_version: None,
-//     }).await?;
+//     })
+//     .await?;
 //
-//     // Get statistics
-//     let stats = cache.stats().await?;
-//     println!("Total tokens: {}", stats.total_tokens);
-//
-//     Ok(())
-// }
+// // Get statistics
+// let stats = cache.stats().await?;
+// println!("Total tokens: {}", stats.total_tokens);
+// # Ok(())
+// # }
 // ```
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
-use std::path::{Path, PathBuf};
+use sqlx::PgPool;
+use std::path::Path;
 use tracing::{debug, info};
 
-// Re-export CacheType from repo_cache
+// Re-export CacheType from the file-based cache (shared enum).
 pub use crate::repo::file_cache::CacheType;
 
 // Parameters for setting cache entries
@@ -99,7 +101,7 @@ pub struct CacheEntry {
     pub model: String,
     pub prompt_hash: String,
     pub schema_version: i32,
-    pub result_json: String, // Compressed
+    pub result_json: String, // Decompressed JSON text
     pub tokens_used: Option<i64>,
     pub file_size: i64,
     pub created_at: DateTime<Utc>,
@@ -153,18 +155,43 @@ pub enum EvictionPolicy {
     MostExpensive,
 }
 
-// SQLite-based repository cache
+// Postgres-backed repository cache.
+//
+// `repo_scope`, when set, restricts repo-wide queries (`stats`,
+// `get_all_entries`, `clear_all`, `clear_type`) to a single `repo_path`. The
+// content-addressed `get`/`set` path is global (cache keys already encode the
+// file content, model, prompt, and schema).
 pub struct RepoCacheSql {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
+    repo_scope: Option<String>,
 }
 
-impl RepoCacheSql {
-    // Compute the cache hash for a repository path without opening the database.
-    // This is the same hash used to locate the cache DB directory.
-    // Returns the 8-character hex hash.
-    pub fn compute_repo_hash(repo_path: impl AsRef<Path>) -> String {
-        use sha2::{Digest, Sha256};
+// Column tuple for a full `cache_entries` row.
+type CacheRow = (
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i32,
+    Vec<u8>,
+    Option<i64>,
+    i64,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    i64,
+);
 
+impl RepoCacheSql {
+    // Compute the cache hash for a repository path.
+    //
+    // This is the stable 8-character hex hash stored in
+    // `repositories.cache_hash`; it does not touch the database.
+    pub fn compute_repo_hash(repo_path: impl AsRef<Path>) -> String {
         let repo_path = repo_path.as_ref();
 
         // Compute stable hash for repo path
@@ -179,142 +206,38 @@ impl RepoCacheSql {
         format!("{:x}", hash)[..8].to_string()
     }
 
-    // Create a new SQLite cache for a repository using path-based hashing
-    pub async fn new_for_repo(repo_path: impl AsRef<Path>) -> Result<Self> {
+    // Canonicalize a repo path into the string stored in `cache_entries.repo_path`.
+    fn canonical_repo_path(repo_path: impl AsRef<Path>) -> String {
         let repo_path = repo_path.as_ref();
-        let repo_hash = Self::compute_repo_hash(repo_path);
-
-        // Get XDG cache directory
-        let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
-            PathBuf::from(cache_home)
-        } else if let Some(home) = dirs::home_dir() {
-            home.join(".cache")
-        } else {
-            anyhow::bail!("Cannot determine cache directory");
-        };
-
-        let db_path = cache_dir
-            .join("rustcode")
-            .join("repos")
-            .join(&repo_hash)
-            .join("cache.db");
-
-        Self::new(&db_path).await
+        repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| repo_path.to_path_buf())
+            .to_string_lossy()
+            .to_string()
     }
 
-    // Create a new SQLite cache using a precomputed cache hash.
-    // This is useful when the web server doesn't have access to the repo path
-    // but has the hash stored in the database.
-    pub async fn new_with_hash(cache_hash: &str) -> Result<Self> {
-        // Get XDG cache directory
-        let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
-            PathBuf::from(cache_home)
-        } else if let Some(home) = dirs::home_dir() {
-            home.join(".cache")
-        } else {
-            anyhow::bail!("Cannot determine cache directory");
-        };
-
-        let db_path = cache_dir
-            .join("rustcode")
-            .join("repos")
-            .join(cache_hash)
-            .join("cache.db");
-
-        Self::new(&db_path).await
+    // Create an unscoped cache over the shared Postgres pool.
+    //
+    // Repo-wide queries operate across every repository in the table. Use
+    // [`Self::new_for_repo`] to scope them to a single repository.
+    pub async fn new(pool: PgPool) -> Result<Self> {
+        Ok(Self {
+            pool,
+            repo_scope: None,
+        })
     }
 
-    // Create a new SQLite cache
-    pub async fn new(database_path: impl AsRef<Path>) -> Result<Self> {
-        let path = database_path.as_ref();
-
-        // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create cache directory: {}", parent.display())
-            })?;
-        }
-
-        let database_url = format!("sqlite:{}?mode=rwc", path.display());
-        let pool = SqlitePool::connect(&database_url)
-            .await
-            .context("Failed to connect to cache database")?;
-
-        let cache = Self { pool };
-        cache.initialize_schema().await?;
-
-        info!("Initialized SQLite cache at {}", path.display());
-        Ok(cache)
-    }
-
-    // Initialize database schema
-    async fn initialize_schema(&self) -> Result<()> {
-        // Main cache table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS cache_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cache_type TEXT NOT NULL,
-                repo_path TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                file_hash TEXT NOT NULL,
-                cache_key TEXT NOT NULL UNIQUE,
-                provider TEXT NOT NULL,
-                model TEXT NOT NULL,
-                prompt_hash TEXT NOT NULL,
-                schema_version INTEGER NOT NULL DEFAULT 1,
-                result_blob BLOB NOT NULL,
-                tokens_used INTEGER,
-                file_size INTEGER NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
-                access_count INTEGER NOT NULL DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Indices for fast queries
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS idx_cache_key ON cache_entries(cache_key);
-            CREATE INDEX IF NOT EXISTS idx_cache_type ON cache_entries(cache_type);
-            CREATE INDEX IF NOT EXISTS idx_repo_path ON cache_entries(repo_path);
-            CREATE INDEX IF NOT EXISTS idx_model ON cache_entries(model);
-            CREATE INDEX IF NOT EXISTS idx_created_at ON cache_entries(created_at);
-            CREATE INDEX IF NOT EXISTS idx_last_accessed ON cache_entries(last_accessed);
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Cache statistics table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS cache_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cache_hits INTEGER NOT NULL DEFAULT 0,
-                cache_misses INTEGER NOT NULL DEFAULT 0,
-                last_updated TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Initialize stats row if not exists
-        sqlx::query(
-            r#"
-            INSERT INTO cache_stats (id, cache_hits, cache_misses)
-            VALUES (1, 0, 0)
-            ON CONFLICT (id) DO NOTHING
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
+    // Create a cache scoped to a single repository.
+    //
+    // Repo-wide queries (`stats`, `get_all_entries`, `clear_*`) are restricted
+    // to this repository's `repo_path`.
+    pub async fn new_for_repo(pool: PgPool, repo_path: impl AsRef<Path>) -> Result<Self> {
+        let scope = Self::canonical_repo_path(repo_path);
+        info!("Using Postgres cache scoped to repo {}", scope);
+        Ok(Self {
+            pool,
+            repo_scope: Some(scope),
+        })
     }
 
     // Compute SHA-256 hash of content
@@ -385,7 +308,7 @@ impl RepoCacheSql {
             sqlx::query(
                 r#"
                 UPDATE cache_entries
-                SET last_accessed = datetime('now'), access_count = access_count + 1
+                SET last_accessed = NOW(), access_count = access_count + 1
                 WHERE cache_key = $1
                 "#,
             )
@@ -396,7 +319,7 @@ impl RepoCacheSql {
             // Update hit count
             sqlx::query(
                 r#"
-                UPDATE cache_stats SET cache_hits = cache_hits + 1, last_updated = datetime('now')
+                UPDATE cache_stats SET cache_hits = cache_hits + 1, last_updated = NOW()
                 WHERE id = 1
                 "#,
             )
@@ -410,7 +333,7 @@ impl RepoCacheSql {
             // Update miss count
             sqlx::query(
                 r#"
-                UPDATE cache_stats SET cache_misses = cache_misses + 1, last_updated = datetime('now')
+                UPDATE cache_stats SET cache_misses = cache_misses + 1, last_updated = NOW()
                 WHERE id = 1
                 "#,
             )
@@ -478,123 +401,100 @@ impl RepoCacheSql {
         Ok(())
     }
 
-    // Set cache entry with pre-computed cache key (for migration)
-    #[allow(clippy::too_many_arguments)]
-    pub async fn set_with_cache_key(
-        &self,
-        cache_type: crate::repo::file_cache::CacheType,
-        repo_path: &str,
-        file_path: &str,
-        file_hash: &str,
-        cache_key: &str,
-        provider: &str,
-        model: &str,
-        prompt_hash: &str,
-        schema_version: i32,
-        result: serde_json::Value,
-        tokens_used: Option<usize>,
-        file_size: usize,
-    ) -> Result<()> {
-        let result_blob = Self::compress_json(&result)?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO cache_entries
-            (cache_type, repo_path, file_path, file_hash, cache_key, provider, model,
-             prompt_hash, schema_version, result_blob, tokens_used, file_size)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ON CONFLICT (cache_key) DO UPDATE SET
-                cache_type = EXCLUDED.cache_type,
-                repo_path = EXCLUDED.repo_path,
-                file_path = EXCLUDED.file_path,
-                file_hash = EXCLUDED.file_hash,
-                provider = EXCLUDED.provider,
-                model = EXCLUDED.model,
-                prompt_hash = EXCLUDED.prompt_hash,
-                schema_version = EXCLUDED.schema_version,
-                result_blob = EXCLUDED.result_blob,
-                tokens_used = EXCLUDED.tokens_used,
-                file_size = EXCLUDED.file_size
-            "#,
-        )
-        .bind(cache_type.subdirectory())
-        .bind(repo_path)
-        .bind(file_path)
-        .bind(file_hash)
-        .bind(cache_key)
-        .bind(provider)
-        .bind(model)
-        .bind(prompt_hash)
-        .bind(schema_version)
-        .bind(&result_blob)
-        .bind(tokens_used.map(|t| t as i64))
-        .bind(file_size as i64)
-        .execute(&self.pool)
-        .await?;
-
-        debug!(
-            "Migrated {} result for {}",
-            cache_type.subdirectory(),
-            file_path
-        );
-        Ok(())
-    }
-
-    // Clear all entries of a specific type
+    // Clear all entries of a specific type (within the repo scope, if set)
     pub async fn clear_type(&self, cache_type: crate::repo::file_cache::CacheType) -> Result<u64> {
-        let result = sqlx::query(
-            r#"
-            DELETE FROM cache_entries WHERE cache_type = $1
-            "#,
-        )
-        .bind(cache_type.subdirectory())
-        .execute(&self.pool)
-        .await?;
+        let result = if let Some(scope) = &self.repo_scope {
+            sqlx::query(
+                r#"
+                DELETE FROM cache_entries WHERE cache_type = $1 AND repo_path = $2
+                "#,
+            )
+            .bind(cache_type.subdirectory())
+            .bind(scope)
+            .execute(&self.pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                DELETE FROM cache_entries WHERE cache_type = $1
+                "#,
+            )
+            .bind(cache_type.subdirectory())
+            .execute(&self.pool)
+            .await?
+        };
 
         Ok(result.rows_affected())
     }
 
-    // Clear all cache entries
+    // Clear all cache entries (within the repo scope, if set)
     pub async fn clear_all(&self) -> Result<u64> {
-        let result = sqlx::query("DELETE FROM cache_entries")
+        let result = if let Some(scope) = &self.repo_scope {
+            sqlx::query("DELETE FROM cache_entries WHERE repo_path = $1")
+                .bind(scope)
+                .execute(&self.pool)
+                .await?
+        } else {
+            let r = sqlx::query("DELETE FROM cache_entries")
+                .execute(&self.pool)
+                .await?;
+            // Reset global hit/miss counters only on a full clear.
+            sqlx::query(
+                r#"
+                UPDATE cache_stats SET cache_hits = 0, cache_misses = 0, last_updated = NOW()
+                WHERE id = 1
+                "#,
+            )
             .execute(&self.pool)
             .await?;
-
-        // Reset stats
-        sqlx::query(
-            r#"
-            UPDATE cache_stats SET cache_hits = 0, cache_misses = 0, last_updated = datetime('now')
-            WHERE id = 1
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
+            r
+        };
 
         Ok(result.rows_affected())
     }
 
-    // Get cache statistics
+    // Get cache statistics (within the repo scope, if set)
     pub async fn stats(&self) -> Result<CacheStats> {
         use crate::llm::usage::budget::TokenPricing;
 
-        // Overall stats
+        // Overall stats. SUM(bigint) returns NUMERIC in Postgres, so cast back
+        // to BIGINT; an empty table yields NULL, hence the Option wrappers.
         let (total_entries, total_tokens, total_file_size, total_result_size) =
-            sqlx::query_as::<_, (i64, Option<i64>, i64, i64)>(
-                r#"
-            SELECT
-                COUNT(*),
-                SUM(tokens_used),
-                SUM(file_size),
-                SUM(LENGTH(result_blob))
-            FROM cache_entries
-            "#,
-            )
-            .fetch_one(&self.pool)
-            .await?;
+            if let Some(scope) = &self.repo_scope {
+                sqlx::query_as::<_, (i64, Option<i64>, Option<i64>, Option<i64>)>(
+                    r#"
+                SELECT
+                    COUNT(*),
+                    SUM(tokens_used)::BIGINT,
+                    SUM(file_size)::BIGINT,
+                    SUM(OCTET_LENGTH(result_blob))::BIGINT
+                FROM cache_entries
+                WHERE repo_path = $1
+                "#,
+                )
+                .bind(scope)
+                .fetch_one(&self.pool)
+                .await?
+            } else {
+                sqlx::query_as::<_, (i64, Option<i64>, Option<i64>, Option<i64>)>(
+                    r#"
+                SELECT
+                    COUNT(*),
+                    SUM(tokens_used)::BIGINT,
+                    SUM(file_size)::BIGINT,
+                    SUM(OCTET_LENGTH(result_blob))::BIGINT
+                FROM cache_entries
+                "#,
+                )
+                .fetch_one(&self.pool)
+                .await?
+            };
 
         let total_tokens = total_tokens.unwrap_or(0);
+        let total_file_size = total_file_size.unwrap_or(0);
+        let total_result_size = total_result_size.unwrap_or(0);
 
-        // Hit/miss stats
+        // Hit/miss stats (global counter)
         let (cache_hits, cache_misses) = sqlx::query_as::<_, (i64, i64)>(
             r#"
             SELECT cache_hits, cache_misses FROM cache_stats WHERE id = 1
@@ -614,15 +514,29 @@ impl RepoCacheSql {
         let estimated_cost = pricing.estimate_cost(total_tokens as usize);
 
         // Stats by type
-        let by_type_rows = sqlx::query_as::<_, (String, i64, Option<i64>)>(
-            r#"
-            SELECT cache_type, COUNT(*), SUM(tokens_used)
-            FROM cache_entries
-            GROUP BY cache_type
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let by_type_rows = if let Some(scope) = &self.repo_scope {
+            sqlx::query_as::<_, (String, i64, Option<i64>)>(
+                r#"
+                SELECT cache_type, COUNT(*), SUM(tokens_used)::BIGINT
+                FROM cache_entries
+                WHERE repo_path = $1
+                GROUP BY cache_type
+                "#,
+            )
+            .bind(scope)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, (String, i64, Option<i64>)>(
+                r#"
+                SELECT cache_type, COUNT(*), SUM(tokens_used)::BIGINT
+                FROM cache_entries
+                GROUP BY cache_type
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await?
+        };
 
         let by_type = by_type_rows
             .into_iter()
@@ -639,15 +553,29 @@ impl RepoCacheSql {
             .collect();
 
         // Stats by model
-        let by_model_rows = sqlx::query_as::<_, (String, i64, Option<i64>)>(
-            r#"
-            SELECT model, COUNT(*), SUM(tokens_used)
-            FROM cache_entries
-            GROUP BY model
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let by_model_rows = if let Some(scope) = &self.repo_scope {
+            sqlx::query_as::<_, (String, i64, Option<i64>)>(
+                r#"
+                SELECT model, COUNT(*), SUM(tokens_used)::BIGINT
+                FROM cache_entries
+                WHERE repo_path = $1
+                GROUP BY model
+                "#,
+            )
+            .bind(scope)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, (String, i64, Option<i64>)>(
+                r#"
+                SELECT model, COUNT(*), SUM(tokens_used)::BIGINT
+                FROM cache_entries
+                GROUP BY model
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await?
+        };
 
         let by_model = by_model_rows
             .into_iter()
@@ -677,60 +605,70 @@ impl RepoCacheSql {
         })
     }
 
-    // Evict entries based on policy until target size is reached
+    // Evict entries based on policy until target size is reached.
+    //
+    // Operates within the repo scope, if set. `target_size` is the desired
+    // total compressed result size in bytes.
     pub async fn evict(&self, policy: EvictionPolicy, target_size: i64) -> Result<u64> {
-        let current_size: (i64,) = sqlx::query_as(
-            r#"
-            SELECT SUM(LENGTH(result_blob)) FROM cache_entries
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let (current_size,): (Option<i64>,) = if let Some(scope) = &self.repo_scope {
+            sqlx::query_as(
+                "SELECT SUM(OCTET_LENGTH(result_blob))::BIGINT FROM cache_entries WHERE repo_path = $1",
+            )
+            .bind(scope)
+            .fetch_one(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as("SELECT SUM(OCTET_LENGTH(result_blob))::BIGINT FROM cache_entries")
+                .fetch_one(&self.pool)
+                .await?
+        };
 
-        let current_size = current_size.0;
+        let current_size = current_size.unwrap_or(0);
         if current_size <= target_size {
             return Ok(0);
         }
 
-        let _to_delete = current_size - target_size;
         let order_clause = match policy {
             EvictionPolicy::LRU => "ORDER BY last_accessed ASC",
             EvictionPolicy::OldestFirst => "ORDER BY created_at ASC",
-            EvictionPolicy::LargestFirst => "ORDER BY LENGTH(result_blob) DESC",
-            EvictionPolicy::MostExpensive => "ORDER BY tokens_used DESC",
+            EvictionPolicy::LargestFirst => "ORDER BY OCTET_LENGTH(result_blob) DESC",
+            EvictionPolicy::MostExpensive => "ORDER BY tokens_used DESC NULLS LAST",
         };
 
-        // Get IDs to delete
-        let ids: Vec<(i64,)> = sqlx::query_as(&format!(
+        // Get (id, size) for eviction candidates, scoped if needed.
+        let where_scope = if self.repo_scope.is_some() {
+            "WHERE repo_path = $1"
+        } else {
+            ""
+        };
+        let query = format!(
             r#"
-            SELECT id FROM cache_entries
-            {}
-            LIMIT (SELECT COUNT(*) FROM cache_entries) / 2
-            "#,
-            order_clause
-        ))
-        .fetch_all(&self.pool)
-        .await?;
+            SELECT id, OCTET_LENGTH(result_blob)::BIGINT
+            FROM cache_entries
+            {where_scope}
+            {order_clause}
+            "#
+        );
+
+        let candidates: Vec<(i64, i64)> = if let Some(scope) = &self.repo_scope {
+            sqlx::query_as(&query)
+                .bind(scope)
+                .fetch_all(&self.pool)
+                .await?
+        } else {
+            sqlx::query_as(&query).fetch_all(&self.pool).await?
+        };
 
         let mut deleted = 0;
         let mut size_freed = 0;
 
-        for (id,) in ids {
-            let size: (i64,) = sqlx::query_as(
-                r#"
-                SELECT LENGTH(result_blob) FROM cache_entries WHERE id = $1
-                "#,
-            )
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await?;
-
+        for (id, size) in candidates {
             sqlx::query("DELETE FROM cache_entries WHERE id = $1")
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
 
-            size_freed += size.0;
+            size_freed += size;
             deleted += 1;
 
             if current_size - size_freed <= target_size {
@@ -742,29 +680,35 @@ impl RepoCacheSql {
         Ok(deleted)
     }
 
+    // Map a full row tuple into a `CacheEntry`.
+    fn row_to_entry(row: CacheRow) -> CacheEntry {
+        let result_json = Self::decompress_json(&row.10)
+            .map(|v| serde_json::to_string(&v).unwrap_or_default())
+            .unwrap_or_default();
+
+        CacheEntry {
+            id: row.0,
+            cache_type: row.1,
+            repo_path: row.2,
+            file_path: row.3,
+            file_hash: row.4,
+            cache_key: row.5,
+            provider: row.6,
+            model: row.7,
+            prompt_hash: row.8,
+            schema_version: row.9,
+            result_json,
+            tokens_used: row.11,
+            file_size: row.12,
+            created_at: row.13,
+            last_accessed: row.14,
+            access_count: row.15,
+        }
+    }
+
     // Get entries for a specific repository
     pub async fn entries_for_repo(&self, repo_path: &str) -> Result<Vec<CacheEntry>> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                i64,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                i32,
-                Vec<u8>,
-                Option<i64>,
-                i64,
-                String,
-                String,
-                i64,
-            ),
-        >(
+        let rows = sqlx::query_as::<_, CacheRow>(
             r#"
             SELECT
                 id, cache_type, repo_path, file_path, file_hash, cache_key,
@@ -779,135 +723,121 @@ impl RepoCacheSql {
         .fetch_all(&self.pool)
         .await?;
 
-        let entries = rows
-            .into_iter()
-            .map(|row| {
-                let result_json = Self::decompress_json(&row.10)
-                    .map(|v| serde_json::to_string(&v).unwrap_or_default())
-                    .unwrap_or_default();
-
-                CacheEntry {
-                    id: row.0,
-                    cache_type: row.1,
-                    repo_path: row.2,
-                    file_path: row.3,
-                    file_hash: row.4,
-                    cache_key: row.5,
-                    provider: row.6,
-                    model: row.7,
-                    prompt_hash: row.8,
-                    schema_version: row.9,
-                    result_json,
-                    tokens_used: row.11,
-                    file_size: row.12,
-                    created_at: row.13.parse().unwrap_or_else(|_| Utc::now()),
-                    last_accessed: row.14.parse().unwrap_or_else(|_| Utc::now()),
-                    access_count: row.15,
-                }
-            })
-            .collect();
-
-        Ok(entries)
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
 
-    // Get all cache entries (across all repos) for project-wide review.
-    // Returns entries ordered by file_path for deterministic iteration.
+    // Get all cache entries (within the repo scope, if set) for project-wide
+    // review. Returns entries ordered by file_path for deterministic iteration.
     pub async fn get_all_entries(&self) -> Result<Vec<CacheEntry>> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                i64,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                String,
-                i32,
-                Vec<u8>,
-                Option<i64>,
-                i64,
-                String,
-                String,
-                i64,
-            ),
-        >(
-            r#"
-            SELECT
-                id, cache_type, repo_path, file_path, file_hash, cache_key,
-                provider, model, prompt_hash, schema_version, result_blob,
-                tokens_used, file_size, created_at, last_accessed, access_count
-            FROM cache_entries
-            ORDER BY file_path ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = if let Some(scope) = &self.repo_scope {
+            sqlx::query_as::<_, CacheRow>(
+                r#"
+                SELECT
+                    id, cache_type, repo_path, file_path, file_hash, cache_key,
+                    provider, model, prompt_hash, schema_version, result_blob,
+                    tokens_used, file_size, created_at, last_accessed, access_count
+                FROM cache_entries
+                WHERE repo_path = $1
+                ORDER BY file_path ASC
+                "#,
+            )
+            .bind(scope)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, CacheRow>(
+                r#"
+                SELECT
+                    id, cache_type, repo_path, file_path, file_hash, cache_key,
+                    provider, model, prompt_hash, schema_version, result_blob,
+                    tokens_used, file_size, created_at, last_accessed, access_count
+                FROM cache_entries
+                ORDER BY file_path ASC
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await?
+        };
 
-        let entries = rows
-            .into_iter()
-            .map(|row| {
-                let result_json = Self::decompress_json(&row.10)
-                    .map(|v| serde_json::to_string(&v).unwrap_or_default())
-                    .unwrap_or_default();
-
-                CacheEntry {
-                    id: row.0,
-                    cache_type: row.1,
-                    repo_path: row.2,
-                    file_path: row.3,
-                    file_hash: row.4,
-                    cache_key: row.5,
-                    provider: row.6,
-                    model: row.7,
-                    prompt_hash: row.8,
-                    schema_version: row.9,
-                    result_json,
-                    tokens_used: row.11,
-                    file_size: row.12,
-                    created_at: row.13.parse().unwrap_or_else(|_| Utc::now()),
-                    last_accessed: row.14.parse().unwrap_or_else(|_| Utc::now()),
-                    access_count: row.15,
-                }
-            })
-            .collect();
-
-        Ok(entries)
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::PgPoolOptions;
 
-    #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
-    async fn test_cache_creation() {
-        let cache = RepoCacheSql::new(":memory:").await;
-        assert!(cache.is_ok());
+    // Connect to the test Postgres instance and scope to a unique synthetic
+    // repo path so the shared `cache_entries` table stays isolated per test.
+    // Returns None when DATABASE_URL is unset (plain `cargo test` is a no-op).
+    async fn test_cache() -> Option<RepoCacheSql> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .ok()?;
+        sqlx::migrate!("./sql").run(&pool).await.ok()?;
+        let scope = format!("/test/repo/{}", uuid::Uuid::new_v4());
+        let cache = RepoCacheSql {
+            pool,
+            repo_scope: Some(scope),
+        };
+        // Start from a clean slate for this synthetic repo.
+        cache.clear_all().await.ok()?;
+        Some(cache)
+    }
+
+    fn set_params<'a>(
+        repo_path: &'a str,
+        file_path: &'a str,
+        content: &'a str,
+        result: serde_json::Value,
+        tokens: Option<usize>,
+    ) -> CacheSetParams<'a> {
+        CacheSetParams {
+            cache_type: crate::repo::file_cache::CacheType::Refactor,
+            repo_path,
+            file_path,
+            content,
+            provider: "xai",
+            model: "grok-beta",
+            result,
+            tokens_used: tokens,
+            prompt_hash: None,
+            schema_version: None,
+        }
     }
 
     #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
+    async fn test_cache_creation() {
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_creation");
+            return;
+        };
+        // A scoped, freshly-cleared cache reports zero entries.
+        let stats = cache.stats().await.unwrap();
+        assert_eq!(stats.total_entries, 0);
+    }
+
+    #[tokio::test]
     async fn test_cache_get_set() {
-        let cache = RepoCacheSql::new(":memory:").await.unwrap();
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_get_set");
+            return;
+        };
+        let repo = cache.repo_scope.clone().unwrap();
 
         let result = serde_json::json!({"score": 95});
         cache
-            .set(CacheSetParams {
-                cache_type: crate::repo::file_cache::CacheType::Refactor,
-                repo_path: "/test/repo",
-                file_path: "src/main.rs",
-                content: "fn main() {}",
-                provider: "xai",
-                model: "grok-beta",
-                result: result.clone(),
-                tokens_used: Some(100),
-                prompt_hash: None,
-                schema_version: None,
-            })
+            .set(set_params(
+                &repo,
+                "src/main.rs",
+                "fn main() {}",
+                result.clone(),
+                Some(100),
+            ))
             .await
             .unwrap();
 
@@ -929,24 +859,21 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_invalidation() {
-        let cache = RepoCacheSql::new(":memory:").await.unwrap();
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_invalidation");
+            return;
+        };
+        let repo = cache.repo_scope.clone().unwrap();
 
-        let result = serde_json::json!({"score": 95});
         cache
-            .set(CacheSetParams {
-                cache_type: crate::repo::file_cache::CacheType::Refactor,
-                repo_path: "/test/repo",
-                file_path: "src/main.rs",
-                content: "fn main() {}",
-                provider: "xai",
-                model: "grok-beta",
-                result: result.clone(),
-                tokens_used: Some(100),
-                prompt_hash: None,
-                schema_version: None,
-            })
+            .set(set_params(
+                &repo,
+                "src/main.rs",
+                "fn main() {}",
+                serde_json::json!({"score": 95}),
+                Some(100),
+            ))
             .await
             .unwrap();
 
@@ -968,23 +895,21 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_stats() {
-        let cache = RepoCacheSql::new(":memory:").await.unwrap();
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_stats");
+            return;
+        };
+        let repo = cache.repo_scope.clone().unwrap();
 
         cache
-            .set(CacheSetParams {
-                cache_type: crate::repo::file_cache::CacheType::Refactor,
-                repo_path: "/test/repo",
-                file_path: "src/main.rs",
-                content: "fn main() {}",
-                provider: "xai",
-                model: "grok-beta",
-                result: serde_json::json!({"score": 95}),
-                tokens_used: Some(100),
-                prompt_hash: None,
-                schema_version: None,
-            })
+            .set(set_params(
+                &repo,
+                "src/main.rs",
+                "fn main() {}",
+                serde_json::json!({"score": 95}),
+                Some(100),
+            ))
             .await
             .unwrap();
 
@@ -994,23 +919,21 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
     async fn test_clear_cache() {
-        let cache = RepoCacheSql::new(":memory:").await.unwrap();
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_clear_cache");
+            return;
+        };
+        let repo = cache.repo_scope.clone().unwrap();
 
         cache
-            .set(CacheSetParams {
-                cache_type: crate::repo::file_cache::CacheType::Refactor,
-                repo_path: "/test/repo",
-                file_path: "src/main.rs",
-                content: "fn main() {}",
-                provider: "xai",
-                model: "grok-beta",
-                result: serde_json::json!({"score": 95}),
-                tokens_used: Some(100),
-                prompt_hash: None,
-                schema_version: None,
-            })
+            .set(set_params(
+                &repo,
+                "src/main.rs",
+                "fn main() {}",
+                serde_json::json!({"score": 95}),
+                Some(100),
+            ))
             .await
             .unwrap();
 
@@ -1025,25 +948,23 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "RepoCacheSql uses SQLite internally; not available in postgres-only build"]
     async fn test_eviction() {
-        let cache = RepoCacheSql::new(":memory:").await.unwrap();
+        let Some(cache) = test_cache().await else {
+            eprintln!("DATABASE_URL not set; skipping test_eviction");
+            return;
+        };
+        let repo = cache.repo_scope.clone().unwrap();
 
         // Add multiple entries
         for i in 0..10 {
             cache
-                .set(CacheSetParams {
-                    cache_type: crate::repo::file_cache::CacheType::Refactor,
-                    repo_path: "/test/repo",
-                    file_path: &format!("src/file{}.rs", i),
-                    content: &format!("fn file{}() {{}}", i),
-                    provider: "xai",
-                    model: "grok-beta",
-                    result: serde_json::json!({"score": i}),
-                    tokens_used: Some(100 * i),
-                    prompt_hash: None,
-                    schema_version: None,
-                })
+                .set(set_params(
+                    &repo,
+                    &format!("src/file{}.rs", i),
+                    &format!("fn file{}() {{}}", i),
+                    serde_json::json!({"score": i}),
+                    Some(100 * i),
+                ))
                 .await
                 .unwrap();
         }

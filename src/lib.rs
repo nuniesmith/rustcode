@@ -95,7 +95,6 @@ pub use api::{
 pub use cache::layer::{
     CacheConfig as CacheLayerConfig, CacheKey, CacheLayer, CacheStats as CacheLayerStats,
 };
-pub use cache::migrate::{CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult};
 pub use cache::{AuditCache, CacheEntry, CacheStats};
 pub use cli::{
     QueueCommands, ReportCommands, ScanCommands, TaskCommands, handle_queue_command,
