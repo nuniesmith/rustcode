@@ -136,3 +136,18 @@ jobs:
       # must not block the gate while that download is unproven. Tracked CI-A.2.
       - run: cargo build --workspace
         continue-on-error: true
+
+  docker-build:
+    name: docker build (image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Builds the Dockerfile (cargo-chef path) end-to-end — the path that
+      # `cargo build --workspace` does NOT exercise. Three real build breaks
+      # (aws-lc-sys C build, a non-compiling config.rs, the `claw` -p flag)
+      # reached main precisely because nothing built the image here. Non-blocking
+      # for the same ort-sys-CDN reason as `build` above, but surfaces any
+      # Dockerfile / compile breakage as a visible check.
+      - run: docker build -t rustcode:ci .
+        continue-on-error: true
