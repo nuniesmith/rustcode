@@ -84,11 +84,10 @@ pub mod types;
 pub mod webhooks;
 
 pub use api::{
-    ApiConfig, ApiResponse, ApiState, AuthConfig, AuthResult, IndexJobResponse, IndexJobStatus,
+    ApiResponse, ApiState, AuthConfig, AuthResult, IndexJobResponse, IndexJobStatus,
     IndexStatusResponse, JobQueue, JobQueueConfig, JobStatus, PaginatedResponse, RateLimitConfig,
     RateLimiter, SearchRequest, SearchResponse, SearchType, UploadDocumentRequest,
-    UploadDocumentResponse, create_api_router, create_default_api_router, generate_api_key,
-    hash_api_key,
+    UploadDocumentResponse, generate_api_key, hash_api_key,
 };
 // RC-CLEANUP-B: cache modules consolidated under `crate::cache::*`.
 // Top-level re-exports preserved so external callers using
@@ -250,8 +249,7 @@ pub use webhooks::{
 // Re-export commonly used types
 pub mod prelude {
     pub use crate::api::{
-        ApiConfig, ApiResponse, ApiState, AuthConfig, RateLimitConfig, SearchRequest, SearchType,
-        create_api_router, create_default_api_router,
+        ApiResponse, ApiState, AuthConfig, RateLimitConfig, SearchRequest, SearchType,
     };
     pub use crate::cache::responses::{
         CacheStats as ResponseCacheStats, CachedResponse, ResponseCache,
