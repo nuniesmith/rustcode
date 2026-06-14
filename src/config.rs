@@ -248,6 +248,11 @@ impl Config {
                 .unwrap_or(3501),
         };
 
+        // The `task_executor` field was added to the struct (and to the Default
+        // construction below) but its binding was missing here, so the env loader
+        // failed to compile (E0425). Mirror the Default path.
+        let task_executor = TaskExecutorOptions::default();
+
         Ok(Self {
             server,
             llm,

@@ -492,6 +492,9 @@ enum TaskAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install ring as the process-default rustls CryptoProvider (see server.rs).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Load environment
     dotenvy::dotenv().ok();
 

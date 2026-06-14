@@ -72,7 +72,7 @@ COPY . .
 # Build both binaries in a single invocation so the dep graph is
 # walked once. `claw` is the CLI client (crates/rusty-claude-cli);
 # the runtime stage ships it alongside `rustcode` per RC-CRATES-F.
-RUN cargo build --release --bin rustcode --bin claw
+RUN cargo build --release -p rustcode -p rusty-claude-cli --bin rustcode --bin claw
 
 # -----------------------------------------------------------------------------
 # Stage 3 — runtime: just the binary + minimal shared libs

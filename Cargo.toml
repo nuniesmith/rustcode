@@ -70,7 +70,12 @@ async-trait  = "0.1.89"
 
 # HTTP & web
 axum       = { version = "0.8.8", features = ["macros", "ws"] }
-reqwest    = { version = "0.13.2", features = ["json", "rustls", "form"], default-features = false }
+reqwest    = { version = "0.13.2", features = ["json", "rustls-no-provider", "form"], default-features = false }
+# TLS via rustls + ring (matches sqlx's tls-rustls-ring). reqwest uses
+# rustls-no-provider above, so a process-default provider is installed at the top
+# of each binary's main(). This avoids aws-lc-rs, whose aws-lc-sys C build fails
+# in the Docker (trixie/gcc-14) builder — CI misses it (cargo build, not Docker).
+rustls     = { version = "0.23", default-features = false, features = ["ring"] }
 tower      = "0.5.3"
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 hyper      = "1.9.0"
@@ -263,6 +268,7 @@ redis                              = { workspace = true }
 regex                              = { workspace = true }
 reqwest                            = { workspace = true }
 ring                               = { workspace = true }
+rustls                             = { workspace = true }
 shellexpand                        = { workspace = true }
 serde                              = { workspace = true }
 serde_json                         = { workspace = true }

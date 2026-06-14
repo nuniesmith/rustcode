@@ -5,6 +5,29 @@ mod providers;
 mod sse;
 mod types;
 
+/// Install ring as the process-default rustls CryptoProvider, once. reqwest
+/// uses `rustls-no-provider` (ring, matching the workspace), so building a
+/// client with no default provider panics in `default_rustls_crypto_provider`
+/// — notably under `cargo test`, which never runs a binary `main()`. Call this
+/// before constructing any reqwest client.
+pub(crate) fn ensure_crypto_provider() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+/// Install the crypto provider once at load, before any test runs. Some tests
+/// build `reqwest::Client::new()` directly (not via a client constructor), and
+/// test execution order is nondeterministic — so the constructor-level installs
+/// aren't enough on their own. This runs in every binary that links `api`,
+/// including the lib-test and integration-test harnesses.
+#[ctor::ctor]
+fn _install_crypto_provider() {
+    ensure_crypto_provider();
+}
+
 pub use client::{
     MessageStream, OAuthTokenSet, ProviderClient, oauth_token_is_expired, read_base_url,
     read_xai_base_url, resolve_saved_oauth_token, resolve_startup_auth_source,
