@@ -151,3 +151,17 @@ jobs:
       # Dockerfile / compile breakage as a visible check.
       - run: docker build -t rustcode:ci .
         continue-on-error: true
+
+  audit:
+    name: cargo audit (RUSTSEC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-audit --locked
+      # Surfaces RUSTSEC advisories on every PR. Non-blocking for now — the
+      # sqlx/Postgres stack carries the same advisories janus just patched in
+      # #113; flip to blocking (drop continue-on-error) once they're cleared.
+      - run: cargo audit
+        continue-on-error: true

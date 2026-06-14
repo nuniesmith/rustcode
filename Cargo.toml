@@ -115,6 +115,7 @@ thiserror = "2.0.18"
 # Cryptography
 hmac   = "0.12"
 sha2   = "0.10"
+subtle = "2"
 hex    = "0.4.3"
 ring   = "0.17.14"
 base64 = "0.22.1"
@@ -273,6 +274,7 @@ shellexpand                        = { workspace = true }
 serde                              = { workspace = true }
 serde_json                         = { workspace = true }
 sha2                               = { workspace = true }
+subtle                             = { workspace = true }
 sqlx                               = { workspace = true }
 syn                                = { workspace = true }
 thiserror                          = { workspace = true }

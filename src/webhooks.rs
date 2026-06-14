@@ -268,7 +268,9 @@ impl WebhookPayload {
         if let Some(ref sig) = self.signature {
             let payload = serde_json::to_string(&self.event).unwrap_or_default();
             let expected = Self::compute_signature(&payload, secret);
-            sig == &expected
+            // Constant-time compare to avoid a timing oracle on the HMAC signature.
+            use subtle::ConstantTimeEq;
+            bool::from(sig.as_bytes().ct_eq(expected.as_bytes()))
         } else {
             false
         }
