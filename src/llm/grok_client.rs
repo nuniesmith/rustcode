@@ -188,9 +188,9 @@ impl GrokClient {
         }
     }
 
-    // Enable caching with the specified database path
-    pub async fn with_cache(mut self, cache_db_path: &str) -> Result<Self> {
-        let cache = ResponseCache::new(cache_db_path).await?;
+    // Enable response caching, backed by the shared Postgres pool.
+    pub async fn with_cache(mut self) -> Result<Self> {
+        let cache = ResponseCache::new(self.db.pool().clone()).await?;
         self.cache = Some(cache);
         self.caching_enabled = true;
         Ok(self)
@@ -215,7 +215,7 @@ impl GrokClient {
 
         // Enable caching by default
         let client = Self::new(api_key, db);
-        client.with_cache("data/rustcode_cache.db").await
+        client.with_cache().await
     }
 
     // Score a file using Grok (with caching)

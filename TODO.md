@@ -52,13 +52,18 @@
   See *P1 — New Crates Integration*.
 - [~] **RC-CRATES-E: MCP tool-bridge endpoints on :3501** — the placeholder listener is live
   (`/healthz` only); decide JSON-RPC vs REST and expose `runtime::McpToolRegistry` tools.
-- [ ] ⭐ **CLEANUP-H: finish the SQLite→Postgres migration** — 11 tests are `#[ignore]`'d
-  because `RepoCacheSql` / `ResponseCache` / `CacheMigrator` still embed SQLite in a
-  "postgres-only" build (`src/repo/cache.rs`, `src/cache/{responses,migrate}.rs`). Re-home or
-  delete the SQLite paths so those tests run again. Subsumes / unblocks **RC-CLEANUP-C**.
+- [x] ⭐ **CLEANUP-H: finish the SQLite→Postgres migration** — done. `RepoCacheSql`
+  (`src/repo/cache.rs`) and `ResponseCache` (`src/cache/responses.rs`) were ported from
+  `SqlitePool` to the shared `PgPool` (new tables in `sql/025_cache_tables.sql`); their 8
+  ignored tests are now DB-backed Postgres tests (no longer `#[ignore]`'d — they self-skip
+  when `DATABASE_URL` is unset). `CacheMigrator` (`src/cache/migrate.rs`) was deleted — its
+  only job was file→SQLite migration, vacuous once SQLite is gone — along with its 3 ignored
+  tests and the `cli cache migrate` subcommand. The `sqlite` sqlx feature was dropped; zero
+  `SqlitePool`/sqlx-sqlite references remain. Closes the SQLite half of **RC-CLEANUP-C**.
 - [~] **RC-CLEANUP-C: delete the old file-based repo cache** — structural move done; deletion
   deferred pending (a) SQL-path production verification, (b) `CacheType`/`RepoCacheEntry` type
-  extraction, (c) `cache/migrate.rs` removal, (d) `cli.rs cache init` decision. Pairs with CLEANUP-H.
+  extraction, (d) `cli.rs cache init` decision. (c) `cache/migrate.rs` removal — **done** in
+  CLEANUP-H. Pairs with CLEANUP-H.
 
 ### Tier 2 — Features & integrations
 - [ ] ⭐ **AUDIT-CACHE: implement `RedisAuditCache`** — every method in `src/audit/cache.rs` is
@@ -204,14 +209,40 @@
   > already documented in the module header. Add round-trip tests behind a Redis test service
   > (reuse the CI-A service-container pattern).
 
-- [ ] **CLEANUP-H: finish SQLite→Postgres migration / re-enable ignored tests**
-  > 11 tests carry `#[ignore = "... uses SQLite internally; not available in postgres-only build"]`:
-  >   - `src/repo/cache.rs` ×6 (`RepoCacheSql`)
-  >   - `src/cache/responses.rs` ×2 (`ResponseCache`)
-  >   - `src/cache/migrate.rs` ×3 (`CacheMigrator`)
-  > These are dead coverage left from the partial migration. Decide per type: port the test to
-  > Postgres, or delete the SQLite code path entirely (the latter also closes **RC-CLEANUP-C**,
-  > since `cache/migrate.rs`'s only job — moving file/SQLite cache → SQL — becomes vacuous).
+- [x] **CLEANUP-H: finish SQLite→Postgres migration / re-enable ignored tests**
+  > **Done.** The 11 `#[ignore]`'d tests were resolved per type — by porting the live
+  > SQLite types to Postgres (8 tests) and deleting a dead one (3 tests):
+  >
+  >   - **`RepoCacheSql` (`src/repo/cache.rs`, 6 tests) — PORTED.** Live: the scan engine
+  >     (`auto_scanner.rs`, per-file `get`/`set` + `get_all_entries` for project review) and
+  >     the `cli refactor`/`cache status|clear` commands construct it. Rewrote it from
+  >     `SqlitePool` (per-repo `~/.cache/rustcode/repos/<hash>/cache.db` files) to the shared
+  >     `PgPool` + a single `cache_entries`/`cache_stats` table; rows are scoped by `repo_path`
+  >     (constructors now take a `PgPool`; repo-wide queries are scoped via `new_for_repo`).
+  >     Dropped the dead `new_with_hash` and migration-only `set_with_cache_key`. The 6 tests
+  >     are now Postgres-backed and self-skip when `DATABASE_URL` is unset.
+  >   - **`ResponseCache` (`src/cache/responses.rs`, 2 tests) — PORTED.** Live via
+  >     `GrokClient::from_env → with_cache` (used by doc/test/refactor generators + the todo
+  >     pipeline). Rewrote it from `SqlitePool` (`data/rustcode_cache.db`) to the shared
+  >     `PgPool` + a `response_cache` table. `with_cache()` now takes no path (uses the client's
+  >     pool); `QueryRouter::new`'s now-unused `cache_path` arg is retained for API stability.
+  >     The 2 tests are Postgres-backed and self-skip without `DATABASE_URL`.
+  >   - **`CacheMigrator` (`src/cache/migrate.rs`, 3 tests) — DELETED.** Sole job was
+  >     file/SQLite → SQLite migration; vacuous once SQLite is gone. Removed the file, the
+  >     `cli cache migrate` subcommand + `CacheAction::Migrate` variant, and the lib.rs
+  >     re-export, along with all 3 ignored tests.
+  >
+  > New schema: `sql/025_cache_tables.sql` (applied by the standard `sqlx::migrate!("./sql")`).
+  > The `sqlite` sqlx feature was removed; `grep -rn SqlitePool` over `src/` + `crates/` is now
+  > empty. `cargo check --all-targets` is clean (0 errors); `cargo fmt --all --check` passes;
+  > the changed `rustcode` files are clippy-clean (the workspace-wide `-D warnings` backlog in
+  > `github-client`/`plugins`/`rag`/`telemetry` is pre-existing — see CI-A.3). The DB-backed
+  > tests need a Postgres instance to actually exercise (none in the sandbox); they compile and
+  > no-op without `DATABASE_URL`. Closes the SQLite half of **RC-CLEANUP-C**.
+  >
+  > Remaining (out of scope) SQLite mentions are non-sqlx: `src/backup/mod.rs` shells out to
+  > the `sqlite3` CLI for a DB dump, and `src/bin/github-sync-daemon.rs` has a stale
+  > `sqlite:data/rustcode.db` `DATABASE_URL` fallback default.
 
 - [ ] **TEST-FLAKY: de-flake the `mcp_stdio` timing test + remove stale roadmap pointer**
   > `crates/runtime/src/mcp_stdio.rs:~2656` is `#[ignore = "flaky: intermittent timing issues in
@@ -1314,8 +1345,9 @@
   > out of the file-based version so the SQL version stops
   > importing from it (today `repo::cache.rs` imports
   > `crate::repo::file_cache::{CacheType, ...}` for the enum);
-  > (c) deleting `src/cache/migrate.rs` since its sole job —
-  > moving data from file-based to SQL — becomes vacuous;
+  > (c) ~~deleting `src/cache/migrate.rs` since its sole job —
+  > moving data from file-based to SQL — becomes vacuous~~ **DONE in
+  > CLEANUP-H** (file + `cli cache migrate` + tests removed);
   > (d) deciding what to do with `src/bin/cli.rs`'s
   > `cache init` subcommand — it calls `RepoCache::new` to lay
   > down the file-cache directory structure. Either remove the

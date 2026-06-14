@@ -6,7 +6,7 @@
 //
 // - Content-based caching using SHA-256 hashes
 // - TTL-based cache invalidation
-// - SQLite storage for persistence
+// - Postgres storage for persistence (shared `response_cache` table)
 // - Cache statistics and metrics
 // - Automatic cleanup of expired entries
 //
@@ -15,36 +15,38 @@
 // ```rust,no_run
 // use rustcode::response_cache::ResponseCache;
 //
-// #[tokio::main]
-// async fn main() -> anyhow::Result<()> {
-//     let cache = ResponseCache::new("cache.db").await?;
+// # async fn run(pool: sqlx::PgPool) -> anyhow::Result<()> {
+// let cache = ResponseCache::new(pool).await?;
 //
-//     // Check cache before API call
-//     let prompt = "analyze this code...";
-//     if let Some(cached) = cache.get(prompt, "file_scoring").await? {
-//         println!("Cache hit! Using cached response.");
-//         return Ok(());
-//     }
-//
-//     // Make API call and cache result (example only)
-//     let response = "API response here";
-//     cache.set(prompt, "file_scoring", response, None).await?;
-//
-//     Ok(())
+// // Check cache before API call
+// let prompt = "analyze this code...";
+// if let Some(cached) = cache.get(prompt, "file_scoring").await? {
+//     println!("Cache hit! Using cached response.");
+//     return Ok(());
 // }
+//
+// // Make API call and cache result (example only)
+// let response = "API response here";
+// cache.set(prompt, "file_scoring", response, None).await?;
+// # Ok(())
+// # }
 // ```
+//
+// The schema lives in `sql/025_cache_tables.sql` and is applied by the
+// standard `sqlx::migrate!("./sql")` run at pool init.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 
 // Default cache TTL in hours (24 hours)
 const DEFAULT_TTL_HOURS: i64 = 24;
 
-// Response cache for LLM API calls
+// Response cache for LLM API calls, backed by the shared Postgres pool.
 pub struct ResponseCache {
-    pool: sqlx::SqlitePool,
+    pool: PgPool,
 }
 
 // Cached response entry
@@ -72,56 +74,12 @@ pub struct CacheStats {
 }
 
 impl ResponseCache {
-    // Create a new response cache
-    pub async fn new(database_path: &str) -> Result<Self> {
-        let database_url = format!("sqlite:{}?mode=rwc", database_path);
-        let pool = sqlx::SqlitePool::connect(&database_url)
-            .await
-            .context("Failed to connect to cache database")?;
-
-        let cache = Self { pool };
-        cache.initialize_schema().await?;
-
-        Ok(cache)
-    }
-
-    // Initialize the cache schema
-    async fn initialize_schema(&self) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS response_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content_hash TEXT NOT NULL UNIQUE,
-                operation TEXT NOT NULL,
-                response TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                expires_at TEXT NOT NULL,
-                hit_count INTEGER NOT NULL DEFAULT 0,
-                last_accessed TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("Failed to create response_cache table")?;
-
-        // Create indexes
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cache_hash ON response_cache(content_hash)")
-            .execute(&self.pool)
-            .await
-            .context("Failed to create hash index")?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cache_expires ON response_cache(expires_at)")
-            .execute(&self.pool)
-            .await
-            .context("Failed to create expires index")?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cache_operation ON response_cache(operation)")
-            .execute(&self.pool)
-            .await
-            .context("Failed to create operation index")?;
-
-        Ok(())
+    // Create a new response cache backed by the shared Postgres pool.
+    //
+    // The `response_cache` table is created by the standard migration run
+    // (`sql/025_cache_tables.sql`); this constructor does not run DDL.
+    pub async fn new(pool: PgPool) -> Result<Self> {
+        Ok(Self { pool })
     }
 
     // Generate content hash from prompt and operation
@@ -136,12 +94,12 @@ impl ResponseCache {
     pub async fn get(&self, prompt: &str, operation: &str) -> Result<Option<String>> {
         let hash = Self::generate_hash(prompt, operation);
 
-        let result = sqlx::query_as::<_, (i64, String, String)>(
+        let result = sqlx::query_as::<_, (i64, String, DateTime<Utc>)>(
             r#"
             SELECT id, response, expires_at
             FROM response_cache
             WHERE content_hash = $1
-            AND expires_at > datetime('now')
+            AND expires_at > NOW()
             "#,
         )
         .bind(&hash)
@@ -155,7 +113,7 @@ impl ResponseCache {
                 r#"
                 UPDATE response_cache
                 SET hit_count = hit_count + 1,
-                    last_accessed = datetime('now')
+                    last_accessed = NOW()
                 WHERE id = $1
                 "#,
             )
@@ -200,7 +158,7 @@ impl ResponseCache {
         .bind(&hash)
         .bind(operation)
         .bind(response)
-        .bind(expires_at.to_rfc3339())
+        .bind(expires_at)
         .execute(&self.pool)
         .await
         .context("Failed to cache response")?;
@@ -215,7 +173,7 @@ impl ResponseCache {
         let result = sqlx::query(
             r#"
             DELETE FROM response_cache
-            WHERE expires_at < datetime('now')
+            WHERE expires_at < NOW()
             "#,
         )
         .execute(&self.pool)
@@ -265,7 +223,7 @@ impl ResponseCache {
     // Get cache statistics
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let (total_entries,) = sqlx::query_as::<_, (i64,)>(
-            "SELECT COUNT(*) FROM response_cache WHERE expires_at > datetime('now')",
+            "SELECT COUNT(*) FROM response_cache WHERE expires_at > NOW()",
         )
         .fetch_one(&self.pool)
         .await
@@ -278,7 +236,7 @@ impl ResponseCache {
                 .context("Failed to sum hit counts")?;
 
         let (total_size_bytes,) = sqlx::query_as::<_, (i64,)>(
-            "SELECT COALESCE(SUM(LENGTH(response)), 0) FROM response_cache",
+            "SELECT COALESCE(SUM(OCTET_LENGTH(response)), 0)::BIGINT FROM response_cache",
         )
         .fetch_one(&self.pool)
         .await
@@ -291,23 +249,21 @@ impl ResponseCache {
             0.0
         };
 
-        let oldest = sqlx::query_as::<_, (String,)>(
+        let oldest = sqlx::query_as::<_, (DateTime<Utc>,)>(
             "SELECT created_at FROM response_cache ORDER BY created_at ASC LIMIT 1",
         )
         .fetch_optional(&self.pool)
         .await
         .context("Failed to get oldest entry")?
-        .and_then(|(s,)| DateTime::parse_from_rfc3339(&s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .map(|(dt,)| dt);
 
-        let newest = sqlx::query_as::<_, (String,)>(
+        let newest = sqlx::query_as::<_, (DateTime<Utc>,)>(
             "SELECT created_at FROM response_cache ORDER BY created_at DESC LIMIT 1",
         )
         .fetch_optional(&self.pool)
         .await
         .context("Failed to get newest entry")?
-        .and_then(|(s,)| DateTime::parse_from_rfc3339(&s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .map(|(dt,)| dt);
 
         Ok(CacheStats {
             total_entries,
@@ -321,12 +277,24 @@ impl ResponseCache {
 
     // Get cache entries by operation
     pub async fn get_entries_by_operation(&self, operation: &str) -> Result<Vec<CachedResponse>> {
-        let entries = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, String)>(
+        let entries = sqlx::query_as::<
+            _,
+            (
+                i64,
+                String,
+                String,
+                String,
+                DateTime<Utc>,
+                DateTime<Utc>,
+                i64,
+                DateTime<Utc>,
+            ),
+        >(
             r#"
             SELECT id, content_hash, operation, response, created_at, expires_at, hit_count, last_accessed
             FROM response_cache
             WHERE operation = $1
-            AND expires_at > datetime('now')
+            AND expires_at > NOW()
             ORDER BY created_at DESC
             "#,
         )
@@ -347,23 +315,15 @@ impl ResponseCache {
                     expires_at,
                     hit_count,
                     last_accessed,
-                )| {
-                    CachedResponse {
-                        id,
-                        content_hash,
-                        operation,
-                        response,
-                        created_at: DateTime::parse_from_rfc3339(&created_at)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                        expires_at: DateTime::parse_from_rfc3339(&expires_at)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                        hit_count,
-                        last_accessed: DateTime::parse_from_rfc3339(&last_accessed)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                    }
+                )| CachedResponse {
+                    id,
+                    content_hash,
+                    operation,
+                    response,
+                    created_at,
+                    expires_at,
+                    hit_count,
+                    last_accessed,
                 },
             )
             .collect())
@@ -371,11 +331,23 @@ impl ResponseCache {
 
     // Get most frequently accessed cache entries
     pub async fn get_hot_entries(&self, limit: i64) -> Result<Vec<CachedResponse>> {
-        let entries = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, String)>(
+        let entries = sqlx::query_as::<
+            _,
+            (
+                i64,
+                String,
+                String,
+                String,
+                DateTime<Utc>,
+                DateTime<Utc>,
+                i64,
+                DateTime<Utc>,
+            ),
+        >(
             r#"
             SELECT id, content_hash, operation, response, created_at, expires_at, hit_count, last_accessed
             FROM response_cache
-            WHERE expires_at > datetime('now')
+            WHERE expires_at > NOW()
             ORDER BY hit_count DESC
             LIMIT $1
             "#,
@@ -397,23 +369,15 @@ impl ResponseCache {
                     expires_at,
                     hit_count,
                     last_accessed,
-                )| {
-                    CachedResponse {
-                        id,
-                        content_hash,
-                        operation,
-                        response,
-                        created_at: DateTime::parse_from_rfc3339(&created_at)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                        expires_at: DateTime::parse_from_rfc3339(&expires_at)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                        hit_count,
-                        last_accessed: DateTime::parse_from_rfc3339(&last_accessed)
-                            .unwrap_or_else(|_| Utc::now().into())
-                            .with_timezone(&Utc),
-                    }
+                )| CachedResponse {
+                    id,
+                    content_hash,
+                    operation,
+                    response,
+                    created_at,
+                    expires_at,
+                    hit_count,
+                    last_accessed,
                 },
             )
             .collect())
@@ -429,44 +393,75 @@ impl ResponseCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    // Connect to the test Postgres instance. Skipped (returns None) when
+    // DATABASE_URL is unset so a plain `cargo test` without a DB is a no-op.
+    async fn test_pool() -> Option<PgPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .ok()?;
+        sqlx::migrate!("./sql").run(&pool).await.ok()?;
+        Some(pool)
+    }
 
     #[tokio::test]
-    #[ignore = "ResponseCache uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_operations() -> Result<()> {
-        let cache = ResponseCache::new(":memory:").await?;
+        let Some(pool) = test_pool().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_operations");
+            return Ok(());
+        };
+        let cache = ResponseCache::new(pool).await?;
+
+        // Unique operation namespace so the shared table stays isolated.
+        let op = format!("test_op_{}", uuid::Uuid::new_v4());
+        cache.clear_operation(&op).await?;
 
         // Test cache miss
-        let result = cache.get("test prompt", "test_op").await?;
+        let result = cache.get("test prompt", &op).await?;
         assert!(result.is_none());
 
         // Test cache set
         cache
-            .set("test prompt", "test_op", "test response", Some(1))
+            .set("test prompt", &op, "test response", Some(1))
             .await?;
 
         // Test cache hit
-        let result = cache.get("test prompt", "test_op").await?;
+        let result = cache.get("test prompt", &op).await?;
         assert_eq!(result, Some("test response".to_string()));
 
+        cache.clear_operation(&op).await?;
         Ok(())
     }
 
     #[tokio::test]
-    #[ignore = "ResponseCache uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_stats() -> Result<()> {
-        let cache = ResponseCache::new(":memory:").await?;
+        let Some(pool) = test_pool().await else {
+            eprintln!("DATABASE_URL not set; skipping test_cache_stats");
+            return Ok(());
+        };
+        let cache = ResponseCache::new(pool).await?;
 
-        cache.set("prompt1", "op1", "response1", Some(1)).await?;
-        cache.set("prompt2", "op1", "response2", Some(1)).await?;
+        let op = format!("test_op_{}", uuid::Uuid::new_v4());
+        cache.clear_operation(&op).await?;
+
+        cache.set("prompt1", &op, "response1", Some(1)).await?;
+        cache.set("prompt2", &op, "response2", Some(1)).await?;
 
         // Generate some hits
-        cache.get("prompt1", "op1").await?;
-        cache.get("prompt1", "op1").await?;
+        cache.get("prompt1", &op).await?;
+        cache.get("prompt1", &op).await?;
 
-        let stats = cache.get_stats().await?;
-        assert_eq!(stats.total_entries, 2);
-        assert_eq!(stats.total_hits, 2);
+        // Scope assertions to this operation to avoid cross-test interference.
+        let entries = cache.get_entries_by_operation(&op).await?;
+        assert_eq!(entries.len(), 2);
+        let hits: i64 = entries.iter().map(|e| e.hit_count).sum();
+        assert_eq!(hits, 2);
 
+        cache.clear_operation(&op).await?;
         Ok(())
     }
 

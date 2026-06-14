@@ -54,6 +54,19 @@ fn xai_client() -> GrokClient {
     GrokClient::new(key).with_model("grok-4.20-multi-agent-0309")
 }
 
+// Connect to the Postgres test instance and apply migrations; returns None
+// (so the caller skips) when DATABASE_URL is unset.
+async fn test_pg_pool() -> Option<sqlx::PgPool> {
+    let url = std::env::var("DATABASE_URL").ok()?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&url)
+        .await
+        .ok()?;
+    sqlx::migrate!("./sql").run(&pool).await.ok()?;
+    Some(pool)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // G-1  GrokClient::generate() — non-empty response
 // ─────────────────────────────────────────────────────────────────────────────
@@ -344,27 +357,27 @@ async fn test_rag_context_injection_enriches_prompt() {
 // G-4  ResponseCache — second identical request returns cached = true
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Exercises the full cache read/write cycle against a temp SQLite database.
-// First call misses, second call hits, and the hit path is faster.
+// Exercises the full cache read/write cycle against the Postgres response
+// cache. First call misses, second call hits, and the hit path is faster.
 #[tokio::test]
 async fn test_response_cache_hit_on_second_identical_request() {
     let _ = require_env!("XAI_API_KEY");
+    let Some(pool) = test_pg_pool().await else {
+        eprintln!("DATABASE_URL not set; skipping response-cache integration test");
+        return;
+    };
 
-    // Use an in-memory SQLite path unique to this test run
-    let db_path = format!(
-        "/tmp/rustcode_test_cache_{}.db",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-
-    let cache = ResponseCache::new(&db_path)
+    let cache = ResponseCache::new(pool)
         .await
-        .expect("Cache DB should initialise");
+        .expect("Cache should initialise");
 
     let prompt = "What is 2+2? Reply with just the number.";
-    let operation = "test_cache_integration";
+    // Unique operation namespace so the shared table stays isolated.
+    let operation = &format!("test_cache_integration_{}", uuid::Uuid::new_v4());
+    cache
+        .clear_operation(operation)
+        .await
+        .expect("clear_operation should not error");
 
     // ── First call: expect cache miss ────────────────────────────────────────
     let before_miss = Instant::now();
@@ -413,27 +426,30 @@ async fn test_response_cache_hit_on_second_identical_request() {
     eprintln!("[G-4] Cache stats: {:?}", stats);
 
     // Cleanup
-    let _ = std::fs::remove_file(&db_path);
+    let _ = cache.clear_operation(operation).await;
 }
 
 // Verify that `clear_expired()` removes only stale entries and preserves valid ones.
 #[tokio::test]
 async fn test_response_cache_clear_expired_keeps_valid_entries() {
-    let db_path = format!(
-        "/tmp/rustcode_test_expire_{}.db",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
+    let Some(pool) = test_pg_pool().await else {
+        eprintln!("DATABASE_URL not set; skipping clear_expired integration test");
+        return;
+    };
 
-    let cache = ResponseCache::new(&db_path)
+    let cache = ResponseCache::new(pool)
         .await
-        .expect("Cache DB should initialise");
+        .expect("Cache should initialise");
+
+    let operation = &format!("test_expire_{}", uuid::Uuid::new_v4());
+    cache
+        .clear_operation(operation)
+        .await
+        .expect("clear_operation should not error");
 
     // Store a long-lived entry (1 hour TTL)
     cache
-        .set("keep-me", "test", "keep-value", Some(1))
+        .set("keep-me", operation, "keep-value", Some(1))
         .await
         .expect("set should succeed");
 
@@ -445,14 +461,14 @@ async fn test_response_cache_clear_expired_keeps_valid_entries() {
 
     // The long-lived entry must still be readable
     let still_there = cache
-        .get("keep-me", "test")
+        .get("keep-me", operation)
         .await
         .expect("get after clear_expired should not error");
 
     assert_eq!(still_there.as_deref(), Some("keep-value"));
     eprintln!("[G-4b] clear_expired removed {removed} rows; entry preserved ✓");
 
-    let _ = std::fs::remove_file(&db_path);
+    let _ = cache.clear_operation(operation).await;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

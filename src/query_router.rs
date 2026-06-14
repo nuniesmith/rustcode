@@ -151,8 +151,11 @@ pub struct QueryRouter {
 
 impl QueryRouter {
     // Create a new query router
-    pub async fn new(pool: sqlx::PgPool, cache_path: &str) -> Result<Self> {
-        let cache = ResponseCache::new(cache_path)
+    // `cache_path` is retained for API compatibility but unused: the
+    // response cache is now backed by the shared Postgres `pool`, not a
+    // standalone SQLite file (CLEANUP-H).
+    pub async fn new(pool: sqlx::PgPool, _cache_path: &str) -> Result<Self> {
+        let cache = ResponseCache::new(pool.clone())
             .await
             .context("Failed to initialize response cache")?;
 
