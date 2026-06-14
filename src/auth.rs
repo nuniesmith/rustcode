@@ -105,7 +105,12 @@ pub async fn require_api_key(request: Request, next: Next) -> Result<Response, R
     match auth_header {
         Some(header) if header.starts_with("Bearer ") => {
             let token = &header[7..];
-            if keys.iter().any(|k| k == token) {
+            // Constant-time compare to avoid a timing oracle on the API key.
+            use subtle::ConstantTimeEq;
+            if keys
+                .iter()
+                .any(|k| bool::from(k.as_bytes().ct_eq(token.as_bytes())))
+            {
                 Ok(next.run(request).await)
             } else {
                 Err(AuthError::unauthorized("Invalid API key").into_response())
