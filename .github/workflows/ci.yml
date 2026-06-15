@@ -165,3 +165,18 @@ jobs:
       # #113; flip to blocking (drop continue-on-error) once they're cleared.
       - run: cargo audit
         continue-on-error: true
+
+  deny:
+    name: cargo deny (licenses / bans / sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deny --locked
+      # Checks the dependency graph for advisories, disallowed licenses,
+      # duplicate/banned crates, and untrusted sources (config: deny.toml).
+      # Non-blocking for now (matches `audit`); drop continue-on-error to gate
+      # once the graph is clean.
+      - run: cargo deny check
+        continue-on-error: true
