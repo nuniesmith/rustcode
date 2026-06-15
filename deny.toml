@@ -13,29 +13,42 @@ all-features = true
 
 [advisories]
 version = 2
-# RUSTSEC advisory DB. `cargo audit` already surfaces vulnerabilities; this keeps
-# them visible here too. Add advisory IDs to `ignore` (with a rationale) as needed.
-ignore = []
+# `cargo audit` already surfaces vulnerabilities; this keeps them visible here
+# too. The two ignores are unmaintained *transitive* deps with no safe upgrade —
+# revisit if maintained replacements land upstream.
+ignore = [
+    "RUSTSEC-2024-0436", # paste — no longer maintained (via fastembed/tokenizers)
+    "RUSTSEC-2025-0141", # bincode 1.x — unmaintained (transitive)
+]
 
 [licenses]
 version = 2
-# Permissive licenses accepted across the dependency tree. Anything not listed
-# is flagged (non-blocking) — extend deliberately as new deps appear.
+# Permissive licenses present in the dependency tree. Extend deliberately as new
+# deps appear; copyleft is handled by scoped exceptions below, not blanket allows.
 allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    "ISC",
-    "Unicode-DFS-2016",
-    "Unicode-3.0",
-    "Zlib",
-    "MPL-2.0",
+    "BSL-1.0",
+    "0BSD",
     "CC0-1.0",
-    "OpenSSL",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
 ]
 confidence-threshold = 0.8
+# r-efi is LGPL-2.1-or-later but only provides UEFI ABI type definitions, pulled
+# in transitively for UEFI targets (not the normal build target) — scoped, not a
+# blanket LGPL allowance.
+[[licenses.exceptions]]
+crate = "r-efi"
+allow = ["LGPL-2.1-or-later"]
 
 [bans]
 # Surface, don't fail, duplicate versions + wildcard deps for now.
