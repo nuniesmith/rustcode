@@ -12,10 +12,8 @@
 // audit:repo:<repo_id>:latest             → run timestamp string (no TTL)
 // ```
 //
-// # TODO(scaffolder): implement
-//
-// The structs and trait are fully defined. Implement the Redis I/O in the
-// `RedisAuditCache` methods — everything is stubbed with `todo!()`.
+// The structs, trait, and the `RedisAuditCache` Redis I/O are all implemented
+// (GET/SETEX with TTLs, a latest-run pointer, SCAN-based stats).
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -235,7 +233,7 @@ pub struct AuditCacheStats {
 }
 
 // ============================================================================
-// Redis implementation (stub — TODO: implement)
+// Redis implementation
 // ============================================================================
 
 // Redis-backed audit cache
