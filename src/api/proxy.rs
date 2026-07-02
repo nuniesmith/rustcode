@@ -134,8 +134,9 @@ use crate::llm::router::{ClaudeTier, CompletionRequest, ModelTarget, TaskKind};
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 use ::api::{
-    AnthropicClient, ContentBlockDelta, InputMessage, MessageRequest, MessageResponse,
-    OutputContentBlock as AnthropicContentBlock, PromptCache, StreamEvent, SystemBlock, Usage,
+    AnthropicClient, ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest,
+    MessageResponse, OutputContentBlock as AnthropicContentBlock, PromptCache, StreamEvent,
+    SystemBlock, ToolChoice as AnthropicToolChoice, ToolDefinition, ToolResultContentBlock, Usage,
 };
 
 // ---------------------------------------------------------------------------
@@ -201,14 +202,63 @@ impl ProxyState {
 // A single message in the conversation history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OaiMessage {
-    // `"system"` | `"user"` | `"assistant"`
+    // `"system"` | `"user"` | `"assistant"` | `"tool"`
     pub role: String,
-    // Conversation text — may arrive as a plain string or as the newer OpenAI
-    // array-of-parts format: `[{"type":"text","text":"..."}]`.  The custom
-    // deserialiser normalises both forms to a plain `String`; non-text parts
+    // Conversation text — may arrive as a plain string, as the newer OpenAI
+    // array-of-parts format: `[{"type":"text","text":"..."}]`, or as `null`
+    // (assistant turns that carried only `tool_calls`).  The custom
+    // deserialiser normalises all forms to a plain `String`; non-text parts
     // (e.g. `image_url`) are silently ignored since this proxy is text-only.
-    #[serde(deserialize_with = "deserialize_oai_content")]
+    #[serde(default, deserialize_with = "deserialize_oai_content")]
     pub content: String,
+    // Tool calls made by a prior assistant turn (OpenAI function-calling
+    // history format). Forwarded to Claude as `tool_use` content blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<OaiToolCall>>,
+    // For `role: "tool"` messages — the id of the tool call this message
+    // is a result for. Forwarded to Claude as a `tool_result` block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+// An OpenAI tool definition: `{ "type": "function", "function": {...} }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OaiTool {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: OaiFunctionDef,
+}
+
+// The `function` payload inside an OpenAI tool definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OaiFunctionDef {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    // JSON Schema for the arguments. OpenAI allows this to be omitted for
+    // zero-argument functions.
+    #[serde(default)]
+    pub parameters: Option<serde_json::Value>,
+}
+
+// A tool call emitted by the assistant (OpenAI wire format). `arguments`
+// is a JSON-encoded string per the OpenAI spec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OaiToolCall {
+    pub id: String,
+    #[serde(rename = "type", default = "default_function_kind")]
+    pub kind: String,
+    pub function: OaiFunctionCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OaiFunctionCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+fn default_function_kind() -> String {
+    "function".to_string()
 }
 
 // Deserialise the OpenAI `content` field.
@@ -243,6 +293,16 @@ where
 
         fn visit_string<E: de::Error>(self, v: String) -> Result<String, E> {
             Ok(v)
+        }
+
+        // `content: null` — sent on assistant turns that only carried
+        // `tool_calls`. Normalised to an empty string.
+        fn visit_unit<E: de::Error>(self) -> Result<String, E> {
+            Ok(String::new())
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<String, E> {
+            Ok(String::new())
         }
 
         // Array-of-parts form: `[{"type":"text","text":"..."}, ...]`
@@ -285,9 +345,20 @@ pub struct OaiChatRequest {
     pub temperature: f32,
     // Maximum tokens to generate.
     pub max_tokens: Option<u32>,
-    // Streaming — must be `false` (streaming is not yet implemented).
+    // Streaming — when `true` the response is SSE `chat.completion.chunk`
+    // frames; when `false` (default) a single JSON body.
     #[serde(default)]
     pub stream: bool,
+    // OpenAI function-calling tool definitions. Forwarded to Claude targets
+    // as Anthropic `tools`; ignored (with a warning) for Ollama / Grok
+    // targets, which have no function-calling path through this proxy.
+    #[serde(default)]
+    pub tools: Option<Vec<OaiTool>>,
+    // OpenAI `tool_choice`: `"auto"` | `"none"` | `"required"` |
+    // `{"type":"function","function":{"name":...}}`. `"none"` drops the
+    // tool definitions entirely.
+    #[serde(default)]
+    pub tool_choice: Option<serde_json::Value>,
 
     // ── RustCode extensions ─────────────────────────────────────────────
     // Inject RAG + symbol context from a registered repo slug or UUID.
@@ -320,8 +391,19 @@ pub struct OaiChatResponse {
 #[derive(Debug, Serialize)]
 pub struct OaiChoice {
     pub index: u32,
-    pub message: OaiMessage,
+    pub message: OaiAssistantMessage,
     pub finish_reason: String,
+}
+
+// The assistant message inside a non-streaming choice. `content` is `null`
+// (not the empty string) when the turn carried only tool calls, matching
+// the OpenAI wire format that strict clients validate against.
+#[derive(Debug, Serialize)]
+pub struct OaiAssistantMessage {
+    pub role: String,
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<OaiToolCall>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +448,28 @@ struct OaiDelta {
     // The incremental text content (empty string on the final chunk).
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<String>,
+    // Incremental tool-call fragments (OpenAI streaming function-call
+    // format). The first fragment for a call carries `id` / `type` /
+    // `function.name`; subsequent fragments append to `function.arguments`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OaiDeltaToolCall>>,
+}
+
+#[derive(Debug, Serialize)]
+struct OaiDeltaToolCall {
+    index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+    function: OaiDeltaFunction,
+}
+
+#[derive(Debug, Serialize)]
+struct OaiDeltaFunction {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    arguments: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -557,10 +661,23 @@ async fn handle_chat_completions(
     let full_prompt =
         build_full_prompt(&req.messages, &rag_enriched_prompt, repo_context.as_deref());
 
-    // ── 8. Cache key & lookup ─────────────────────────────────────────────────
+    // Structured message history + translated tool definitions for Claude
+    // targets. Ollama / Grok use the flattened `full_prompt` instead — warn
+    // when a client sent tools that a non-Claude target will ignore.
+    let claude_payload = build_claude_payload(&req, &rag_enriched_prompt, repo_context.as_deref());
+    let has_tools = claude_payload.tools.is_some();
+    if has_tools && !matches!(target, ModelTarget::Claude { .. }) {
+        warn!(
+            model = %req.model,
+            "Proxy: request carries tool definitions but the resolved target \
+             is not Claude — tools will be ignored"
+        );
+    }
+
+    // ── 8. Cache key & lookup ─────────────────────────────────────────
     let cache_key = build_proxy_cache_key(&target, &full_prompt, req.x_repo_id.as_deref());
 
-    // ── 9. Stream or non-stream branch ───────────────────────────────────────
+    // ── 9. Stream or non-stream branch ─────────────────────────────────
     if req.stream {
         return handle_streaming(
             state,
@@ -572,11 +689,15 @@ async fn handle_chat_completions(
             repo_context_injected,
             cache_key,
             system_prompt.clone(),
+            claude_payload,
         )
         .await;
     }
 
-    if !req.x_no_cache {
+    // The response cache stores plain text — replaying a cached text answer
+    // to an agent that expects tool calls would break its loop, so tool
+    // requests bypass the cache entirely.
+    if !req.x_no_cache && !has_tools {
         match state
             .repo_state
             .cache
@@ -602,6 +723,8 @@ async fn handle_chat_completions(
                 });
                 return build_oai_response(
                     hit.content,
+                    None,
+                    "stop".to_string(),
                     hit.model_used,
                     hit.used_fallback,
                     hit.task_kind,
@@ -630,7 +753,7 @@ async fn handle_chat_completions(
         repo_context: None, // already baked into full_prompt above
     };
 
-    let outcome = dispatch(&state.repo_state, &comp_req, &target).await;
+    let outcome = dispatch(&state.repo_state, &comp_req, &target, &claude_payload).await;
     let DispatchOutcome {
         reply,
         model_used,
@@ -638,6 +761,8 @@ async fn handle_chat_completions(
         tokens_used,
         cache_creation_input_tokens,
         cache_read_input_tokens,
+        tool_calls,
+        finish_reason,
         error: dispatch_error,
     } = outcome;
 
@@ -662,6 +787,8 @@ async fn handle_chat_completions(
         });
         return build_oai_response(
             reply,
+            None,
+            "stop".to_string(),
             model_used,
             used_fallback,
             task_kind_str,
@@ -677,20 +804,22 @@ async fn handle_chat_completions(
         .into_response();
     }
 
-    // ── 11. Cache (fire-and-forget) ───────────────────────────────────────────
-    let cached_val = CachedProxyResponse {
-        content: reply.clone(),
-        model_used: model_used.clone(),
-        used_fallback,
-        task_kind: task_kind_str.clone(),
-        rag_chunks_used,
-        repo_context_injected,
-        prompt_tokens: prompt_tok,
-        completion_tokens: completion_tok,
-        cache_creation_input_tokens,
-        cache_read_input_tokens,
-    };
-    {
+    // ── 11. Cache (fire-and-forget) ───────────────────────────────────────
+    // Tool-call responses are never cached: `CachedProxyResponse` only
+    // carries text, and tool calls are turn-specific.
+    if !has_tools && tool_calls.is_none() {
+        let cached_val = CachedProxyResponse {
+            content: reply.clone(),
+            model_used: model_used.clone(),
+            used_fallback,
+            task_kind: task_kind_str.clone(),
+            rag_chunks_used,
+            repo_context_injected,
+            prompt_tokens: prompt_tok,
+            completion_tokens: completion_tok,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+        };
         let cache = Arc::clone(&state.repo_state.cache);
         let key = cache_key.clone();
         tokio::spawn(async move {
@@ -722,6 +851,8 @@ async fn handle_chat_completions(
 
     build_oai_response(
         reply,
+        tool_calls,
+        finish_reason,
         model_used,
         used_fallback,
         task_kind_str,
@@ -757,7 +888,10 @@ async fn handle_streaming(
     repo_context_injected: bool,
     cache_key: String,
     system_prompt: Option<String>,
+    claude_payload: ClaudePayload,
 ) -> Response {
+    // Tool-call streams are never cached (the cache only stores text).
+    let skip_cache = claude_payload.tools.is_some();
     let completion_id = format!("chatcmpl-rc-{}", Uuid::new_v4());
     let created = unix_now();
     let max_tokens = req.max_tokens.unwrap_or(2048);
@@ -842,7 +976,7 @@ async fn handle_streaming(
             let tier = *tier;
             let anthropic_client = state.repo_state.anthropic_client.clone();
             let system = system_prompt.clone();
-            let prompt = full_prompt.clone();
+            let payload = claude_payload;
 
             tokio::spawn(async move {
                 let client = match anthropic_client {
@@ -859,10 +993,10 @@ async fn handle_streaming(
                 let message_req = MessageRequest {
                     model: model.clone(),
                     max_tokens,
-                    messages: vec![InputMessage::user_text(prompt)],
+                    messages: payload.messages,
                     system: build_system_blocks(system.as_deref()),
-                    tools: None,
-                    tool_choice: None,
+                    tools: payload.tools,
+                    tool_choice: payload.tool_choice,
                     temperature: None,
                     response_format: None,
                     // stream_message flips this on internally; the explicit
@@ -890,6 +1024,12 @@ async fn handle_streaming(
                 let mut model_used = model.clone();
                 let mut latest_usage: Option<Usage> = None;
                 let mut done_sent = false;
+                // Map Anthropic content-block index → OpenAI tool-call
+                // ordinal. A response interleaves text and tool_use blocks,
+                // so block index 1 may be tool call 0.
+                let mut tool_ordinals: std::collections::HashMap<u32, u32> =
+                    std::collections::HashMap::new();
+                let mut next_tool_ordinal: u32 = 0;
 
                 loop {
                     match stream.next_event().await {
@@ -903,18 +1043,53 @@ async fn handle_streaming(
                                 // cumulative output + cache totals.
                                 latest_usage = Some(start.message.usage);
                             }
-                            StreamEvent::ContentBlockDelta(delta) => {
-                                if let ContentBlockDelta::TextDelta { text } = delta.delta {
+                            StreamEvent::ContentBlockStart(start) => {
+                                if let AnthropicContentBlock::ToolUse { id, name, .. } =
+                                    start.content_block
+                                {
+                                    let ordinal = next_tool_ordinal;
+                                    next_tool_ordinal += 1;
+                                    tool_ordinals.insert(start.index, ordinal);
+                                    if tx
+                                        .send(StreamChunk::ToolCallStart {
+                                            index: ordinal,
+                                            id,
+                                            name,
+                                        })
+                                        .await
+                                        .is_err()
+                                    {
+                                        return;
+                                    }
+                                }
+                            }
+                            StreamEvent::ContentBlockDelta(delta) => match delta.delta {
+                                ContentBlockDelta::TextDelta { text } => {
                                     if tx.send(StreamChunk::Delta(text)).await.is_err() {
                                         // Receiver dropped (client disconnected).
                                         // Stop pumping; no Done is needed.
                                         return;
                                     }
                                 }
-                                // Other delta kinds (InputJson, Thinking,
-                                // Signature) are silently dropped: matches
-                                // the non-streaming `extract_text` contract.
-                            }
+                                ContentBlockDelta::InputJsonDelta { partial_json } => {
+                                    // Argument fragment for an open tool call.
+                                    if let Some(&ordinal) = tool_ordinals.get(&delta.index)
+                                        && tx
+                                            .send(StreamChunk::ToolCallDelta {
+                                                index: ordinal,
+                                                arguments: partial_json,
+                                            })
+                                            .await
+                                            .is_err()
+                                    {
+                                        return;
+                                    }
+                                }
+                                // Thinking / Signature deltas are dropped:
+                                // matches the non-streaming `extract_text`
+                                // contract.
+                                _ => {}
+                            },
                             StreamEvent::MessageDelta(delta) => {
                                 latest_usage = Some(delta.usage);
                             }
@@ -932,7 +1107,7 @@ async fn handle_streaming(
                                 // settle its prompt-cache record. The next
                                 // iteration sees Ok(None) and exits.
                             }
-                            _ => {} // ContentBlockStart / ContentBlockStop
+                            _ => {} // ContentBlockStop
                         },
                         Ok(None) => {
                             // Stream exhausted without an explicit
@@ -996,6 +1171,10 @@ async fn handle_streaming(
     let acc_clone = Arc::clone(&accumulated);
     let meta_clone = Arc::clone(&final_meta);
 
+    // Set once a ToolCallStart flows through — flips the terminal
+    // finish_reason from "stop" to "tool_calls".
+    let mut saw_tool_call = false;
+
     let sse_stream = chunk_stream
         .map(move |chunk| -> Result<Event, std::convert::Infallible> {
             let id = id_clone.clone();
@@ -1040,6 +1219,76 @@ async fn handle_streaming(
                             delta: OaiDelta {
                                 role: None,
                                 content: Some(text),
+                                tool_calls: None,
+                            },
+                            finish_reason: None,
+                        }],
+                        usage: None,
+                        cache_creation_input_tokens: None,
+                        cache_read_input_tokens: None,
+                    };
+                    let data =
+                        serde_json::to_string(&chunk_resp).unwrap_or_else(|_| "{}".to_string());
+                    Ok(Event::default().data(data))
+                }
+
+                StreamChunk::ToolCallStart {
+                    index,
+                    id: call_id,
+                    name,
+                } => {
+                    saw_tool_call = true;
+                    let chunk_resp = OaiChunkResponse {
+                        id,
+                        object: "chat.completion.chunk",
+                        created: now,
+                        model: "streaming".to_string(),
+                        choices: vec![OaiChunkChoice {
+                            index: 0,
+                            delta: OaiDelta {
+                                role: None,
+                                content: None,
+                                tool_calls: Some(vec![OaiDeltaToolCall {
+                                    index,
+                                    id: Some(call_id),
+                                    kind: Some("function"),
+                                    function: OaiDeltaFunction {
+                                        name: Some(name),
+                                        arguments: String::new(),
+                                    },
+                                }]),
+                            },
+                            finish_reason: None,
+                        }],
+                        usage: None,
+                        cache_creation_input_tokens: None,
+                        cache_read_input_tokens: None,
+                    };
+                    let data =
+                        serde_json::to_string(&chunk_resp).unwrap_or_else(|_| "{}".to_string());
+                    Ok(Event::default().data(data))
+                }
+
+                StreamChunk::ToolCallDelta { index, arguments } => {
+                    let chunk_resp = OaiChunkResponse {
+                        id,
+                        object: "chat.completion.chunk",
+                        created: now,
+                        model: "streaming".to_string(),
+                        choices: vec![OaiChunkChoice {
+                            index: 0,
+                            delta: OaiDelta {
+                                role: None,
+                                content: None,
+                                tool_calls: Some(vec![OaiDeltaToolCall {
+                                    index,
+                                    id: None,
+                                    kind: None,
+                                    function: OaiDeltaFunction {
+                                        name: None,
+                                        arguments,
+                                    },
+                                }]),
                             },
                             finish_reason: None,
                         }],
@@ -1090,6 +1339,11 @@ async fn handle_streaming(
                         used_fallback,
                     });
 
+                    let finish_reason = if saw_tool_call {
+                        "tool_calls".to_string()
+                    } else {
+                        "stop".to_string()
+                    };
                     let final_chunk = OaiChunkResponse {
                         id,
                         object: "chat.completion.chunk",
@@ -1100,8 +1354,9 @@ async fn handle_streaming(
                             delta: OaiDelta {
                                 role: None,
                                 content: None,
+                                tool_calls: None,
                             },
-                            finish_reason: Some("stop".to_string()),
+                            finish_reason: Some(finish_reason),
                         }],
                         usage: Some(OaiUsage {
                             prompt_tokens: pt,
@@ -1120,7 +1375,12 @@ async fn handle_streaming(
         // Append the mandatory `data: [DONE]` sentinel.
         .chain(stream::once(async move {
             // Best-effort cache write once the stream is complete.
+            // Skipped for tool-call requests: the accumulated text is not a
+            // complete answer when the model stopped to call a tool.
             let acc = accumulated.lock().await;
+            if skip_cache {
+                return Ok::<Event, std::convert::Infallible>(Event::default().data("[DONE]"));
+            }
             if let Some((
                 model_used,
                 used_fallback,
@@ -1167,6 +1427,7 @@ async fn handle_streaming(
             delta: OaiDelta {
                 role: Some("assistant".to_string()),
                 content: None,
+                tool_calls: None,
             },
             finish_reason: None,
         }],
@@ -1257,6 +1518,18 @@ impl ModelEntry {
         }
     }
 
+    // Construct a RustCode virtual model entry that accepts `tools`.
+    // Used for the Claude-tier entries — the proxy forwards OpenAI tool
+    // definitions to Anthropic and translates `tool_use` back into
+    // OpenAI `tool_calls`.
+    fn rc_tools(id: &str, max_tokens: u32, max_completion_tokens: u32, now: u64) -> Self {
+        Self {
+            supports_tools: true,
+            supports_parallel_tool_calls: true,
+            ..Self::rc(id, max_tokens, max_completion_tokens, now)
+        }
+    }
+
     // Construct an Ollama passthrough model entry.
     fn ollama(id: String, now: u64) -> Self {
         Self {
@@ -1292,10 +1565,6 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
         ModelEntry::rc("auto", 131_072, 32_768, now),
         ModelEntry::rc("local", 16_384, 8_192, now),
         ModelEntry::rc("remote", 131_072, 32_768, now),
-        // Claude tiers — clients can target Opus (planner) or Sonnet (executor)
-        // directly. Pulled from the configured `RC_PLANNER_MODEL` / `RC_EXECUTOR_MODEL`.
-        ModelEntry::rc("claude-opus-4-7", 200_000, 32_000, now),
-        ModelEntry::rc("claude-sonnet-4-6", 200_000, 64_000, now),
         // OpenAI-provider-prefixed aliases — OpenClaw (and other clients that
         // use the OpenAI SDK with a custom base URL) prepend "openai/" to the
         // model id.  Advertise these so the client's model validation passes.
@@ -1303,9 +1572,30 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
         ModelEntry::rc("openai/auto", 131_072, 32_768, now),
         ModelEntry::rc("openai/local", 16_384, 8_192, now),
         ModelEntry::rc("openai/remote", 131_072, 32_768, now),
-        ModelEntry::rc("openai/claude-opus-4-7", 200_000, 32_000, now),
-        ModelEntry::rc("openai/claude-sonnet-4-6", 200_000, 64_000, now),
     ];
+
+    // Claude tiers — clients can target Opus (planner) or Sonnet (executor)
+    // directly. Read from the configured `RC_PLANNER_MODEL` /
+    // `RC_EXECUTOR_MODEL` so overrides show up here instead of the
+    // compiled-in defaults. Deduped when both tiers point at one slug.
+    let planner = state.repo_state.model_router.planner_model().to_string();
+    let executor = state.repo_state.model_router.executor_model().to_string();
+    entries.push(ModelEntry::rc_tools(&planner, 200_000, 32_000, now));
+    entries.push(ModelEntry::rc_tools(
+        &format!("openai/{planner}"),
+        200_000,
+        32_000,
+        now,
+    ));
+    if executor != planner {
+        entries.push(ModelEntry::rc_tools(&executor, 200_000, 64_000, now));
+        entries.push(ModelEntry::rc_tools(
+            &format!("openai/{executor}"),
+            200_000,
+            64_000,
+            now,
+        ));
+    }
 
     // ── Live Ollama models ───────────────────────────────────────────────────
     // Expose each installed Ollama model directly so clients can target them
@@ -1510,6 +1800,241 @@ fn build_full_prompt(
     parts.join("\n\n")
 }
 
+// ---------------------------------------------------------------------------
+// OpenAI ↔ Anthropic translation (Claude targets)
+// ---------------------------------------------------------------------------
+
+// Everything the Claude dispatch paths need beyond the flattened prompt:
+// a structured multi-turn message array plus translated tool definitions.
+// Ollama / Grok targets ignore this and use the flattened `full_prompt`.
+#[derive(Debug, Clone)]
+struct ClaudePayload {
+    messages: Vec<InputMessage>,
+    tools: Option<Vec<ToolDefinition>>,
+    tool_choice: Option<AnthropicToolChoice>,
+}
+
+// Build the Claude-side payload from the OpenAI request. RAG enrichment and
+// repo context are injected into the last user turn (mirroring what
+// `build_full_prompt` does for the flattened path); prior turns — including
+// assistant `tool_calls` and `role: "tool"` results — are forwarded
+// structurally so Claude sees real conversation history instead of a
+// role-prefixed transcript.
+fn build_claude_payload(
+    req: &OaiChatRequest,
+    rag_enriched_last_user: &str,
+    repo_context: Option<&str>,
+) -> ClaudePayload {
+    let messages = build_claude_messages(&req.messages, rag_enriched_last_user, repo_context);
+
+    // `tool_choice: "none"` means "don't call tools" — Anthropic has no
+    // equivalent, so we drop the definitions entirely.
+    let tools_disabled = matches!(
+        req.tool_choice.as_ref().and_then(serde_json::Value::as_str),
+        Some("none")
+    );
+
+    let tools: Option<Vec<ToolDefinition>> = if tools_disabled {
+        None
+    } else {
+        req.tools
+            .as_deref()
+            .map(convert_tool_definitions)
+            .filter(|t| !t.is_empty())
+    };
+
+    let tool_choice = if tools.is_some() {
+        convert_tool_choice(req.tool_choice.as_ref())
+    } else {
+        None
+    };
+
+    ClaudePayload {
+        messages,
+        tools,
+        tool_choice,
+    }
+}
+
+// Translate the OpenAI message history into Anthropic `InputMessage`s.
+//
+// Rules:
+//   - `system` turns are skipped (they travel via the `system` field).
+//   - `tool` turns become `tool_result` blocks inside a *user* message.
+//   - assistant `tool_calls` become `tool_use` blocks.
+//   - consecutive same-role turns are merged — Anthropic requires strict
+//     user/assistant alternation, and OpenAI clients send each tool result
+//     as its own `role: "tool"` message.
+//   - the last user turn is replaced by the RAG-enriched text, with repo
+//     context prepended when present.
+fn build_claude_messages(
+    messages: &[OaiMessage],
+    rag_enriched_last_user: &str,
+    repo_context: Option<&str>,
+) -> Vec<InputMessage> {
+    let last_user_idx = messages.iter().rposition(|m| m.role == "user");
+
+    let mut out: Vec<InputMessage> = Vec::new();
+
+    for (i, msg) in messages.iter().enumerate() {
+        let (role, blocks) = match msg.role.as_str() {
+            "system" => continue,
+            "tool" => {
+                let tool_use_id = msg.tool_call_id.clone().unwrap_or_default();
+                (
+                    "user",
+                    vec![InputContentBlock::ToolResult {
+                        tool_use_id,
+                        content: vec![ToolResultContentBlock::Text {
+                            text: msg.content.clone(),
+                        }],
+                        is_error: false,
+                    }],
+                )
+            }
+            "assistant" => {
+                let mut blocks: Vec<InputContentBlock> = Vec::new();
+                if !msg.content.is_empty() {
+                    blocks.push(InputContentBlock::Text {
+                        text: msg.content.clone(),
+                        cache_control: None,
+                    });
+                }
+                if let Some(calls) = &msg.tool_calls {
+                    for call in calls {
+                        // OpenAI encodes arguments as a JSON string; fall
+                        // back to an empty object on malformed fragments.
+                        let input = serde_json::from_str(&call.function.arguments)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        blocks.push(InputContentBlock::ToolUse {
+                            id: call.id.clone(),
+                            name: call.function.name.clone(),
+                            input,
+                        });
+                    }
+                }
+                if blocks.is_empty() {
+                    continue;
+                }
+                ("assistant", blocks)
+            }
+            // "user" and any unrecognised role.
+            _ => {
+                let text = if Some(i) == last_user_idx {
+                    repo_context.map_or_else(
+                        || rag_enriched_last_user.to_string(),
+                        |ctx| format!("[Repo Context]\n{ctx}\n\n{rag_enriched_last_user}"),
+                    )
+                } else {
+                    msg.content.clone()
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                (
+                    "user",
+                    vec![InputContentBlock::Text {
+                        text,
+                        cache_control: None,
+                    }],
+                )
+            }
+        };
+
+        if let Some(prev) = out.last_mut() {
+            if prev.role == role {
+                prev.content.extend(blocks);
+                continue;
+            }
+        }
+        out.push(InputMessage {
+            role: role.to_string(),
+            content: blocks,
+        });
+    }
+
+    // Anthropic rejects an empty messages array — fall back to the enriched
+    // prompt (or a placeholder when even that is empty).
+    if out.is_empty() {
+        let fallback = if rag_enriched_last_user.is_empty() {
+            "(empty message)"
+        } else {
+            rag_enriched_last_user
+        };
+        out.push(InputMessage::user_text(fallback));
+    }
+    out
+}
+
+// Convert OpenAI `{type:"function", function:{...}}` tool definitions into
+// Anthropic `ToolDefinition`s. Non-function tool types are skipped.
+fn convert_tool_definitions(tools: &[OaiTool]) -> Vec<ToolDefinition> {
+    tools
+        .iter()
+        .filter(|t| t.kind == "function")
+        .map(|t| ToolDefinition {
+            name: t.function.name.clone(),
+            description: t.function.description.clone(),
+            input_schema: t
+                .function
+                .parameters
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({ "type": "object", "properties": {} })),
+        })
+        .collect()
+}
+
+// Map the OpenAI `tool_choice` field onto Anthropic's. `"none"` is handled
+// by the caller (tools are dropped); unknown shapes fall back to `None`
+// (Anthropic defaults to auto).
+fn convert_tool_choice(choice: Option<&serde_json::Value>) -> Option<AnthropicToolChoice> {
+    match choice? {
+        serde_json::Value::String(s) => match s.as_str() {
+            "auto" => Some(AnthropicToolChoice::Auto),
+            "required" | "any" => Some(AnthropicToolChoice::Any),
+            _ => None,
+        },
+        serde_json::Value::Object(obj) => {
+            let name = obj.get("function")?.get("name")?.as_str()?;
+            Some(AnthropicToolChoice::Tool {
+                name: name.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+// Translate Claude `tool_use` output blocks into OpenAI `tool_calls`.
+// Returns `None` when the response contained no tool calls.
+fn extract_tool_calls(resp: &MessageResponse) -> Option<Vec<OaiToolCall>> {
+    let calls: Vec<OaiToolCall> = resp
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            AnthropicContentBlock::ToolUse { id, name, input } => Some(OaiToolCall {
+                id: id.clone(),
+                kind: "function".to_string(),
+                function: OaiFunctionCall {
+                    name: name.clone(),
+                    arguments: input.to_string(),
+                },
+            }),
+            _ => None,
+        })
+        .collect();
+    (!calls.is_empty()).then_some(calls)
+}
+
+// Map an Anthropic `stop_reason` onto the OpenAI `finish_reason` vocabulary.
+fn map_stop_reason(stop_reason: Option<&str>, has_tool_calls: bool) -> String {
+    match stop_reason {
+        Some("tool_use") => "tool_calls".to_string(),
+        Some("max_tokens") => "length".to_string(),
+        _ if has_tool_calls => "tool_calls".to_string(),
+        _ => "stop".to_string(),
+    }
+}
+
 // Result of a single backend dispatch call.
 #[derive(Debug, Clone)]
 struct DispatchOutcome {
@@ -1521,6 +2046,11 @@ struct DispatchOutcome {
     cache_creation_input_tokens: Option<u32>,
     // Anthropic prompt-cache read tokens (only set for Claude responses).
     cache_read_input_tokens: Option<u32>,
+    // Tool calls requested by the model (only set for Claude responses
+    // when the client sent tool definitions).
+    tool_calls: Option<Vec<OaiToolCall>>,
+    // OpenAI finish_reason: "stop" | "tool_calls" | "length".
+    finish_reason: String,
     // Backend error message when the dispatch failed. The error is *also*
     // surfaced as the `reply` body (so clients still get a textual
     // response), but having it as an explicit field lets callers
@@ -1538,6 +2068,8 @@ impl DispatchOutcome {
             tokens_used: tokens,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            tool_calls: None,
+            finish_reason: "stop".to_string(),
             error: None,
         }
     }
@@ -1550,6 +2082,8 @@ impl DispatchOutcome {
             tokens_used: None,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            tool_calls: None,
+            finish_reason: "stop".to_string(),
             error: Some(msg),
         }
     }
@@ -1562,6 +2096,7 @@ async fn dispatch(
     state: &RepoAppState,
     req: &CompletionRequest,
     target: &ModelTarget,
+    claude_payload: &ClaudePayload,
 ) -> DispatchOutcome {
     match target {
         ModelTarget::Local { model, .. } => {
@@ -1587,6 +2122,8 @@ async fn dispatch(
                         tokens_used: tokens,
                         cache_creation_input_tokens: None,
                         cache_read_input_tokens: None,
+                        tool_calls: None,
+                        finish_reason: "stop".to_string(),
                         error: None,
                     }
                 }
@@ -1633,7 +2170,7 @@ async fn dispatch(
 
         ModelTarget::Claude { model, tier } => {
             debug!(model = %model, tier = %tier, "Proxy: dispatching to Claude");
-            dispatch_claude(state, req, model, *tier).await
+            dispatch_claude(state, req, model, *tier, claude_payload).await
         }
     }
 }
@@ -1646,6 +2183,7 @@ async fn dispatch_claude(
     req: &CompletionRequest,
     model: &str,
     tier: ClaudeTier,
+    claude_payload: &ClaudePayload,
 ) -> DispatchOutcome {
     let client = match state.anthropic_client.as_ref() {
         Some(c) => (**c).clone(),
@@ -1661,35 +2199,42 @@ async fn dispatch_claude(
         },
     };
 
-    // Prepend retrieved memories to the user prompt when memory injection is
-    // configured. Memory lookup is best-effort: on failure we log and proceed
-    // with the unmodified prompt rather than failing the request.
-    let user_prompt = match state.agent_memory.as_ref() {
-        Some(memory) => match memory.search(&req.user_prompt, None, 5).await {
+    // Prepend retrieved memories to the last user turn when memory injection
+    // is configured. Memory lookup is best-effort: on failure we log and
+    // proceed with the unmodified messages rather than failing the request.
+    let mut messages = claude_payload.messages.clone();
+    if let Some(memory) = state.agent_memory.as_ref() {
+        match memory.search(&req.user_prompt, None, 5).await {
             Ok(hits) if !hits.is_empty() => {
                 let block = crate::memory::format_memories_for_prompt(&hits);
                 debug!(
                     matches = hits.len(),
-                    "Proxy: prepending memory block to user prompt"
+                    "Proxy: prepending memory block to last user turn"
                 );
-                format!("{}\n{}", block, req.user_prompt)
+                if let Some(last_user) = messages.iter_mut().rev().find(|m| m.role == "user") {
+                    last_user.content.insert(
+                        0,
+                        InputContentBlock::Text {
+                            text: block,
+                            cache_control: None,
+                        },
+                    );
+                }
             }
-            Ok(_) => req.user_prompt.clone(),
+            Ok(_) => {}
             Err(e) => {
                 warn!(error = %e, "Proxy: memory.search failed — proceeding without memory");
-                req.user_prompt.clone()
             }
-        },
-        None => req.user_prompt.clone(),
-    };
+        }
+    }
 
     let message_req = MessageRequest {
         model: model.to_string(),
         max_tokens: req.max_tokens,
-        messages: vec![InputMessage::user_text(user_prompt)],
+        messages,
         system: build_system_blocks(req.system_prompt.as_deref()),
-        tools: None,
-        tool_choice: None,
+        tools: claude_payload.tools.clone(),
+        tool_choice: claude_payload.tool_choice.clone(),
         temperature: None,
         response_format: None,
         stream: false,
@@ -1698,6 +2243,8 @@ async fn dispatch_claude(
     match client.send_message(&message_req).await {
         Ok(resp) => {
             let reply = extract_text(&resp);
+            let tool_calls = extract_tool_calls(&resp);
+            let finish_reason = map_stop_reason(resp.stop_reason.as_deref(), tool_calls.is_some());
             let tokens = Some(resp.usage.total_tokens());
             let cache_creation = (resp.usage.cache_creation_input_tokens > 0)
                 .then_some(resp.usage.cache_creation_input_tokens);
@@ -1719,6 +2266,8 @@ async fn dispatch_claude(
                 tokens_used: tokens,
                 cache_creation_input_tokens: cache_creation,
                 cache_read_input_tokens: cache_read,
+                tool_calls,
+                finish_reason,
                 error: None,
             }
         }
@@ -1939,6 +2488,8 @@ fn split_tokens(combined: Option<u32>, prompt: &str, completion: &str) -> (u32, 
 #[allow(clippy::too_many_arguments)]
 fn build_oai_response(
     content: String,
+    tool_calls: Option<Vec<OaiToolCall>>,
+    finish_reason: String,
     model_used: String,
     used_fallback: bool,
     task_kind: String,
@@ -1951,6 +2502,13 @@ fn build_oai_response(
     cache_creation_input_tokens: Option<u32>,
     cache_read_input_tokens: Option<u32>,
 ) -> Json<OaiChatResponse> {
+    // OpenAI emits `content: null` (not "") on turns that only carry
+    // tool calls; strict clients validate against that shape.
+    let content = if content.is_empty() && tool_calls.is_some() {
+        None
+    } else {
+        Some(content)
+    };
     Json(OaiChatResponse {
         id: format!("chatcmpl-rc-{}", Uuid::new_v4()),
         object: "chat.completion".to_string(),
@@ -1958,11 +2516,12 @@ fn build_oai_response(
         model: model_used.clone(),
         choices: vec![OaiChoice {
             index: 0,
-            message: OaiMessage {
+            message: OaiAssistantMessage {
                 role: "assistant".to_string(),
                 content,
+                tool_calls,
             },
-            finish_reason: "stop".to_string(),
+            finish_reason,
         }],
         usage: OaiUsage {
             prompt_tokens,
@@ -2072,10 +2631,14 @@ mod tests {
             OaiMessage {
                 role: "system".to_string(),
                 content: "You are a trading bot.".to_string(),
+                tool_calls: None,
+                tool_call_id: None,
             },
             OaiMessage {
                 role: "user".to_string(),
                 content: "What is the BTC trend?".to_string(),
+                tool_calls: None,
+                tool_call_id: None,
             },
         ];
         let rag = "RAG: BTC recently crossed the 200-day MA.";
@@ -2096,12 +2659,240 @@ mod tests {
         let messages = vec![OaiMessage {
             role: "user".to_string(),
             content: "Explain RSI divergence.".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
         }];
         let prompt = build_full_prompt(&messages, "Explain RSI divergence.", None);
         assert!(!prompt.contains("[System]"));
         assert!(!prompt.contains("[Repo Context]"));
         assert!(prompt.contains("[Conversation]"));
         assert!(prompt.contains("Explain RSI divergence."));
+    }
+
+    #[test]
+    fn build_claude_messages_forwards_history_and_merges_tool_results() {
+        // A typical agent loop: user asks, assistant calls two tools, the
+        // client sends both results back as separate `role: "tool"` turns,
+        // then asks a follow-up. The tool results must merge into a single
+        // user message (Anthropic requires user/assistant alternation) and
+        // the assistant tool_calls must round-trip as tool_use blocks.
+        let messages = vec![
+            OaiMessage {
+                role: "system".to_string(),
+                content: "You are helpful.".to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            OaiMessage {
+                role: "user".to_string(),
+                content: "read two files".to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            OaiMessage {
+                role: "assistant".to_string(),
+                content: String::new(),
+                tool_calls: Some(vec![
+                    OaiToolCall {
+                        id: "call_1".to_string(),
+                        kind: "function".to_string(),
+                        function: OaiFunctionCall {
+                            name: "read_file".to_string(),
+                            arguments: "{\"path\":\"a.rs\"}".to_string(),
+                        },
+                    },
+                    OaiToolCall {
+                        id: "call_2".to_string(),
+                        kind: "function".to_string(),
+                        function: OaiFunctionCall {
+                            name: "read_file".to_string(),
+                            arguments: "{\"path\":\"b.rs\"}".to_string(),
+                        },
+                    },
+                ]),
+                tool_call_id: None,
+            },
+            OaiMessage {
+                role: "tool".to_string(),
+                content: "contents of a".to_string(),
+                tool_calls: None,
+                tool_call_id: Some("call_1".to_string()),
+            },
+            OaiMessage {
+                role: "tool".to_string(),
+                content: "contents of b".to_string(),
+                tool_calls: None,
+                tool_call_id: Some("call_2".to_string()),
+            },
+            OaiMessage {
+                role: "user".to_string(),
+                content: "now summarise".to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        let out = build_claude_messages(&messages, "now summarise", None);
+
+        // system skipped; tool results + follow-up user merge into one turn:
+        // [user, assistant(tool_use x2), user(tool_result x2 + text)]
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].role, "user");
+        assert_eq!(out[1].role, "assistant");
+        assert_eq!(out[1].content.len(), 2);
+        assert!(matches!(
+            &out[1].content[0],
+            InputContentBlock::ToolUse { id, name, .. }
+                if id == "call_1" && name == "read_file"
+        ));
+        assert_eq!(out[2].role, "user");
+        assert_eq!(out[2].content.len(), 3);
+        assert!(matches!(
+            &out[2].content[0],
+            InputContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == "call_1"
+        ));
+        assert!(matches!(
+            &out[2].content[1],
+            InputContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == "call_2"
+        ));
+        assert!(matches!(
+            &out[2].content[2],
+            InputContentBlock::Text { text, .. } if text == "now summarise"
+        ));
+    }
+
+    #[test]
+    fn build_claude_messages_injects_rag_and_repo_context_into_last_user_turn() {
+        let messages = vec![OaiMessage {
+            role: "user".to_string(),
+            content: "what does main do?".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+        let out = build_claude_messages(
+            &messages,
+            "RAG:\nfn main() {}\n\nwhat does main do?",
+            Some("tree: src/main.rs"),
+        );
+        assert_eq!(out.len(), 1);
+        assert!(matches!(
+            &out[0].content[0],
+            InputContentBlock::Text { text, .. }
+                if text.contains("[Repo Context]")
+                    && text.contains("tree: src/main.rs")
+                    && text.contains("RAG:")
+        ));
+    }
+
+    #[test]
+    fn convert_tool_choice_maps_openai_variants() {
+        assert_eq!(
+            convert_tool_choice(Some(&serde_json::json!("auto"))),
+            Some(AnthropicToolChoice::Auto)
+        );
+        assert_eq!(
+            convert_tool_choice(Some(&serde_json::json!("required"))),
+            Some(AnthropicToolChoice::Any)
+        );
+        assert_eq!(convert_tool_choice(Some(&serde_json::json!("none"))), None);
+        assert_eq!(
+            convert_tool_choice(Some(&serde_json::json!({
+                "type": "function",
+                "function": { "name": "read_file" }
+            }))),
+            Some(AnthropicToolChoice::Tool {
+                name: "read_file".to_string()
+            })
+        );
+        assert_eq!(convert_tool_choice(None), None);
+    }
+
+    #[test]
+    fn convert_tool_definitions_defaults_missing_parameters() {
+        let tools = vec![OaiTool {
+            kind: "function".to_string(),
+            function: OaiFunctionDef {
+                name: "ping".to_string(),
+                description: Some("health check".to_string()),
+                parameters: None,
+            },
+        }];
+        let defs = convert_tool_definitions(&tools);
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "ping");
+        assert_eq!(defs[0].input_schema["type"], "object");
+    }
+
+    #[test]
+    fn extract_tool_calls_translates_tool_use_blocks() {
+        let resp = MessageResponse {
+            id: "msg_1".to_string(),
+            kind: "message".to_string(),
+            role: "assistant".to_string(),
+            content: vec![
+                AnthropicContentBlock::Text {
+                    text: "Let me check.".to_string(),
+                },
+                AnthropicContentBlock::ToolUse {
+                    id: "toolu_1".to_string(),
+                    name: "grep".to_string(),
+                    input: serde_json::json!({ "pattern": "fn main" }),
+                },
+            ],
+            model: "claude-sonnet-4-6".to_string(),
+            stop_reason: Some("tool_use".to_string()),
+            stop_sequence: None,
+            usage: Usage::default(),
+            request_id: None,
+        };
+        let calls = extract_tool_calls(&resp).expect("tool calls");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "toolu_1");
+        assert_eq!(calls[0].function.name, "grep");
+        assert!(calls[0].function.arguments.contains("fn main"));
+
+        // Text-only responses yield None.
+        let text_only = MessageResponse {
+            content: vec![AnthropicContentBlock::Text {
+                text: "done".to_string(),
+            }],
+            ..resp
+        };
+        assert!(extract_tool_calls(&text_only).is_none());
+    }
+
+    #[test]
+    fn map_stop_reason_covers_openai_vocabulary() {
+        assert_eq!(map_stop_reason(Some("tool_use"), true), "tool_calls");
+        assert_eq!(map_stop_reason(Some("max_tokens"), false), "length");
+        assert_eq!(map_stop_reason(Some("end_turn"), false), "stop");
+        // Defensive: tool calls present but stop_reason missing.
+        assert_eq!(map_stop_reason(None, true), "tool_calls");
+        assert_eq!(map_stop_reason(None, false), "stop");
+    }
+
+    #[test]
+    fn oai_message_accepts_null_content_and_tool_fields() {
+        // Assistant turn with tool_calls and `content: null` — the shape
+        // Zed / OpenAI SDKs send back as conversation history.
+        let raw = r#"{
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_9",
+                "type": "function",
+                "function": { "name": "ls", "arguments": "{}" }
+            }]
+        }"#;
+        let msg: OaiMessage = serde_json::from_str(raw).expect("deserialise");
+        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.content, "");
+        assert_eq!(msg.tool_calls.as_ref().map(Vec::len), Some(1));
+
+        // Tool-result turn.
+        let raw = r#"{ "role": "tool", "content": "ok", "tool_call_id": "call_9" }"#;
+        let msg: OaiMessage = serde_json::from_str(raw).expect("deserialise");
+        assert_eq!(msg.tool_call_id.as_deref(), Some("call_9"));
     }
 
     #[test]
@@ -2182,6 +2973,7 @@ mod tests {
                 delta: OaiDelta {
                     role: None,
                     content: None,
+                    tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
             }],
@@ -2290,6 +3082,7 @@ mod tests {
                 delta: OaiDelta {
                     role: None,
                     content: Some("hello".to_string()),
+                    tool_calls: None,
                 },
                 finish_reason: None,
             }],

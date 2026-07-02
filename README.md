@@ -122,7 +122,7 @@ docker run -p 3500:3500 --env-file .env rustcode
 | `RC_EXECUTOR_MODEL` | Optional | Override executor-tier model (default: `claude-sonnet-4-6`) |
 | `XAI_API_KEY` | Fallback | xAI (Grok) API key — fallback when `ANTHROPIC_API_KEY` is absent |
 | `DATABASE_URL` | ✅ | Postgres connection string |
-| `RC_PROXY_API_KEYS` | Recommended | Comma-separated bearer tokens for auth |
+| `RUSTCODE_PROXY_API_KEYS` | Recommended | Comma-separated bearer tokens for auth |
 | `GITHUB_TOKEN` | Optional | PAT for repo sync and webhook |
 | `OLLAMA_BASE_URL` | Optional | Enable local inference (default: off) |
 | `OLLAMA_ENABLED` | Optional | Set `true` to enable Ollama routing |
@@ -131,7 +131,7 @@ docker run -p 3500:3500 --env-file .env rustcode
 
 At least one of `ANTHROPIC_API_KEY` or `XAI_API_KEY` must be set for the LLM proxy to work.
 
-Auth is enforced when `RC_PROXY_API_KEYS` is set. All `/api/*` and `/v1/*` routes require `Authorization: Bearer <key>` or `X-API-Key: <key>`. Set `RC_AUTH_DISABLED=true` to opt out (dev only — logs a loud warning).
+Auth is enforced when `RUSTCODE_PROXY_API_KEYS` is set. All `/api/*` and `/v1/*` routes require `Authorization: Bearer <key>` or `X-API-Key: <key>`. Set `RUSTCODE_AUTH_DISABLED=true` to opt out (dev only — logs a loud warning).
 
 ## Async task agent (task file pipeline)
 
@@ -218,30 +218,53 @@ from rustcode's `GET /v1/models`. All chat routes through
 
 ### Zed
 
-Add an `assistant` block to your Zed `settings.json` (open with
+Add an `openai_compatible` provider to your Zed `settings.json` (open with
 `zed: open settings`). This works today against the running proxy — no
 server-side changes needed:
 
 ```json
 {
-  "assistant": {
-    "version": "2",
-    "default_model": { "provider": "openai", "model": "claude-sonnet-4-6" },
-    "openai": {
-      "api_url": "http://your-server:3500/v1",
-      "available_models": [
-        { "name": "claude-opus-4-7" },
-        { "name": "claude-sonnet-4-6" }
-      ]
+  "language_models": {
+    "openai_compatible": {
+      "rustcode": {
+        "api_url": "http://your-server:3500/v1",
+        "available_models": [
+          {
+            "name": "claude-opus-4-7",
+            "display_name": "rustcode planner",
+            "max_tokens": 200000,
+            "max_output_tokens": 32000,
+            "capabilities": { "tools": true, "images": false }
+          },
+          {
+            "name": "claude-sonnet-4-6",
+            "display_name": "rustcode executor",
+            "max_tokens": 200000,
+            "max_output_tokens": 64000,
+            "capabilities": { "tools": true, "images": false }
+          },
+          {
+            "name": "auto",
+            "display_name": "rustcode auto-route",
+            "max_tokens": 131072,
+            "max_output_tokens": 32768,
+            "capabilities": { "tools": false, "images": false }
+          }
+        ]
+      }
     }
+  },
+  "agent": {
+    "default_model": { "provider": "rustcode", "model": "claude-sonnet-4-6" }
   }
 }
 ```
 
-Zed sends the OpenAI API key as a `Bearer` token — set it to one of your
-`RUSTCODE_PROXY_API_KEYS` via `zed: open settings` → the API-key prompt, or
-leave auth disabled for local dev. Model names must match the slugs rustcode's
-`ModelRouter` accepts (`claude-opus-4-7`, `claude-sonnet-4-6`).
+Zed prompts for the API key in the Agent Panel provider settings — set it to one
+of your `RUSTCODE_PROXY_API_KEYS` values, or leave auth disabled for local dev.
+The model names are tier selectors: the actual upstream model slugs come from
+`RC_PLANNER_MODEL` / `RC_EXECUTOR_MODEL`. Tool calling (Zed agent mode) is
+supported on the Claude-tier models.
 
 ## Stats
 

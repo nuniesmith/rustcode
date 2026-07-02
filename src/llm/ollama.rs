@@ -113,6 +113,21 @@ pub struct OllamaCompletionResponse {
 pub enum StreamChunk {
     // A text delta to forward to the client.
     Delta(String),
+    // A new tool call opened (Claude `tool_use` content block). `index` is
+    // the zero-based ordinal of the call within this response (OpenAI
+    // `tool_calls[].index`), not the Anthropic content-block index.
+    // Only emitted by the proxy's Claude arm.
+    ToolCallStart {
+        index: u32,
+        id: String,
+        name: String,
+    },
+    // A partial-JSON fragment of the current tool call's arguments
+    // (Claude `input_json_delta`). Only emitted by the proxy's Claude arm.
+    ToolCallDelta {
+        index: u32,
+        arguments: String,
+    },
     // The stream has finished; carries final token counts (may be `None`
     // when served from a Grok fallback that doesn't report them).
     Done {
