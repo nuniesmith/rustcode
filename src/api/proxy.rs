@@ -1591,7 +1591,12 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
         context_window_for_model(&planner),
         max_tokens_for_model(&planner),
     );
-    entries.push(ModelEntry::rc_tools(&planner, planner_ctx, planner_out, now));
+    entries.push(ModelEntry::rc_tools(
+        &planner,
+        planner_ctx,
+        planner_out,
+        now,
+    ));
     entries.push(ModelEntry::rc_tools(
         &format!("openai/{planner}"),
         planner_ctx,
