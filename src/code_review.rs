@@ -40,7 +40,7 @@ use std::sync::Arc;
 
 // Default Claude model for code review. Opus per project convention
 // (TODO.md L832). Override with `RC_CODE_REVIEW_MODEL`.
-const DEFAULT_CODE_REVIEW_MODEL: &str = "claude-opus-4-7";
+const DEFAULT_CODE_REVIEW_MODEL: &str = "claude-opus-5";
 
 // Max tokens for the score response. The JSON payload is small
 // (~10 fields, mostly numbers + a few short string arrays) so 2048

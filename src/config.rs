@@ -193,9 +193,9 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
             planner_model: std::env::var("RC_PLANNER_MODEL")
-                .unwrap_or_else(|_| "claude-opus-4-7".to_string()),
+                .unwrap_or_else(|_| "claude-opus-5".to_string()),
             executor_model: std::env::var("RC_EXECUTOR_MODEL")
-                .unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
+                .unwrap_or_else(|_| "claude-sonnet-5".to_string()),
             xai_api_key: std::env::var("XAI_API_KEY").ok().filter(|s| !s.is_empty()),
             remote_model: std::env::var("REMOTE_MODEL")
                 .unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string()),
@@ -651,9 +651,9 @@ pub struct ModelConfig {
     // Anthropic API key — set via ANTHROPIC_API_KEY. Presence enables Claude routing
     // (primary path); absence falls back to Grok/Ollama.
     pub anthropic_api_key: Option<String>,
-    // Claude Planner tier model slug — set via RC_PLANNER_MODEL (default: claude-opus-4-7)
+    // Claude Planner tier model slug — set via RC_PLANNER_MODEL (default: claude-opus-5)
     pub planner_model: String,
-    // Claude Executor tier model slug — set via RC_EXECUTOR_MODEL (default: claude-sonnet-4-6)
+    // Claude Executor tier model slug — set via RC_EXECUTOR_MODEL (default: claude-sonnet-5)
     pub executor_model: String,
     // XAI (Grok) API key — set via XAI_API_KEY (fallback when ANTHROPIC_API_KEY is absent)
     pub xai_api_key: Option<String>,
@@ -671,8 +671,8 @@ impl Default for ModelConfig {
     fn default() -> Self {
         Self {
             anthropic_api_key: None,
-            planner_model: "claude-opus-4-7".to_string(),
-            executor_model: "claude-sonnet-4-6".to_string(),
+            planner_model: "claude-opus-5".to_string(),
+            executor_model: "claude-sonnet-5".to_string(),
             xai_api_key: None,
             remote_model: "grok-4-1-fast-reasoning".to_string(),
             local_model: "qwen2.5-coder:7b".to_string(),
@@ -836,8 +836,8 @@ mod tests {
     fn test_default_model_config() {
         let config = Config::default();
         assert!(config.model.anthropic_api_key.is_none());
-        assert_eq!(config.model.planner_model, "claude-opus-4-7");
-        assert_eq!(config.model.executor_model, "claude-sonnet-4-6");
+        assert_eq!(config.model.planner_model, "claude-opus-5");
+        assert_eq!(config.model.executor_model, "claude-sonnet-5");
         assert!(config.model.xai_api_key.is_none());
         assert_eq!(config.model.remote_model, "grok-4-1-fast-reasoning");
         assert_eq!(config.model.local_model, "qwen2.5-coder:7b");

@@ -123,10 +123,14 @@ pub fn resolve_model_alias(model: &str) -> String {
         .iter()
         .find_map(|(alias, metadata)| {
             (*alias == lower).then_some(match metadata.provider {
+                // Prefer the undated aliases: they are stable across point
+                // releases, whereas a date-suffixed ID rots. The previous
+                // "claude-haiku-4-5-20251213" did not correspond to a real
+                // snapshot and would have 404'd.
                 ProviderKind::Anthropic => match *alias {
-                    "opus" => "claude-opus-4-7",
-                    "sonnet" => "claude-sonnet-4-6",
-                    "haiku" => "claude-haiku-4-5-20251213",
+                    "opus" => "claude-opus-5",
+                    "sonnet" => "claude-sonnet-5",
+                    "haiku" => "claude-haiku-4-5",
                     _ => trimmed,
                 },
                 ProviderKind::Xai => match *alias {
@@ -180,11 +184,38 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     ProviderKind::Anthropic
 }
 
+/// Context-window size for a model.
+///
+/// Companion to [`max_tokens_for_model`] — the two are the pair a client needs
+/// to validate a request, so they live together and are updated together.
+/// Claude 5-family models carry a 1M window; Haiku 4.5 and the Grok models are
+/// smaller.
+#[must_use]
+pub fn context_window_for_model(model: &str) -> u32 {
+    let canonical = resolve_model_alias(model);
+    if canonical.contains("opus") || canonical.contains("sonnet") {
+        1_000_000
+    } else if canonical.contains("haiku") {
+        200_000
+    } else {
+        131_072
+    }
+}
+
+/// Output-token ceiling for a model.
+///
+/// This used to cap Opus at 32k — *below* the 64k applied to everything else —
+/// which inverted the real limits: Opus 5 and Sonnet 5 both support 128k output,
+/// while Haiku 4.5 tops out at 64k.
+///
+/// Values above ~16k require a STREAMING request; a non-streaming call with a
+/// large ceiling risks an HTTP timeout before the response completes. Every
+/// caller of this function must therefore be on the streaming path.
 #[must_use]
 pub fn max_tokens_for_model(model: &str) -> u32 {
     let canonical = resolve_model_alias(model);
-    if canonical.contains("opus") {
-        32_000
+    if canonical.contains("opus") || canonical.contains("sonnet") {
+        128_000
     } else {
         64_000
     }
@@ -192,7 +223,10 @@ pub fn max_tokens_for_model(model: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProviderKind, detect_provider_kind, max_tokens_for_model, resolve_model_alias};
+    use super::{
+        ProviderKind, context_window_for_model, detect_provider_kind, max_tokens_for_model,
+        resolve_model_alias,
+    };
 
     #[test]
     fn resolves_grok_aliases() {
@@ -205,14 +239,32 @@ mod tests {
     fn detects_provider_from_model_name_first() {
         assert_eq!(detect_provider_kind("grok"), ProviderKind::Xai);
         assert_eq!(
-            detect_provider_kind("claude-sonnet-4-6"),
+            detect_provider_kind("claude-sonnet-5"),
             ProviderKind::Anthropic
         );
     }
 
     #[test]
-    fn keeps_existing_max_token_heuristic() {
-        assert_eq!(max_tokens_for_model("opus"), 32_000);
+    fn resolves_anthropic_aliases_to_undated_ids() {
+        assert_eq!(resolve_model_alias("opus"), "claude-opus-5");
+        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-5");
+        assert_eq!(resolve_model_alias("haiku"), "claude-haiku-4-5");
+    }
+
+    #[test]
+    fn context_window_tracks_real_model_limits() {
+        assert_eq!(context_window_for_model("opus"), 1_000_000);
+        assert_eq!(context_window_for_model("sonnet"), 1_000_000);
+        assert_eq!(context_window_for_model("haiku"), 200_000);
+        assert_eq!(context_window_for_model("grok-3"), 131_072);
+    }
+
+    #[test]
+    fn max_tokens_tracks_real_model_ceilings() {
+        // Opus 5 / Sonnet 5 support 128k output; Haiku 4.5 tops out at 64k.
+        assert_eq!(max_tokens_for_model("opus"), 128_000);
+        assert_eq!(max_tokens_for_model("sonnet"), 128_000);
+        assert_eq!(max_tokens_for_model("haiku"), 64_000);
         assert_eq!(max_tokens_for_model("grok-3"), 64_000);
     }
 }

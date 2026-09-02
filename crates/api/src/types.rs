@@ -403,15 +403,17 @@ mod tests {
             request_id: None,
         };
 
+        // Sonnet-tier ($3 in / $15 out / $3.75 cache-write / $0.30 cache-read):
+        //   3.0000 + 7.5000 + 0.3750 + 0.0600 = $10.9350
         let cost = response.usage.estimated_cost_usd(&response.model);
-        assert_eq!(format_usd(cost.total_cost_usd()), "$54.6750");
+        assert_eq!(format_usd(cost.total_cost_usd()), "$10.9350");
         assert_eq!(response.total_tokens(), 1_800_000);
     }
 
     #[test]
     fn temperature_serializes_when_set_and_is_omitted_when_none() {
         let mut request = MessageRequest {
-            model: "claude-sonnet-4-6".to_string(),
+            model: "claude-sonnet-5".to_string(),
             max_tokens: 32,
             messages: vec![InputMessage::user_text("hi")],
             system: None,
@@ -442,7 +444,7 @@ mod tests {
         use super::{InputContentBlock, SystemBlock};
 
         let request = MessageRequest {
-            model: "claude-sonnet-4-6".to_string(),
+            model: "claude-sonnet-5".to_string(),
             max_tokens: 32,
             messages: vec![InputMessage::user_text("hi")],
             system: Some(vec![SystemBlock::cached_text(
@@ -483,7 +485,7 @@ mod tests {
         use super::SystemBlock;
 
         let request = MessageRequest {
-            model: "claude-sonnet-4-6".to_string(),
+            model: "claude-sonnet-5".to_string(),
             max_tokens: 32,
             messages: vec![InputMessage::user_text("hi")],
             system: None,

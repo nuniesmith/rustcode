@@ -137,6 +137,7 @@ use ::api::{
     AnthropicClient, ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest,
     MessageResponse, OutputContentBlock as AnthropicContentBlock, PromptCache, StreamEvent,
     SystemBlock, ToolChoice as AnthropicToolChoice, ToolDefinition, ToolResultContentBlock, Usage,
+    context_window_for_model, max_tokens_for_model,
 };
 
 // ---------------------------------------------------------------------------
@@ -1580,19 +1581,38 @@ async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoRespons
     // compiled-in defaults. Deduped when both tiers point at one slug.
     let planner = state.repo_state.model_router.planner_model().to_string();
     let executor = state.repo_state.model_router.executor_model().to_string();
-    entries.push(ModelEntry::rc_tools(&planner, 200_000, 32_000, now));
+    // Limits are derived from the configured slug rather than hardcoded: these
+    // were fixed at 200k context / 32k-64k output, which under-reported the real
+    // ceilings for the Claude 5 tiers (1M / 128k) and would make a client's own
+    // request validation reject a legitimately-sized request. Deriving also means
+    // an operator who repoints RC_PLANNER_MODEL gets that model's limits, not
+    // Opus's.
+    let (planner_ctx, planner_out) = (
+        context_window_for_model(&planner),
+        max_tokens_for_model(&planner),
+    );
+    entries.push(ModelEntry::rc_tools(&planner, planner_ctx, planner_out, now));
     entries.push(ModelEntry::rc_tools(
         &format!("openai/{planner}"),
-        200_000,
-        32_000,
+        planner_ctx,
+        planner_out,
         now,
     ));
     if executor != planner {
-        entries.push(ModelEntry::rc_tools(&executor, 200_000, 64_000, now));
+        let (executor_ctx, executor_out) = (
+            context_window_for_model(&executor),
+            max_tokens_for_model(&executor),
+        );
+        entries.push(ModelEntry::rc_tools(
+            &executor,
+            executor_ctx,
+            executor_out,
+            now,
+        ));
         entries.push(ModelEntry::rc_tools(
             &format!("openai/{executor}"),
-            200_000,
-            64_000,
+            executor_ctx,
+            executor_out,
             now,
         ));
     }
