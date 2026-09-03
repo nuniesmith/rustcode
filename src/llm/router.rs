@@ -136,9 +136,9 @@ pub struct ModelRouterConfig {
     pub force_remote: bool,
     // If local Ollama is unreachable, fall back to remote automatically
     pub fallback_to_remote: bool,
-    // Claude Planner tier model slug (default: claude-opus-4-7)
+    // Claude Planner tier model slug (default: claude-opus-5)
     pub planner_model: String,
-    // Claude Executor tier model slug (default: claude-sonnet-4-6)
+    // Claude Executor tier model slug (default: claude-sonnet-5)
     pub executor_model: String,
     // True when ANTHROPIC_API_KEY is configured — enables Claude routing.
     // The actual key is read at request time by `AnthropicClient::from_env()`.
@@ -154,8 +154,8 @@ impl Default for ModelRouterConfig {
             remote_api_key: String::new(),
             force_remote: false,
             fallback_to_remote: true,
-            planner_model: "claude-opus-4-7".to_string(),
-            executor_model: "claude-sonnet-4-6".to_string(),
+            planner_model: "claude-opus-5".to_string(),
+            executor_model: "claude-sonnet-5".to_string(),
             anthropic_enabled: false,
         }
     }
@@ -563,7 +563,7 @@ mod tests {
             }
         ));
         if let ModelTarget::Claude { model, .. } = target {
-            assert_eq!(model, "claude-opus-4-7");
+            assert_eq!(model, "claude-opus-5");
         }
     }
 
@@ -583,7 +583,7 @@ mod tests {
             }
         ));
         if let ModelTarget::Claude { model, .. } = target {
-            assert_eq!(model, "claude-sonnet-4-6");
+            assert_eq!(model, "claude-sonnet-5");
         }
     }
 

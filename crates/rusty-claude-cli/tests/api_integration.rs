@@ -65,7 +65,7 @@ fn anthropic_client_round_trips_through_mock_service() {
         let client = AnthropicClient::from_auth(AuthSource::ApiKey("test-key".into()))
             .with_base_url(mock.base_url());
 
-        let request = scenario_request("claude-sonnet-4-6", "streaming_text");
+        let request = scenario_request("claude-sonnet-5", "streaming_text");
         let response = client
             .send_message(&request)
             .await
@@ -109,7 +109,7 @@ fn anthropic_client_strips_response_format_from_request_body() {
         let client = AnthropicClient::from_auth(AuthSource::ApiKey("test-key".into()))
             .with_base_url(mock.base_url());
 
-        let request = scenario_request("claude-sonnet-4-6", "streaming_text")
+        let request = scenario_request("claude-sonnet-5", "streaming_text")
             .with_response_format(ResponseFormat::JsonObject);
 
         let _ = client
@@ -244,7 +244,7 @@ fn prompt_cache_short_circuits_second_identical_request() {
             .with_base_url(mock.base_url())
             .with_prompt_cache(cache.clone());
 
-        let request = scenario_request("claude-sonnet-4-6", "streaming_text");
+        let request = scenario_request("claude-sonnet-5", "streaming_text");
 
         let first = client
             .send_message(&request)

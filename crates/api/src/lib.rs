@@ -40,7 +40,8 @@ pub use prompt_cache::{
 pub use providers::anthropic::{AnthropicClient, AnthropicClient as ApiClient, AuthSource};
 pub use providers::openai_compat::{OpenAiCompatClient, OpenAiCompatConfig};
 pub use providers::{
-    ProviderKind, detect_provider_kind, max_tokens_for_model, resolve_model_alias,
+    ProviderKind, context_window_for_model, detect_provider_kind, max_tokens_for_model,
+    resolve_model_alias,
 };
 pub use sse::{SseParser, parse_frame};
 pub use types::{

@@ -198,7 +198,9 @@ async fn send_message_applies_request_profile_and_records_telemetry() {
                 && event.action == "message_usage"
                 && event.properties.get("request_id") == Some(&json!("req_profile_123"))
                 && event.properties.get("total_tokens") == Some(&json!(7))
-                && event.properties.get("estimated_cost_usd") == Some(&json!("$0.0001"))
+                // 1 in / 1 out / 2 cache-write / 3 cache-read at Sonnet rates
+                // = $0.0000264, which is below the 4-decimal display precision.
+                && event.properties.get("estimated_cost_usd") == Some(&json!("$0.0000"))
     ));
     assert!(matches!(
         &events[5],
@@ -399,7 +401,7 @@ async fn provider_client_dispatches_anthropic_requests() {
     .await;
 
     let client = ProviderClient::from_model_with_anthropic_auth(
-        "claude-sonnet-4-6",
+        "claude-sonnet-5",
         Some(AuthSource::ApiKey("test-key".to_string())),
     )
     .expect("anthropic provider client should be constructed");
